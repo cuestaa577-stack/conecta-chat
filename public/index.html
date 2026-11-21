@@ -3,19 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#00a884" />
+  <meta name="theme-color" content="#0b1b3a" />
   <meta name="description" content="Conecta Chat: mensajeria en tiempo real con fotos, videos, audios y archivos." />
   <title>Conecta Chat</title>
   <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <!-- ============================ ACCESO ============================ -->
   <section class="auth" id="authScreen">
     <div class="auth-card">
-      <div class="auth-logo">💬</div>
+      <img class="auth-logo" src="brand.jpg" alt="Conecta Chat" />
       <h1>Conecta Chat</h1>
-      <p class="muted">Mensajes, fotos, audios y llamadas de voz. En tiempo real.</p>
+      <p class="muted">Mensajes, fotos, videos, audios y archivos. En tiempo real.</p>
 
       <div class="auth-tabs">
         <button class="auth-tab active" id="tabLogin" onclick="App.authTab('login')">Entrar</button>
@@ -38,7 +40,7 @@
     <!-- Lista de chats -->
     <div class="view" id="listView">
       <header class="topbar">
-        <div class="brand">Conecta Chat</div>
+        <div class="brand"><img class="brand-logo" src="icon-192.png" alt="" />Conecta Chat</div>
         <div class="top-actions">
           <button class="iconbtn" onclick="App.openNewChat()" title="Nuevo chat">＋</button>
           <button class="iconbtn" onclick="App.openProfile()" title="Mi perfil" id="myAvatarBtn">👤</button>
@@ -121,6 +123,7 @@
       <div class="profile-head"><div class="avatar lg" id="profileAvatar"></div></div>
       <label class="field"><span>Nombre</span><input id="profileName" /></label>
       <label class="field"><span>Estado</span><input id="profileAbout" placeholder="Disponible" /></label>
+      <p class="muted version-line" id="appVersion"></p>
       <button class="btn primary" onclick="App.saveProfile()">Guardar</button>
       <button class="btn ghost" onclick="App.logout()">Cerrar sesion</button>
     </div>

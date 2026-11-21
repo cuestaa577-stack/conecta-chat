@@ -1,5 +1,9 @@
 /* Conecta Chat - cliente */
 const App = (() => {
+  // Version visible de la app (subirla junto con el cache del service worker).
+  // v1.1: imagen de marca de la app (pantalla de acceso y cabecera) e iconos nuevos.
+  const APP_VERSION = 'v1.1';
+
   const state = {
     token: localStorage.getItem('conecta_token') || null,
     me: null,
@@ -638,6 +642,8 @@ const App = (() => {
     else { av.style.backgroundImage = ''; av.textContent = initials(state.me.name); }
     $('#profileName').value = state.me.name || '';
     $('#profileAbout').value = state.me.about || '';
+    const ver = $('#appVersion');
+    if (ver) ver.textContent = "Conecta Chat " + APP_VERSION;
   }
 
   async function saveProfile() {
