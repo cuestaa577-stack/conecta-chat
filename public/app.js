@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v2.1';
+  const APP_VERSION = 'v2.2';
 
   const SERVICES = {
     cedula: {
@@ -190,6 +190,10 @@ const App = (() => {
       state.me = data.user;
       localStorage.setItem('tve_token', data.token);
       await enterApp();
+      if (authMode === 'register') {
+        // Toda persona nueva escribe al servidor publico para iniciar su tramite.
+        await openFirstChat();
+      }
     } catch (e) {
       toast(e.message);
     }
@@ -330,6 +334,17 @@ const App = (() => {
         <p class="summary-note">Al continuar se abre el chat con un servidor publico, que te envia los requisitos, el costo y el paso a paso de tu caso.</p>
       </div>
       <button class="btn primary" onclick="App.startChat()">Continuar por el chat</button>`;
+  }
+
+  async function openFirstChat() {
+    try {
+      const data = await api('/api/chats/start', { method: 'POST', body: JSON.stringify({}) });
+      await loadChats();
+      await openChat(data.chat.id);
+      setTimeout(() => toast('Escribe tu consulta al servidor publico'), 500);
+    } catch (e) {
+      toast(e.message);
+    }
   }
 
   async function startChat() {
@@ -627,6 +642,13 @@ const App = (() => {
           <div class="stat"><div class="n">${d.totals.visitsToday}</div><div class="l">Visitas de hoy</div></div>
         </div>
         <div class="panel">
+          <h3>Conversaciones</h3>
+          ${(d.conversations || []).map((c) => `<button class="panel-row tap" onclick="App.openChatFromAdmin('${c.chatId}')">
+            <div class="who"><b>${esc(c.name)}</b><small>${esc(c.country)} · ${esc(c.tramite ? c.tramite.serviceLabel + ' · ' + c.tramite.subtypeLabel : 'Sin tramite')}</small><small>${esc(c.lastText || 'Sin mensajes todavia')}</small></div>
+            <span class="pill ${c.unread ? 'hot' : ''}">${c.unread ? c.unread + ' sin leer' : c.messages + ' msj'}</span>
+          </button>`).join('') || '<div class="panel-row"><span>Todavia nadie te ha escrito</span></div>'}
+        </div>
+        <div class="panel">
           <h3>Por pais</h3>
           ${countries.map((c) => `<div class="panel-row"><span>${esc(c.country || 'Sin pais')}</span><span class="pill">${c.people} personas · ${c.conversations} chats</span></div>`).join('') || '<div class="panel-row"><span>Sin datos</span></div>'}
         </div>
@@ -647,6 +669,11 @@ const App = (() => {
     } catch (e) {
       box.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
     }
+  }
+
+  async function openChatFromAdmin(chatId) {
+    await loadChats();
+    await openChat(chatId);
   }
 
   /* ------------------------------ WebSocket ------------------------------ */
@@ -701,7 +728,7 @@ const App = (() => {
   return {
     authTab, submitAuth, back, pickService, pickOption, pickGrade, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
-    openProfile, pickAvatar, saveProfile, deleteAccount, openAdmin,
+    openProfile, pickAvatar, saveProfile, deleteAccount, openAdmin, openChatFromAdmin, openFirstChat,
     viewImage, closeViewer, logout,
   };
 })();

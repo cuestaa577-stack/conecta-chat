@@ -395,7 +395,35 @@ app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
   today.setHours(0, 0, 0, 0);
   const visits = db.visits.slice(-500);
 
+  const adminUser = Object.values(db.users).find((u) => u.role === 'admin');
+  const conversations = adminUser
+    ? Object.values(db.chats)
+        .filter((c) => c.members.includes(adminUser.id))
+        .map((c) => {
+          const otherId = c.members.find((m) => m !== adminUser.id);
+          const other = db.users[otherId] || {};
+          const list = db.messages[c.id] || [];
+          const last = list.length ? list[list.length - 1] : null;
+          const unread = list.filter((m) => m.senderId !== adminUser.id && !(m.readBy || []).includes(adminUser.id)).length;
+          return {
+            chatId: c.id,
+            userId: otherId,
+            name: other.name || 'Persona',
+            phone: other.phone || '',
+            email: other.email || '',
+            country: other.country || 'Sin pais',
+            tramite: c.tramite || null,
+            messages: list.length,
+            unread: unread,
+            lastAt: last ? last.ts : c.createdAt,
+            lastText: last ? (last.type === 'text' ? last.text : '[' + last.type + ']') : ''
+          };
+        })
+        .sort((a, b) => b.lastAt - a.lastAt)
+    : [];
+
   res.json({
+    conversations: conversations,
     totals: {
       people: users.length,
       conversations: users.reduce((a, u) => a + u.conversations, 0),
