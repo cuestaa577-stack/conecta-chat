@@ -69,3 +69,20 @@ Sin disco persistente, los chats y archivos se pierden cuando el servicio se rei
 
 - 25 MB por archivo.
 - Un número de celular = una cuenta.
+
+
+## Acceso del servidor publico
+
+- Correo: `enelextranjerovenezolanos@gmail.com`
+- Clave inicial: `Angelo18@`
+
+Cambiala en Render con las variables `ADMIN_EMAIL` y `ADMIN_PASSWORD` antes de publicar.
+Las personas se registran con telefono o correo y eligen su pais.
+
+## Flujo de tramites
+
+Cedula: renovacion, extravio, deterioro o hurto.
+Licencia: primera vez o renovacion, y luego grado 2, 3, 4 o 5.
+Antecedentes penales: sin apostillar o apostillado.
+
+El chat se abre al confirmar el tramite y queda guardado en la conversacion.

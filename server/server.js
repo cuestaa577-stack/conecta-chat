@@ -12,9 +12,10 @@ const SECRET = process.env.SECRET || 'tramites-venezolanos-dev-secret';
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
-const ADMIN_PHONE = (process.env.ADMIN_PHONE || '3000000000').replace(/\D/g, '');
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin1234';
-const ADMIN_NAME = process.env.ADMIN_NAME || 'Administrador';
+const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'enelextranjerovenezolanos@gmail.com').trim().toLowerCase();
+const ADMIN_PHONE = String(process.env.ADMIN_PHONE || '').replace(/\D/g, '');
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Angelo18@';
+const ADMIN_NAME = process.env.ADMIN_NAME || 'Servidor publico';
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -60,7 +61,8 @@ function makeUser(name, phone, password, extra = {}) {
   return {
     id: uid('u_'),
     name,
-    phone,
+    phone: phone || '',
+    email: extra.email || '',
     salt,
     passHash: hashPassword(password, salt),
     role: extra.role || 'user',
@@ -77,6 +79,7 @@ function publicUser(u) {
     id: u.id,
     name: u.name,
     phone: u.phone,
+    email: u.email || '',
     role: u.role,
     country: u.country || '',
     avatar: u.avatar || '',
@@ -90,10 +93,10 @@ function publicUser(u) {
 function ensureAdmin() {
   const exists = Object.values(db.users).some((u) => u.role === 'admin');
   if (exists) return;
-  const admin = makeUser(ADMIN_NAME, ADMIN_PHONE, ADMIN_PASSWORD, { role: 'admin', country: 'Venezuela' });
+  const admin = makeUser(ADMIN_NAME, ADMIN_PHONE, ADMIN_PASSWORD, { role: 'admin', country: 'Venezuela', email: ADMIN_EMAIL });
   db.users[admin.id] = admin;
   save();
-  console.log('Administrador creado con el telefono ' + ADMIN_PHONE);
+  console.log('Servidor publico creado con el correo ' + ADMIN_EMAIL);
 }
 
 ensureAdmin();
@@ -187,28 +190,37 @@ app.post('/api/visit', async (req, res) => {
 app.post('/api/register', (req, res) => {
   const name = String((req.body && req.body.name) || '').trim();
   const phone = String((req.body && req.body.phone) || '').replace(/\D/g, '');
+  const email = String((req.body && req.body.email) || '').trim().toLowerCase();
   const password = String((req.body && req.body.password) || '');
   const country = String((req.body && req.body.country) || '').trim();
 
   if (name.length < 2) return res.status(400).json({ error: 'Escribe tu nombre' });
-  if (phone.length < 7) return res.status(400).json({ error: 'Numero de telefono no valido' });
+  if (!phone && !email) return res.status(400).json({ error: 'Escribe tu telefono o tu correo' });
+  if (phone && phone.length < 7) return res.status(400).json({ error: 'Numero de telefono no valido' });
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Correo no valido' });
   if (password.length < 4) return res.status(400).json({ error: 'La contrasena debe tener al menos 4 caracteres' });
-  if (Object.values(db.users).some((u) => u.phone === phone)) {
+  if (phone && Object.values(db.users).some((u) => u.phone === phone)) {
     return res.status(409).json({ error: 'Ese numero ya tiene una cuenta' });
   }
+  if (email && Object.values(db.users).some((u) => (u.email || '') === email)) {
+    return res.status(409).json({ error: 'Ese correo ya tiene una cuenta' });
+  }
 
-  const user = makeUser(name, phone, password, { country });
+  const user = makeUser(name, phone, password, { country, email });
   db.users[user.id] = user;
   save();
   res.json({ token: sign({ uid: user.id, exp: now() + 1000 * 60 * 60 * 24 * 90 }), user: publicUser(user) });
 });
 
 app.post('/api/login', (req, res) => {
-  const phone = String((req.body && req.body.phone) || '').replace(/\D/g, '');
+  const raw = String((req.body && (req.body.identifier || req.body.phone || req.body.email)) || '').trim();
   const password = String((req.body && req.body.password) || '');
-  const user = Object.values(db.users).find((u) => u.phone === phone);
+  const digits = raw.replace(/\D/g, '');
+  const mail = raw.toLowerCase();
+  const user = Object.values(db.users).find((u) =>
+    (u.email && u.email === mail) || (digits && u.phone && u.phone === digits));
   if (!user || user.passHash !== hashPassword(password, user.salt)) {
-    return res.status(401).json({ error: 'Telefono o contrasena incorrectos' });
+    return res.status(401).json({ error: 'Telefono, correo o contrasena incorrectos' });
   }
   user.lastSeen = now();
   save();
@@ -225,9 +237,21 @@ app.post('/api/profile', auth, (req, res) => {
   const { name, about, avatar } = req.body || {};
   if (name && String(name).trim().length >= 2) req.user.name = String(name).trim();
   if (typeof about === 'string') req.user.about = about.slice(0, 160);
-  if (typeof avatar === 'string') req.user.avatar = avatar.slice(0, 400);
+  if (typeof avatar === 'string') req.user.avatar = avatar.slice(0, 500);
   save();
   res.json({ user: publicUser(req.user) });
+});
+
+/* --- eliminar cuenta --- */
+app.delete('/api/account', auth, (req, res) => {
+  const me = req.user;
+  if (me.role === 'admin') return res.status(400).json({ error: 'La cuenta del servidor publico no se puede eliminar' });
+  Object.keys(db.chats).forEach((cid) => {
+    if (db.chats[cid].members.includes(me.id)) { delete db.chats[cid]; delete db.messages[cid]; }
+  });
+  delete db.users[me.id];
+  save();
+  res.json({ ok: true });
 });
 
 /* --- chats --- */
@@ -347,6 +371,7 @@ app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
         id: u.id,
         name: u.name,
         phone: u.phone,
+        email: u.email || '',
         country: u.country || 'Sin pais',
         createdAt: u.createdAt,
         lastSeen: u.lastSeen,
