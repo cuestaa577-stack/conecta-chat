@@ -1,0 +1,17 @@
+{
+  "name": "conecta-chat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Conecta Chat - mensajeria en tiempo real con multimedia",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  }
+}
