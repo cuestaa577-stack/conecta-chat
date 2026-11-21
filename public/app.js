@@ -1,408 +1,508 @@
-/* Conecta Chat - cliente */
+/* Tramites Venezolanos en Linea - cliente */
 const App = (() => {
-  // Version visible de la app (subirla junto con el cache del service worker).
-  // v1.1: imagen de marca de la app (pantalla de acceso y cabecera) e iconos nuevos.
-  const APP_VERSION = 'v1.1';
+  // Version visible (subirla junto con el cache del service worker).
+  // v2.0: rebrand a Tramites Venezolanos en Linea, flujo de tramites, panel admin, control por pais y PDF.
+  const APP_VERSION = 'v2.0';
+  const API = '';
 
   const state = {
-    token: localStorage.getItem('conecta_token') || null,
+    token: localStorage.getItem('tv_token') || '',
     me: null,
-    users: [],
     chats: [],
-    messages: {},
-    currentChatId: null,
+    currentChat: null,
+    messages: [],
     ws: null,
-    authMode: 'login',
-    typingTimers: {},
-    groupSelection: new Set(),
+    wsReady: false,
+    typingTimer: null,
+    flow: [],
     recording: false,
     recPaused: false,
-    recElapsedMs: 0,
     recStart: 0,
+    recElapsed: 0,
     recChunks: [],
     recorder: null,
-    recWaveTimer: null,
-    recClockTimer: null,
-    cancelRecord: false,
+    recTimer: null,
+    recStream: null
   };
 
   const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase();
 
-  // ------------------------------------------------------------------ Utilidades
+  /* ---------------------------------------------------------------- utilidades */
   function toast(text) {
     const el = $('#toast');
     if (!el) return;
     el.textContent = text;
-    el.classList.remove('hidden');
+    el.classList.add('show');
     clearTimeout(el._t);
-    el._t = setTimeout(() => el.classList.add('hidden'), 2400);
+    el._t = setTimeout(() => el.classList.remove('show'), 2600);
   }
 
-  function initials(name) {
-    return String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+  async function api(path, opts = {}) {
+    const res = await fetch(API + path, {
+      method: opts.method || 'GET',
+      headers: Object.assign(
+        { 'Content-Type': 'application/json' },
+        state.token ? { Authorization: 'Bearer ' + state.token } : {},
+        opts.headers || {}
+      ),
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) { data = null; }
+    if (!res.ok) throw new Error((data && data.error) || 'Error de conexion');
+    return data || {};
   }
 
-  function avatarHtml(user, cls) {
-    const c = cls || 'avatar';
-    if (user && user.avatar) return '<div class="' + c + '" style="background-image:url(' + esc(user.avatar) + ')"></div>';
-    return '<div class="' + c + '">' + esc(initials(user && user.name)) + '</div>';
-  }
-
-  function timeLabel(ts) {
+  function fmtTime(ts) {
     const d = new Date(ts);
     return d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
   }
 
-  function dayLabel(ts) {
-    const d = new Date(ts);
+  function fmtDate(ts) {
+    const d = new Date(ts || 0);
     const today = new Date();
-    const same = d.toDateString() === today.toDateString();
-    if (same) return 'Hoy';
-    const y = new Date(today);
-    y.setDate(today.getDate() - 1);
+    const y = new Date(); y.setDate(today.getDate() - 1);
+    if (d.toDateString() === today.toDateString()) return 'Hoy';
     if (d.toDateString() === y.toDateString()) return 'Ayer';
     return d.toLocaleDateString('es', { day: 'numeric', month: 'short' });
   }
 
-  function fmtDur(seconds) {
-    const s = Math.max(0, Math.floor(seconds || 0));
-    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  /* ---------------------------------------------------------------- sesion */
+  function showApp() {
+    $('#authScreen').classList.add('hidden');
+    $('#appScreen').classList.remove('hidden');
+    const av = $('#myAvatarBtn');
+    if (av) av.textContent = initials(state.me.name);
+    const adminBtn = $('#homeAdminBtn');
+    if (adminBtn) adminBtn.style.display = state.me.role === 'admin' ? 'inline-flex' : 'none';
+    const v = $('#profileVersion');
+    if (v) v.textContent = 'Tramites Venezolanos en Linea ' + APP_VERSION;
   }
 
-  // ------------------------------------------------------------------ API
-  async function api(path, options) {
-    const opts = options || {};
-    const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
-    if (state.token) headers.Authorization = 'Bearer ' + state.token;
-    const res = await fetch(path, Object.assign({}, opts, { headers }));
-    let data = {};
-    try { data = await res.json(); } catch (e) { data = {}; }
-    if (!res.ok) {
-      if (res.status === 401 && state.token) { logout(); }
-      const err = new Error(data.error || 'Error de conexion');
-      err.status = res.status;
-      throw err;
-    }
-    return data;
+  function showAuth() {
+    $('#appScreen').classList.add('hidden');
+    $('#authScreen').classList.remove('hidden');
+    const v = $('#appVersion');
+    if (v) v.textContent = 'Version ' + APP_VERSION;
   }
 
-  // ------------------------------------------------------------------ Acceso
-  function authTab(mode) {
-    state.authMode = mode;
-    $('#tabLogin').classList.toggle('active', mode === 'login');
-    $('#tabRegister').classList.toggle('active', mode === 'register');
-    $('#registerFields').classList.toggle('hidden', mode !== 'register');
-    $('#authSubmit').textContent = mode === 'login' ? 'Entrar' : 'Crear cuenta';
+  function authTab(which) {
+    const isLogin = which === 'login';
+    $('#tabLogin').classList.toggle('active', isLogin);
+    $('#tabRegister').classList.toggle('active', !isLogin);
+    $('#registerFields').classList.toggle('hidden', isLogin);
+    $('#authSubmit').textContent = isLogin ? 'Entrar' : 'Crear cuenta';
+    state.authMode = which;
     $('#authError').textContent = '';
   }
 
-  async function submitAuth() {
-    const phone = $('#authPhone').value.trim();
-    const password = $('#authPassword').value;
-    const name = $('#regName').value.trim();
-    const btn = $('#authSubmit');
-    const errEl = $('#authError');
-    errEl.textContent = '';
-    if (!phone || !password) { errEl.textContent = 'Completa tu numero y contrasena'; return; }
-    btn.disabled = true;
-    btn.textContent = 'Espera...';
+  async function authSubmit() {
+    const phone = ($('#authPhone').value || '').trim();
+    const password = ($('#authPassword').value || '').trim();
+    const err = $('#authError');
+    err.textContent = '';
+
     try {
-      const path = state.authMode === 'login' ? '/api/login' : '/api/register';
-      const body = state.authMode === 'login' ? { phone, password } : { name, phone, password };
-      const data = await api(path, { method: 'POST', body: JSON.stringify(body) });
-      state.token = data.token;
-      state.me = data.user;
-      localStorage.setItem('conecta_token', data.token);
-      await enterApp();
+      if (state.authMode === 'register') {
+        const name = ($('#regName').value || '').trim();
+        const country = ($('#regCountry') || {}).value || '';
+        if (!name) { err.textContent = 'Escribe tu nombre'; return; }
+        const data = await api('/api/register', { method: 'POST', body: { name, phone, password, country } });
+        setSession(data);
+      } else {
+        const data = await api('/api/login', { method: 'POST', body: { phone, password } });
+        setSession(data);
+      }
     } catch (e) {
-      errEl.textContent = e.message || 'No se pudo entrar';
-    } finally {
-      btn.disabled = false;
-      btn.textContent = state.authMode === 'login' ? 'Entrar' : 'Crear cuenta';
+      err.textContent = e.message;
     }
+  }
+
+  function setSession(data) {
+    state.token = data.token;
+    state.me = data.user;
+    localStorage.setItem('tv_token', data.token);
+    showApp();
+    connectWS();
+    goHome();
+  }
+
+  async function boot() {
+    trackVisit();
+    if (state.token) {
+      try {
+        const data = await api('/api/me');
+        state.me = data.user;
+        showApp();
+        connectWS();
+        goHome();
+        return;
+      } catch (e) {
+        state.token = '';
+        localStorage.removeItem('tv_token');
+      }
+    }
+    showAuth();
   }
 
   function logout() {
-    state.token = null;
+    state.token = '';
     state.me = null;
-    localStorage.removeItem('conecta_token');
-    if (state.ws) { try { state.ws.close(); } catch (e) {} state.ws = null; }
-    $('#appScreen').classList.add('hidden');
-    $('#authScreen').classList.remove('hidden');
+    localStorage.removeItem('tv_token');
+    if (state.ws) { try { state.ws.close(); } catch (e) {} }
+    closeSheet('sheetProfile');
+    showAuth();
   }
 
-  async function enterApp() {
-    $('#authScreen').classList.add('hidden');
-    $('#appScreen').classList.remove('hidden');
+  function trackVisit() {
     try {
-      const me = await api('/api/me');
-      state.me = me.user;
+      fetch('/api/visit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: location.pathname, country: '' })
+      }).catch(() => {});
     } catch (e) {}
-    renderMyAvatar();
-    await loadChats();
-    connectWS();
   }
 
-  function renderMyAvatar() {
-    const btn = $('#myAvatarBtn');
-    if (btn && state.me) btn.textContent = state.me.avatar ? '' : initials(state.me.name);
-    if (btn && state.me && state.me.avatar) {
-      btn.style.backgroundImage = 'url(' + state.me.avatar + ')';
-      btn.style.backgroundSize = 'cover';
+  /* ---------------------------------------------------------------- navegacion */
+  function showView(id) {
+    ['viewHome', 'viewFlow', 'viewChats', 'viewChat', 'viewAdmin'].forEach((v) => {
+      const el = document.getElementById(v);
+      if (el) el.classList.toggle('hidden', v !== id);
+    });
+  }
+
+  function goHome() {
+    state.flow = [];
+    showView('viewHome');
+    history.pushState({ v: 'home' }, '');
+  }
+
+  function goChats() {
+    showView('viewChats');
+    loadChats();
+    history.pushState({ v: 'chats' }, '');
+  }
+
+  function goAdmin() {
+    if (!state.me || state.me.role !== 'admin') return toast('Solo el administrador');
+    showView('viewAdmin');
+    loadAdmin();
+    history.pushState({ v: 'admin' }, '');
+  }
+
+  function back() {
+    if (state.flow.length) {
+      state.flow.pop();
+      renderFlow();
+      return;
+    }
+    goHome();
+  }
+
+  window.addEventListener('popstate', () => {
+    if (!$('#viewChat').classList.contains('hidden')) { showView('viewChats'); loadChats(); return; }
+    if (!$('#viewAdmin').classList.contains('hidden')) { showView('viewHome'); return; }
+    if (!$('#viewChats').classList.contains('hidden')) { showView('viewHome'); return; }
+    if (!$('#viewFlow').classList.contains('hidden')) {
+      if (state.flow.length > 1) { state.flow.pop(); renderFlow(); }
+      else { state.flow = []; showView('viewHome'); }
+    }
+  });
+
+  /* ---------------------------------------------------------------- flujo de tramites */
+  const SERVICES = {
+    cedula: {
+      title: 'Cedula',
+      icon: '🪪',
+      intro: 'Que necesitas hacer con tu cedula?',
+      options: [
+        { k: 'renovacion', label: 'Renovacion' },
+        { k: 'extravio', label: 'Extravio' },
+        { k: 'deterioro', label: 'Deterioro' },
+        { k: 'hurto', label: 'Hurto' }
+      ]
+    },
+    licencia: {
+      title: 'Licencia',
+      icon: '🚗',
+      intro: 'Que licencia necesitas?',
+      options: [
+        { k: 'primera', label: 'Licencia por primera vez', grades: true },
+        { k: 'renovacion', label: 'Licencia por renovacion', grades: true }
+      ]
+    },
+    antecedentes: {
+      title: 'Antecedentes penales',
+      icon: '📄',
+      intro: 'Como lo necesitas?',
+      options: [
+        { k: 'sin_apostillar', label: 'Sin apostillar' },
+        { k: 'apostillado', label: 'Apostillado' }
+      ]
+    }
+  };
+
+  const GRADES = ['Grado 2°', 'Grado 3°', 'Grado 4°', 'Grado 5°'];
+
+  function pickService(key) {
+    state.flow = [{ type: 'service', key }];
+    showView('viewFlow');
+    renderFlow();
+    history.pushState({ v: 'flow' }, '');
+  }
+
+  function pickOption(key) {
+    const svc = SERVICES[state.flow[0].key];
+    const opt = svc.options.find((o) => o.k === key);
+    state.flow.push({ type: 'option', key, label: opt ? opt.label : key });
+    if (opt && opt.grades) {
+      renderFlow();
+      return;
+    }
+    state.flow.push({ type: 'summary' });
+    renderFlow();
+  }
+
+  function pickGrade(grade) {
+    state.flow.push({ type: 'grade', label: grade });
+    state.flow.push({ type: 'summary' });
+    renderFlow();
+  }
+
+  function renderFlow() {
+    const first = state.flow[0];
+    if (!first) { goHome(); return; }
+    const svc = SERVICES[first.key];
+    const body = $('#flowBody');
+    $('#flowTitle').textContent = svc.title;
+
+    const step = state.flow[state.flow.length - 1];
+
+    if (step.type === 'service') {
+      body.innerHTML =
+        '<div class="flow-wrap"><div class="flow-intro"><h2>' + esc(svc.intro) + '</h2>' +
+        '<p>Elige una opcion para continuar.</p></div>' +
+        '<div class="opt-list">' +
+        svc.options.map((o) =>
+          '<button class="opt" onclick="App.pickOption(\'' + o.k + '\')">' +
+          '<span class="opt-ic">' + svc.icon + '</span><span>' + esc(o.label) + '</span>' +
+          '<span class="chev">›</span></button>'
+        ).join('') +
+        '</div></div>';
+      return;
+    }
+
+    if (step.type === 'option') {
+      body.innerHTML =
+        '<div class="flow-wrap"><div class="flow-intro"><h2>Selecciona el grado</h2>' +
+        '<p>' + esc(step.label) + '</p></div>' +
+        '<div class="opt-list">' +
+        GRADES.map((g) =>
+          '<button class="opt" onclick="App.pickGrade(\'' + g + '\')">' +
+          '<span class="opt-ic">' + svc.icon + '</span><span>' + g + '</span>' +
+          '<span class="chev">›</span></button>'
+        ).join('') +
+        '</div></div>';
+      return;
+    }
+
+    // resumen
+    const option = state.flow.find((s) => s.type === 'option');
+    const grade = state.flow.find((s) => s.type === 'grade');
+    const tramite = {
+      service: first.key,
+      serviceLabel: svc.title,
+      subtype: option ? option.key : '',
+      subtypeLabel: option ? option.label : '',
+      grade: grade ? grade.label : ''
+    };
+
+    body.innerHTML =
+      '<div class="flow-wrap">' +
+      '<div class="summary-card">' +
+      '<h3>Resumen de tu tramite</h3>' +
+      '<div class="summary-row"><span>Servicio</span><span>' + esc(svc.title) + '</span></div>' +
+      '<div class="summary-row"><span>Tipo</span><span>' + esc(option ? option.label : '') + '</span></div>' +
+      (grade ? '<div class="summary-row"><span>Grado</span><span>' + esc(grade.label) + '</span></div>' : '') +
+      '<p class="summary-note">Al continuar se abre el chat con un asesor. Ahi te pasamos los requisitos, el costo y el paso a paso de tu tramite.</p>' +
+      '</div>' +
+      '<div class="flow-actions">' +
+      '<button class="btn-primary" onclick="App.startTramiteChat()">Continuar por el chat</button>' +
+      '<button class="btn-ghost" onclick="App.back()">Volver</button>' +
+      '</div></div>';
+
+    state.pendingTramite = tramite;
+  }
+
+  async function startTramiteChat() {
+    const tramite = state.pendingTramite;
+    if (!tramite) return;
+    try {
+      const data = await api('/api/chats/start', { method: 'POST', body: { tramite } });
+      state.chats = [data.chat];
+      openChat(data.chat.id);
+    } catch (e) {
+      toast(e.message);
     }
   }
 
-  // ------------------------------------------------------------------ WebSocket
-  function connectWS() {
-    if (!state.token) return;
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(proto + '//' + location.host + '/ws?token=' + encodeURIComponent(state.token));
-    state.ws = ws;
-    ws.onopen = () => {
-      state.reconnectDelay = 1000;
-      if (state.currentChatId) loadMessages(state.currentChatId);
-    };
-    ws.onmessage = (ev) => {
-      let msg;
-      try { msg = JSON.parse(ev.data); } catch (e) { return; }
-      handleWs(msg);
-    };
-    ws.onclose = () => {
-      state.ws = null;
-      if (!state.token) return;
-      const delay = Math.min(state.reconnectDelay || 1000, 8000);
-      state.reconnectDelay = delay * 2;
-      setTimeout(connectWS, delay);
-    };
-  }
-
-  function handleWs(msg) {
-    if (msg.type === 'message:new') {
-      const m = msg.message;
-      if (!state.messages[m.chatId]) state.messages[m.chatId] = [];
-      if (!state.messages[m.chatId].some((x) => x.id === m.id)) state.messages[m.chatId].push(m);
-      if (state.currentChatId === m.chatId) {
-        renderMessages();
-        scrollBottom();
-        if (m.senderId !== state.me.id) sendWs({ type: 'chat:read', chatId: m.chatId });
-      }
-      if (msg.chat) {
-        const i = state.chats.findIndex((c) => c.id === msg.chat.id);
-        if (i >= 0) state.chats[i] = msg.chat; else state.chats.unshift(msg.chat);
-        renderChats();
-      }
-    } else if (msg.type === 'chat:new') {
-      if (!state.chats.some((c) => c.id === msg.chat.id)) state.chats.unshift(msg.chat);
-      renderChats();
-    } else if (msg.type === 'typing') {
-      if (state.currentChatId === msg.chatId) {
-        const el = $('#chatSub');
-        if (el) el.textContent = msg.isTyping ? 'escribiendo...' : '';
-        clearTimeout(state.typingTimers[msg.chatId]);
-        if (msg.isTyping) {
-          state.typingTimers[msg.chatId] = setTimeout(() => {
-            const e2 = $('#chatSub');
-            if (e2) e2.textContent = '';
-          }, 4000);
-        }
-      }
-    } else if (msg.type === 'chat:read') {
-      loadChats();
-    } else if (msg.type === 'presence') {
-      const u = state.users.find((x) => x.id === msg.userId);
-      if (u) u.online = msg.online;
-    }
-  }
-
-  function sendWs(payload) {
-    if (state.ws && state.ws.readyState === 1) {
-      try { state.ws.send(JSON.stringify(payload)); return true; } catch (e) { return false; }
-    }
-    return false;
-  }
-
-  // ------------------------------------------------------------------ Lista de chats
+  /* ---------------------------------------------------------------- chats */
   async function loadChats() {
     try {
       const data = await api('/api/chats');
       state.chats = data.chats || [];
       renderChats();
-    } catch (e) {}
-  }
-
-  function previewText(m) {
-    if (!m) return 'Sin mensajes';
-    if (m.kind === 'image') return '📷 Foto';
-    if (m.kind === 'video') return '🎬 Video';
-    if (m.kind === 'audio') return '🎤 Audio';
-    if (m.kind === 'file') return '📎 ' + (m.fileName || 'Archivo');
-    return m.text || '';
+    } catch (e) {
+      toast(e.message);
+    }
   }
 
   function renderChats() {
-    const el = $('#chatList');
-    if (!el) return;
-    const q = ($('#chatSearch').value || '').toLowerCase();
-    const list = state.chats.filter((c) => !q || c.name.toLowerCase().includes(q));
-    if (!list.length) {
-      el.innerHTML = '<p class="empty">Todavia no tienes conversaciones.<br>Toca el boton de abajo para empezar un chat.</p>';
+    const list = $('#chatList');
+    if (!state.chats.length) {
+      list.innerHTML = '<div class="empty">Todavia no tienes conversaciones.<br />Elige un tramite en el inicio y se abre el chat con un asesor.</div>';
       return;
     }
-    el.innerHTML = list.map((c) => {
-      const m = c.lastMessage;
-      const mine = m && m.senderId === state.me.id;
-      const preview = (c.type === 'group' && m ? (mine ? 'Tu: ' : '') : (mine ? 'Tu: ' : '')) + previewText(m);
+    list.innerHTML = state.chats.map((c) => {
+      const last = c.lastMessage;
+      let preview = 'Sin mensajes todavia';
+      if (last) {
+        preview = last.type === 'text' ? last.text : (last.type === 'image' ? 'Foto' : last.type === 'video' ? 'Video' : last.type === 'audio' ? 'Audio' : (last.name || 'Archivo'));
+      }
       return '<button class="chat-row" onclick="App.openChat(\'' + c.id + '\')">' +
-        avatarHtml(c, 'avatar') +
-        '<div class="info"><p class="name">' + esc(c.name) + '</p><p class="preview">' + esc(preview) + '</p></div>' +
-        '<div class="meta"><div class="time">' + (m ? timeLabel(m.ts) : '') + '</div></div>' +
+        '<div class="avatar">' + esc(initials(c.name)) + '</div>' +
+        '<div class="meta"><div class="name">' + esc(c.name) + '</div>' +
+        '<div class="last">' + esc(preview) + '</div></div>' +
+        '<div class="right">' + esc(fmtDate(c.updatedAt)) +
+        (c.unread ? '<br /><span class="badge">' + c.unread + '</span>' : '') + '</div>' +
         '</button>';
     }).join('');
   }
 
-  // ------------------------------------------------------------------ Conversacion
-  async function openChat(chatId) {
-    state.currentChatId = chatId;
-    $('#listView').classList.add('hidden');
-    $('#chatView').classList.remove('hidden');
-    const chat = state.chats.find((c) => c.id === chatId);
-    if (chat) {
-      $('#chatTitle').textContent = chat.name;
-      const el = $('#chatAvatar');
-      if (chat.avatar) { el.style.backgroundImage = 'url(' + chat.avatar + ')'; el.textContent = ''; }
-      else { el.style.backgroundImage = ''; el.textContent = initials(chat.name); }
-      const online = chat.members && chat.members.some((m) => m.id !== state.me.id && m.online);
-      $('#chatSub').textContent = online ? 'en linea' : '';
-    }
-    await loadMessages(chatId);
-    sendWs({ type: 'chat:read', chatId });
-    setTimeout(() => $('#msgInput').focus(), 150);
-  }
-
-  function closeChat() {
-    state.currentChatId = null;
-    $('#chatView').classList.add('hidden');
-    $('#listView').classList.remove('hidden');
-    loadChats();
-  }
-
-  async function loadMessages(chatId) {
+  async function openChat(id) {
     try {
-      const data = await api('/api/chats/' + chatId + '/messages');
-      state.messages[chatId] = data.messages || [];
-      if (data.chat) {
-        const i = state.chats.findIndex((c) => c.id === chatId);
-        if (i >= 0) state.chats[i] = data.chat;
+      const data = await api('/api/chats/' + id + '/messages');
+      state.currentChat = data.chat;
+      state.messages = data.messages || [];
+      showView('viewChat');
+      $('#chatTitle').textContent = data.chat.name;
+      const chip = $('#chatTramite');
+      if (data.chat.tramite) {
+        const t = data.chat.tramite;
+        chip.textContent = [t.serviceLabel, t.subtypeLabel, t.grade].filter(Boolean).join(' · ');
+        chip.classList.remove('hidden');
+      } else {
+        chip.classList.add('hidden');
       }
-      if (state.currentChatId === chatId) { renderMessages(); scrollBottom(); }
-    } catch (e) { toast(e.message); }
-  }
-
-  function messageHtml(m, chat) {
-    const mine = m.senderId === state.me.id;
-    let body = '';
-    if (m.kind === 'image') {
-      body = '<img class="media" src="' + esc(m.url) + '" alt="Foto" onclick="App.viewImage(\'' + esc(m.url) + '\')" />';
-    } else if (m.kind === 'video') {
-      body = '<video class="media" src="' + esc(m.url) + '" controls playsinline preload="metadata"></video>';
-    } else if (m.kind === 'audio') {
-      body = '<audio src="' + esc(m.url) + '" controls preload="metadata"></audio>';
-    } else if (m.kind === 'file') {
-      body = '<a class="file-link" href="' + esc(m.url) + '" target="_blank" rel="noopener" download>📎 ' + esc(m.fileName || 'Archivo') + '</a>';
-    } else {
-      body = '<div>' + esc(m.text) + '</div>';
+      renderMessages();
+      scrollBottom();
+      if (state.ws && state.ws.readyState === 1) {
+        state.ws.send(JSON.stringify({ type: 'read', chatId: id }));
+      }
+      history.pushState({ v: 'chat' }, '');
+    } catch (e) {
+      toast(e.message);
     }
-    const senderName = !mine && chat && chat.type === 'group' ? '<div class="sender">' + esc(senderNameOf(m, chat)) + '</div>' : '';
-    const ticks = mine ? (m.readBy && m.readBy.length > 1 ? ' ✓✓' : ' ✓') : '';
-    return '<div class="msg ' + (mine ? 'out' : 'in') + '">' + senderName + body +
-      '<div class="meta">' + timeLabel(m.ts) + ticks + '</div></div>';
-  }
-
-  function senderNameOf(m, chat) {
-    const u = (chat.members || []).find((x) => x.id === m.senderId);
-    return u ? u.name : '';
   }
 
   function renderMessages() {
-    const chatId = state.currentChatId;
-    const el = $('#messages');
-    if (!el || !chatId) return;
-    const chat = state.chats.find((c) => c.id === chatId);
-    const list = state.messages[chatId] || [];
-    if (!list.length) {
-      el.innerHTML = '<p class="empty">Aun no hay mensajes.<br>Escribe el primero.</p>';
+    const body = $('#chatBody');
+    const myId = state.me ? state.me.id : '';
+    if (!state.messages.length) {
+      body.innerHTML = '<div class="empty" style="padding:30px 10px">Escribe tu primer mensaje para empezar.</div>';
       return;
     }
-    let html = '';
-    let lastDay = '';
-    list.forEach((m) => {
-      const day = dayLabel(m.ts);
-      if (day !== lastDay) { html += '<div class="daysep">' + esc(day) + '</div>'; lastDay = day; }
-      html += messageHtml(m, chat);
-    });
-    el.innerHTML = html;
+    body.innerHTML = state.messages.map((m) => {
+      const mine = m.senderId === myId;
+      let content = '';
+      if (m.type === 'image' && m.url) {
+        content = '<img src="' + esc(m.url) + '" alt="foto" onclick="App.openViewer(\'' + esc(m.url) + '\')" />';
+      } else if (m.type === 'video' && m.url) {
+        content = '<video src="' + esc(m.url) + '" controls playsinline></video>';
+      } else if (m.type === 'audio' && m.url) {
+        content = '<audio src="' + esc(m.url) + '" controls preload="metadata"></audio>';
+      } else if (m.url) {
+        content = '<a class="file-link" href="' + esc(m.url) + '" target="_blank" rel="noopener">📄 ' + esc(m.name || 'Archivo') + '</a>';
+      }
+      if (m.text) content += (content ? '<br />' : '') + esc(m.text);
+      return '<div class="msg ' + (mine ? 'me' : 'them') + '">' + content +
+        '<span class="time">' + esc(fmtTime(m.ts)) + '</span></div>';
+    }).join('');
   }
 
   function scrollBottom() {
-    const el = $('#messages');
-    if (el) el.scrollTop = el.scrollHeight;
+    const body = $('#chatBody');
+    if (body) body.scrollTop = body.scrollHeight;
   }
 
   function onType() {
-    const input = $('#msgInput');
-    const has = input.value.trim().length > 0;
-    $('#micBtn').classList.toggle('hidden', has);
-    $('#sendBtn').classList.toggle('hidden', !has);
-    input.style.height = 'auto';
-    input.style.height = Math.min(input.scrollHeight, 110) + 'px';
-    if (state.currentChatId) sendWs({ type: 'typing', chatId: state.currentChatId, isTyping: has });
+    const ta = $('#chatText');
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 110) + 'px';
+    $('#micBtn').classList.toggle('hidden', !!ta.value.trim());
+    $('#sendBtn').classList.toggle('hidden', !ta.value.trim());
+
+    if (state.currentChat && state.ws && state.ws.readyState === 1) {
+      if (!state.typingTimer) {
+        state.ws.send(JSON.stringify({ type: 'typing', chatId: state.currentChat.id }));
+        state.typingTimer = setTimeout(() => { state.typingTimer = null; }, 2500);
+      }
+    }
   }
 
   function sendText() {
-    const input = $('#msgInput');
-    const text = input.value.trim();
-    if (!text || !state.currentChatId) return;
-    const tempId = 'tmp_' + Math.random().toString(36).slice(2, 9);
-    const optimistic = { id: tempId, chatId: state.currentChatId, senderId: state.me.id, kind: 'text', text, ts: Date.now(), readBy: [state.me.id] };
-    if (!state.messages[state.currentChatId]) state.messages[state.currentChatId] = [];
-    state.messages[state.currentChatId].push(optimistic);
-    renderMessages();
-    scrollBottom();
-    input.value = '';
-    input.style.height = 'auto';
+    const ta = $('#chatText');
+    const text = (ta.value || '').trim();
+    if (!text || !state.currentChat) return;
+    sendMessage({ kind: 'text', text });
+    ta.value = '';
+    ta.style.height = 'auto';
     onType();
-    const ok = sendWs({ type: 'message:send', chatId: state.currentChatId, kind: 'text', text, tempId });
-    if (!ok) toast('Sin conexion: revisa tu internet');
   }
 
-  // ------------------------------------------------------------------ Multimedia
-  function openAttach() { $('#sheetAttach').classList.remove('hidden'); }
+  function sendMessage(payload) {
+    if (!state.currentChat) return;
+    if (!state.ws || state.ws.readyState !== 1) {
+      toast('Sin conexion. Revisa tu internet.');
+      return;
+    }
+    state.ws.send(JSON.stringify(Object.assign({ type: 'message:send', chatId: state.currentChat.id }, payload)));
+  }
 
-  function pickFile(accept) {
+  /* ---------------------------------------------------------------- adjuntos */
+  function openAttach() { openSheet('sheetAttach'); }
+
+  function pickFile(kind) {
     closeSheet('sheetAttach');
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = accept;
-    input.onchange = async () => {
-      const file = input.files && input.files[0];
-      if (!file) return;
-      if (file.size > 25 * 1024 * 1024) { toast('El archivo supera 25 MB'); return; }
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    if (kind === 'image') inp.accept = 'image/*';
+    else if (kind === 'video') inp.accept = 'video/*';
+    else if (kind === 'audio') inp.accept = 'audio/*';
+    else if (kind === 'pdf') inp.accept = 'application/pdf';
+    inp.onchange = async () => {
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      if (f.size > 25 * 1024 * 1024) return toast('El archivo supera 25 MB');
       toast('Subiendo...');
       try {
-        const dataUrl = await readAsDataUrl(file);
-        const up = await api('/api/upload', { method: 'POST', body: JSON.stringify({ dataUrl }) });
-        let kind = 'file';
-        if (file.type.startsWith('image/')) kind = 'image';
-        else if (file.type.startsWith('video/')) kind = 'video';
-        else if (file.type.startsWith('audio/')) kind = 'audio';
-        sendWs({ type: 'message:send', chatId: state.currentChatId, kind, url: up.url, fileName: file.name, text: file.name });
-      } catch (e) { toast(e.message || 'No se pudo subir el archivo'); }
+        const dataUrl = await readAsDataURL(f);
+        const up = await api('/api/upload', { method: 'POST', body: { dataUrl, name: f.name } });
+        const type = f.type.startsWith('image/') ? 'image' : f.type.startsWith('video/') ? 'video' : f.type.startsWith('audio/') ? 'audio' : 'file';
+        sendMessage({ kind: type, url: up.url, name: f.name });
+      } catch (e) {
+        toast(e.message);
+      }
     };
-    input.click();
+    inp.click();
   }
 
-  function readAsDataUrl(file) {
+  function readAsDataURL(file) {
     return new Promise((resolve, reject) => {
       const r = new FileReader();
       r.onload = () => resolve(r.result);
@@ -411,229 +511,152 @@ const App = (() => {
     });
   }
 
-  function viewImage(url) {
-    $('#viewerImg').src = url;
-    $('#viewer').classList.remove('hidden');
+  /* ---------------------------------------------------------------- notas de voz */
+  function recElapsed() {
+    return state.recElapsed + (state.recPaused ? 0 : (Date.now() - state.recStart));
   }
-  function closeViewer() { $('#viewer').classList.add('hidden'); }
 
-  // ------------------------------------------------------------------ Notas de voz
-  const WAVE_BARS = 34;
+  function recTick() {
+    const el = $('#recTime');
+    if (!el) return;
+    const ms = recElapsed();
+    const s = Math.floor(ms / 1000);
+    el.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    const wave = $('#recWave');
+    if (wave && wave.children.length) {
+      const bars = wave.children;
+      const idx = Math.floor((ms / 120) % bars.length);
+      for (let i = 0; i < bars.length; i++) {
+        const active = i <= idx;
+        bars[i].style.background = active ? '#1f4d8f' : '#c9d6ea';
+        bars[i].style.height = (6 + ((i * 7) % 18)) + 'px';
+      }
+    }
+  }
 
   function buildWave() {
-    const el = $('#recWave');
-    if (!el) return;
-    let html = '';
-    for (let i = 0; i < WAVE_BARS; i++) html += '<span style="height:4px"></span>';
-    el.innerHTML = html;
+    const wave = $('#recWave');
+    if (!wave) return;
+    wave.innerHTML = Array.from({ length: 34 }).map(() => '<span style="height:8px"></span>').join('');
   }
 
-  function animateWave() {
-    const el = $('#recWave');
-    if (!el) return;
-    el.querySelectorAll('span').forEach((sp) => { sp.style.height = (4 + Math.random() * 18) + 'px'; });
-  }
-
-  function recElapsedMs() {
-    return state.recElapsedMs + (state.recPaused ? 0 : Date.now() - state.recStart);
-  }
-
-  function updateRecTimer() {
-    const el = $('#recTime');
-    if (el) el.textContent = fmtDur(Math.floor(recElapsedMs() / 1000));
-  }
-
-  function startTickers() {
-    stopTickers();
-    state.recWaveTimer = setInterval(animateWave, 260);
-    state.recClockTimer = setInterval(updateRecTimer, 500);
-  }
-
-  function stopTickers() {
-    if (state.recWaveTimer) { clearInterval(state.recWaveTimer); state.recWaveTimer = null; }
-    if (state.recClockTimer) { clearInterval(state.recClockTimer); state.recClockTimer = null; }
-  }
-
-  function setRecBarVisible(visible) {
-    const bar = $('#composer');
-    if (bar) bar.classList.toggle('recording-mode', !!visible);
-    const rec = $('#recBar');
-    if (rec) rec.classList.toggle('hidden', !visible);
-  }
-
-  async function startRecord() {
-    if (state.recording) return;
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
-      toast('Tu navegador no permite grabar audio');
-      return;
-    }
+  async function toggleRecord() {
+    if (state.recording) return sendRecording();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const preferred = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
-      let mime = '';
-      for (const t of preferred) {
-        if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) { mime = t; break; }
-      }
+      const mime = (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm')) ? 'audio/webm' : '';
       const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
       state.recChunks = [];
       rec.ondataavailable = (e) => { if (e.data && e.data.size) state.recChunks.push(e.data); };
-      rec.onstop = async () => {
+      rec.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
-        stopTickers();
-        setRecBarVisible(false);
-        state.recording = false;
-        state.recPaused = false;
-        const cancel = state.cancelRecord;
-        state.cancelRecord = false;
-        if (cancel) { toast('Grabacion descartada'); return; }
-        const type = rec.mimeType || 'audio/webm';
+        if (state.recCancel) { state.recCancel = false; return; }
+        const type = (state.recorder && state.recorder.mimeType) || 'audio/webm';
         const blob = new Blob(state.recChunks, { type });
-        const dur = Math.max(1, Math.round(recElapsedMs() / 1000));
-        if (blob.size < 800) { toast('Grabacion muy corta'); return; }
-        try {
-          toast('Enviando audio...');
-          const dataUrl = await readAsDataUrl(blob);
-          const up = await api('/api/upload', { method: 'POST', body: JSON.stringify({ dataUrl }) });
-          sendWs({ type: 'message:send', chatId: state.currentChatId, kind: 'audio', url: up.url, duration: dur });
-        } catch (e) { toast(e.message || 'No se pudo enviar el audio'); }
+        const dur = Math.max(1, Math.round(recElapsed() / 1000));
+        if (blob.size < 600) return toast('Grabacion muy corta');
+        const r = new FileReader();
+        r.onload = async () => {
+          try {
+            const up = await api('/api/upload', { method: 'POST', body: { dataUrl: r.result, name: 'nota-de-voz' } });
+            sendMessage({ kind: 'audio', url: up.url, duration: dur });
+          } catch (e) {
+            toast(e.message);
+          }
+        };
+        r.readAsDataURL(blob);
       };
       rec.start();
       state.recorder = rec;
+      state.recStream = stream;
       state.recording = true;
       state.recPaused = false;
       state.recStart = Date.now();
-      state.recElapsedMs = 0;
-      state.cancelRecord = false;
+      state.recElapsed = 0;
       buildWave();
-      const t = $('#recTime');
-      if (t) t.textContent = '0:00';
-      const pause = $('#recPauseBtn');
-      if (pause) pause.textContent = '⏸ Pausar';
-      setRecBarVisible(true);
-      startTickers();
+      $('#recBar').classList.remove('hidden');
+      $('#composer').classList.add('hidden');
+      $('#recPauseBtn').textContent = 'Pausar';
+      clearInterval(state.recTimer);
+      state.recTimer = setInterval(recTick, 120);
+      recTick();
     } catch (e) {
-      toast('No se pudo acceder al microfono');
+      toast('No se pudo usar el microfono');
     }
   }
 
   function togglePauseRecord() {
-    if (!state.recording || !state.recorder) return;
-    if (state.recPaused) {
-      try { if (state.recorder.resume) state.recorder.resume(); } catch (e) {}
-      state.recPaused = false;
-      state.recStart = Date.now();
-      startTickers();
-      const p = $('#recPauseBtn');
-      if (p) p.textContent = '⏸ Pausar';
-    } else {
-      state.recElapsedMs = recElapsedMs();
-      try { if (state.recorder.pause) state.recorder.pause(); } catch (e) {}
+    if (!state.recording) return;
+    if (!state.recPaused) {
+      state.recElapsed = recElapsed();
       state.recPaused = true;
-      stopTickers();
-      updateRecTimer();
-      const p = $('#recPauseBtn');
-      if (p) p.textContent = '▶ Reanudar';
+      try { state.recorder.pause(); } catch (e) {}
+      $('#recPauseBtn').textContent = 'Reanudar';
+    } else {
+      state.recStart = Date.now();
+      state.recPaused = false;
+      try { state.recorder.resume(); } catch (e) {}
+      $('#recPauseBtn').textContent = 'Pausar';
     }
   }
 
   function stopRecord(cancel) {
-    if (state.recorder && state.recording) {
-      state.cancelRecord = !!cancel;
-      try { if (state.recPaused && state.recorder.resume) state.recorder.resume(); } catch (e) {}
-      try { state.recorder.stop(); } catch (e) {}
-    }
+    if (!state.recording) return;
+    state.recCancel = !!cancel;
+    try { state.recorder.stop(); } catch (e) {}
+    state.recording = false;
+    state.recPaused = false;
+    clearInterval(state.recTimer);
+    $('#recBar').classList.add('hidden');
+    $('#composer').classList.remove('hidden');
   }
 
-  function toggleRecord() { if (state.recording) stopRecord(false); else startRecord(); }
   function discardRecording() { stopRecord(true); }
   function sendRecording() { stopRecord(false); }
 
-  // ------------------------------------------------------------------ Hojas
-  function openSheet(id) {
-    const el = $('#' + id);
-    if (el) el.classList.remove('hidden');
-  }
-  function closeSheet(id) {
-    const el = $('#' + id);
-    if (el) el.classList.add('hidden');
-  }
-
-  async function openNewChat() {
-    openSheet('sheetNewChat');
-    await loadUsers();
-    renderNewChat();
-  }
-
-  async function loadUsers() {
+  /* ---------------------------------------------------------------- panel admin */
+  async function loadAdmin() {
+    const body = $('#adminBody');
+    body.innerHTML = '<div class="admin-wrap"><p class="muted">Cargando...</p></div>';
     try {
-      const data = await api('/api/users');
-      state.users = data.users || [];
-    } catch (e) {}
-  }
+      const data = await api('/api/admin/overview');
+      const t = data.totals;
+      body.innerHTML =
+        '<div class="admin-wrap">' +
+        '<div class="stat-grid">' +
+        '<div class="stat"><b>' + t.people + '</b><small>Personas registradas</small></div>' +
+        '<div class="stat"><b>' + t.conversations + '</b><small>Conversaciones</small></div>' +
+        '<div class="stat"><b>' + t.messages + '</b><small>Mensajes</small></div>' +
+        '<div class="stat"><b>' + t.visitsToday + '</b><small>Visitas hoy (' + t.visits + ' en total)</small></div>' +
+        '</div>' +
 
-  function renderNewChat() {
-    const el = $('#newChatList');
-    if (!el) return;
-    const q = ($('#newChatSearch').value || '').toLowerCase();
-    const list = state.users.filter((u) => !q || u.name.toLowerCase().includes(q) || (u.phone || '').includes(q));
-    if (!list.length) {
-      el.innerHTML = '<p class="empty">No hay otras personas registradas todavia.<br>Comparte el enlace para que se registren.</p>';
-      return;
+        '<div class="admin-section"><h3>Por pais</h3>' +
+        (data.byCountry.length ? data.byCountry.map((c) =>
+          '<div class="admin-row"><div class="grow"><div class="n">' + esc(c.country) + '</div>' +
+          '<div class="s">' + c.people + ' personas · ' + c.conversations + ' conversaciones · ' + c.messages + ' mensajes</div></div></div>'
+        ).join('') : '<p class="muted">Sin registros todavia.</p>') +
+        '</div>' +
+
+        '<div class="admin-section"><h3>Personas</h3>' +
+        (data.users.length ? data.users.map((u) =>
+          '<div class="admin-row"><div class="grow"><div class="n">' + esc(u.name) + ' <span class="s">' + esc(u.phone) + '</span></div>' +
+          '<div class="s">' + esc(u.country) + ' · ' + u.conversations + ' conv. · ' + u.messages + ' msj · ' + esc(fmtDate(u.lastSeen)) + '</div></div>' +
+          '<span class="pill">' + esc((u.tramites[0] && u.tramites[0].serviceLabel) || 'Sin tramite') + '</span></div>'
+        ).join('') : '<p class="muted">Sin personas registradas.</p>') +
+        '</div>' +
+
+        '<div class="admin-section"><h3>Quien entro al enlace</h3>' +
+        (data.visits.length ? data.visits.map((v) =>
+          '<div class="admin-row"><div class="grow"><div class="n">' + esc(v.country || 'Sin pais') + '</div>' +
+          '<div class="s">' + esc(new Date(v.ts).toLocaleString('es')) + ' · ' + esc(v.ip || '') + '</div></div></div>'
+        ).join('') : '<p class="muted">Sin visitas registradas.</p>') +
+        '</div></div>';
+    } catch (e) {
+      body.innerHTML = '<div class="admin-wrap"><p class="muted">' + esc(e.message) + '</p></div>';
     }
-    el.innerHTML = list.map((u) =>
-      '<button class="row" onclick="App.startDirect(\'' + u.id + '\')">' + avatarHtml(u) +
-      '<div><p class="name">' + esc(u.name) + '</p><p class="sub">' + (u.online ? 'en linea' : esc(u.phone)) + '</p></div></button>'
-    ).join('');
   }
 
-  async function startDirect(userId) {
-    try {
-      const data = await api('/api/chats/direct', { method: 'POST', body: JSON.stringify({ userId }) });
-      closeSheet('sheetNewChat');
-      await loadChats();
-      openChat(data.chatId);
-    } catch (e) { toast(e.message); }
-  }
-
-  async function openNewGroup() {
-    closeSheet('sheetNewChat');
-    state.groupSelection = new Set();
-    openSheet('sheetGroup');
-    await loadUsers();
-    renderGroupMembers();
-  }
-
-  function renderGroupMembers() {
-    const el = $('#groupMembers');
-    if (!el) return;
-    if (!state.users.length) { el.innerHTML = '<p class="empty">No hay contactos para agregar.</p>'; return; }
-    el.innerHTML = state.users.map((u) => {
-      const sel = state.groupSelection.has(u.id);
-      return '<button class="row" onclick="App.toggleGroupMember(\'' + u.id + '\')">' + avatarHtml(u) +
-        '<div style="flex:1"><p class="name">' + esc(u.name) + '</p></div><span>' + (sel ? '✅' : '⬜') + '</span></button>';
-    }).join('');
-  }
-
-  function toggleGroupMember(id) {
-    if (state.groupSelection.has(id)) state.groupSelection.delete(id);
-    else state.groupSelection.add(id);
-    renderGroupMembers();
-  }
-
-  async function createGroup() {
-    const name = $('#groupName').value.trim();
-    if (!name) { toast('Ponle un nombre al grupo'); return; }
-    if (!state.groupSelection.size) { toast('Elige al menos un contacto'); return; }
-    try {
-      const data = await api('/api/chats/group', { method: 'POST', body: JSON.stringify({ name, members: Array.from(state.groupSelection) }) });
-      closeSheet('sheetGroup');
-      $('#groupName').value = '';
-      await loadChats();
-      openChat(data.chatId);
-    } catch (e) { toast(e.message); }
-  }
-
-  // ------------------------------------------------------------------ Perfil
+  /* ---------------------------------------------------------------- perfil y hojas */
   function openProfile() {
     if (!state.me) return;
     openSheet('sheetProfile');
@@ -641,59 +664,96 @@ const App = (() => {
     if (state.me.avatar) { av.style.backgroundImage = 'url(' + state.me.avatar + ')'; av.textContent = ''; }
     else { av.style.backgroundImage = ''; av.textContent = initials(state.me.name); }
     $('#profileName').value = state.me.name || '';
-    $('#profileAbout').value = state.me.about || '';
-    const ver = $('#appVersion');
-    if (ver) ver.textContent = "Conecta Chat " + APP_VERSION;
+    $('#profileCountry').value = state.me.country || '';
+    $('#profilePhone').value = state.me.phone || '';
   }
 
   async function saveProfile() {
     try {
-      const data = await api('/api/me', {
-        method: 'PATCH',
-        body: JSON.stringify({ name: $('#profileName').value, about: $('#profileAbout').value }),
-      });
+      const data = await api('/api/profile', { method: 'POST', body: { name: $('#profileName').value } });
       state.me = data.user;
-      renderMyAvatar();
       closeSheet('sheetProfile');
+      showApp();
       toast('Perfil guardado');
-    } catch (e) { toast(e.message); }
-  }
-
-  function openChatInfo() {
-    const chat = state.chats.find((c) => c.id === state.currentChatId);
-    if (!chat) return;
-    const names = (chat.members || []).map((m) => m.name).join(', ');
-    toast(chat.type === 'group' ? 'Grupo: ' + names : names);
-  }
-
-  // ------------------------------------------------------------------ Arranque
-  async function init() {
-    buildWave();
-    const input = $('#msgInput');
-    if (input) {
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
-      });
+    } catch (e) {
+      toast(e.message);
     }
+  }
+
+  function openSheet(id) { const el = document.getElementById(id); if (el) el.classList.remove('hidden'); }
+  function closeSheet(id) { const el = document.getElementById(id); if (el) el.classList.add('hidden'); }
+  function openViewer(url) { $('#viewerImg').src = url; $('#viewer').classList.remove('hidden'); }
+  function closeViewer() { $('#viewer').classList.add('hidden'); }
+
+  /* ---------------------------------------------------------------- websocket */
+  function connectWS() {
+    if (!state.token) return;
+    try {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(proto + '://' + location.host + '/ws?token=' + encodeURIComponent(state.token));
+      state.ws = ws;
+      ws.onopen = () => { state.wsReady = true; };
+      ws.onclose = () => {
+        state.wsReady = false;
+        setTimeout(() => { if (state.token) connectWS(); }, 3000);
+      };
+      ws.onmessage = (ev) => {
+        let m;
+        try { m = JSON.parse(ev.data); } catch (e) { return; }
+        handleWs(m);
+      };
+    } catch (e) {}
+  }
+
+  function handleWs(m) {
+    if (m.type === 'message:new') {
+      if (state.currentChat && m.chatId === state.currentChat.id) {
+        if (!state.messages.some((x) => x.id === m.message.id)) state.messages.push(m.message);
+        renderMessages();
+        scrollBottom();
+        if (state.ws && state.ws.readyState === 1) {
+          state.ws.send(JSON.stringify({ type: 'read', chatId: m.chatId }));
+        }
+      }
+      if (!$('#viewChats').classList.contains('hidden')) loadChats();
+      return;
+    }
+    if (m.type === 'chat:new') {
+      if (!$('#viewChats').classList.contains('hidden')) loadChats();
+      return;
+    }
+    if (m.type === 'read' && state.currentChat && m.chatId === state.currentChat.id) {
+      state.messages.forEach((x) => { if (!x.readBy) x.readBy = []; if (!x.readBy.includes(m.userId)) x.readBy.push(m.userId); });
+      return;
+    }
+  }
+
+  /* ---------------------------------------------------------------- arranque */
+  function init() {
+    const v = $('#appVersion');
+    if (v) v.textContent = 'Version ' + APP_VERSION;
+    authTab('login');
+    $('#authPassword').addEventListener('keydown', (e) => { if (e.key === 'Enter') authSubmit(); });
+    $('#chatText').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
+    });
+    boot();
     if ('serviceWorker' in navigator) {
-      try { await navigator.serviceWorker.register('sw.js'); } catch (e) {}
-    }
-    if (state.token) {
-      try { await enterApp(); } catch (e) { logout(); }
+      navigator.serviceWorker.register('sw.js').catch(() => {});
     }
   }
 
   document.addEventListener('DOMContentLoaded', init);
 
   return {
-    authTab, submitAuth, logout,
-    openChat, closeChat, renderChats, onType, sendText,
-    openAttach, pickFile, viewImage, closeViewer,
+    APP_VERSION,
+    authTab, authSubmit, logout, saveProfile, openProfile,
+    pickService, pickOption, pickGrade, back, startTramiteChat,
+    goHome, goChats, goAdmin, loadAdmin,
+    loadChats, openChat, sendText, onType, openAttach, pickFile,
     toggleRecord, togglePauseRecord, discardRecording, sendRecording,
-    openNewChat, renderNewChat, startDirect, openNewGroup, toggleGroupMember, createGroup,
-    openProfile, saveProfile, openChatInfo,
-    openSheet, closeSheet, renderMessages,
-    state,
+    openSheet, closeSheet, openViewer, closeViewer,
+    _state: state
   };
 })();
 

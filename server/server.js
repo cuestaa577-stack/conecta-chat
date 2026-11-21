@@ -1,366 +1,486 @@
-/* Conecta Chat - servidor de mensajeria en tiempo real (Express + WebSocket) */
+'use strict';
+
+const express = require('express');
+const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const express = require('express');
-const http = require('http');
 const { WebSocketServer } = require('ws');
 
 const PORT = process.env.PORT || 10000;
+const SECRET = process.env.SECRET || 'tramites-venezolanos-dev-secret';
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
-const SECRET = process.env.SECRET || 'conecta-chat-secret-change-me';
-const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const ADMIN_PHONE = (process.env.ADMIN_PHONE || '3000000000').replace(/\D/g, '');
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin1234';
+const ADMIN_NAME = process.env.ADMIN_NAME || 'Administrador';
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// ------------------------------------------------------------------ Base de datos (JSON)
-const emptyDb = { users: [], chats: [], messages: {}, sessions: {} };
-let db = emptyDb;
+/* ------------------------------------------------------------------ datos */
+let db = { users: {}, chats: {}, messages: {}, visits: [] };
 
-function loadDb() {
+function load() {
   try {
-    if (fs.existsSync(DB_FILE)) db = Object.assign({}, emptyDb, JSON.parse(fs.readFileSync(DB_FILE, 'utf8')));
+    if (fs.existsSync(DB_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+      db = { users: {}, chats: {}, messages: {}, visits: [], ...parsed };
+    }
   } catch (e) {
     console.error('No se pudo leer la base de datos:', e.message);
-    db = emptyDb;
   }
 }
 
 let saveTimer = null;
-function saveDb() {
+function save() {
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
     try {
       fs.writeFileSync(DB_FILE, JSON.stringify(db));
     } catch (e) {
-      console.error('No se pudo guardar la base de datos:', e.message);
+      console.error('No se pudo guardar:', e.message);
     }
-  }, 300);
+  }, 200);
 }
 
-loadDb();
+load();
 
 const uid = (p) => p + crypto.randomBytes(8).toString('hex');
 const now = () => Date.now();
 
-// ------------------------------------------------------------------ Seguridad
+/* ------------------------------------------------------------------ claves */
 function hashPassword(password, salt) {
-  const s = salt || crypto.randomBytes(16).toString('hex');
-  const hash = crypto.scryptSync(String(password), s, 64).toString('hex');
-  return { salt: s, hash };
+  return crypto.scryptSync(String(password), salt, 32).toString('hex');
 }
 
-function signToken(payload) {
+function makeUser(name, phone, password, extra = {}) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return {
+    id: uid('u_'),
+    name,
+    phone,
+    salt,
+    passHash: hashPassword(password, salt),
+    role: extra.role || 'user',
+    country: extra.country || '',
+    avatar: '',
+    about: '',
+    createdAt: now(),
+    lastSeen: now()
+  };
+}
+
+function publicUser(u) {
+  return {
+    id: u.id,
+    name: u.name,
+    phone: u.phone,
+    role: u.role,
+    country: u.country || '',
+    avatar: u.avatar || '',
+    about: u.about || '',
+    createdAt: u.createdAt,
+    lastSeen: u.lastSeen
+  };
+}
+
+/* Administrador inicial */
+function ensureAdmin() {
+  const exists = Object.values(db.users).some((u) => u.role === 'admin');
+  if (exists) return;
+  const admin = makeUser(ADMIN_NAME, ADMIN_PHONE, ADMIN_PASSWORD, { role: 'admin', country: 'Venezuela' });
+  db.users[admin.id] = admin;
+  save();
+  console.log('Administrador creado con el telefono ' + ADMIN_PHONE);
+}
+
+ensureAdmin();
+
+/* ------------------------------------------------------------------ sesiones */
+function sign(payload) {
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const sig = crypto.createHmac('sha256', SECRET).update(body).digest('base64url');
-  return body + '.' + sig;
+  const mac = crypto.createHmac('sha256', SECRET).update(body).digest('base64url');
+  return body + '.' + mac;
 }
 
-function verifyToken(token) {
-  if (!token || typeof token !== 'string' || !token.includes('.')) return null;
-  const [body, sig] = token.split('.');
-  const expected = crypto.createHmac('sha256', SECRET).update(body).digest('base64url');
-  if (sig.length !== expected.length) return null;
-  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+function verify(token) {
+  if (!token || typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const mac = crypto.createHmac('sha256', SECRET).update(parts[0]).digest('base64url');
+  if (mac !== parts[1]) return null;
   try {
-    const data = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
-    if (!data.exp || data.exp < now()) return null;
-    return data;
+    const payload = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
+    if (!payload || !payload.uid || (payload.exp && payload.exp < now())) return null;
+    return payload;
   } catch (e) {
     return null;
   }
 }
 
-function publicUser(u) {
-  if (!u) return null;
-  return { id: u.id, name: u.name, phone: u.phone, avatar: u.avatar || '', about: u.about || '' };
+function userFromReq(req) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : (req.query.token || '');
+  const payload = verify(token);
+  if (!payload) return null;
+  return db.users[payload.uid] || null;
 }
 
-// ------------------------------------------------------------------ App
-const app = express();
-app.use(express.json({ limit: '30mb' }));
-app.use(express.static(PUBLIC_DIR));
-app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '365d' }));
-
 function auth(req, res, next) {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  const data = verifyToken(token);
-  if (!data) return res.status(401).json({ error: 'Sesion no valida' });
-  const user = db.users.find((u) => u.id === data.uid);
-  if (!user) return res.status(401).json({ error: 'Usuario no encontrado' });
+  const user = userFromReq(req);
+  if (!user) return res.status(401).json({ error: 'Sesion no valida' });
   req.user = user;
-  req.token = token;
   next();
 }
 
-app.get('/api/health', (req, res) => res.json({ ok: true, users: db.users.length }));
+function adminOnly(req, res, next) {
+  if (!req.user || req.user.role !== 'admin') return res.status(403).json({ error: 'Solo el administrador' });
+  next();
+}
 
+/* ------------------------------------------------------------------ app */
+const app = express();
+app.disable('x-powered-by');
+app.use(express.json({ limit: '25mb' }));
+app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '7d' }));
+
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, users: Object.keys(db.users).length, version: '2.0.0' });
+});
+
+/* --- visitas (quien entra al enlace) --- */
+app.post('/api/visit', async (req, res) => {
+  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  const visit = {
+    id: uid('v_'),
+    ts: now(),
+    ip,
+    ua: String(req.headers['user-agent'] || '').slice(0, 220),
+    country: String((req.body && req.body.country) || '').slice(0, 40),
+    path: String((req.body && req.body.path) || '/').slice(0, 120)
+  };
+  db.visits.push(visit);
+  if (db.visits.length > 5000) db.visits = db.visits.slice(-5000);
+  save();
+  res.json({ ok: true });
+
+  // Pais por IP (mejor esfuerzo, no bloquea la respuesta)
+  if (!visit.country && ip && !/^(::1|127\.|10\.|192\.168\.)/.test(ip)) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 2500);
+      const r = await fetch('http://ip-api.com/json/' + encodeURIComponent(ip) + '?fields=country', { signal: ctrl.signal });
+      clearTimeout(t);
+      const data = await r.json();
+      if (data && data.country) {
+        visit.country = data.country;
+        save();
+      }
+    } catch (e) { /* sin pais, no pasa nada */ }
+  }
+});
+
+/* --- registro / acceso --- */
 app.post('/api/register', (req, res) => {
-  const name = String(req.body.name || '').trim();
-  const phone = String(req.body.phone || '').replace(/[^\d]/g, '');
-  const password = String(req.body.password || '');
-  if (name.length < 2) return res.status(400).json({ error: 'Escribe tu nombre' });
-  if (phone.length < 7) return res.status(400).json({ error: 'Escribe un numero de telefono valido' });
-  if (password.length < 4) return res.status(400).json({ error: 'La contrasena debe tener al menos 4 caracteres' });
-  if (db.users.some((u) => u.phone === phone)) return res.status(409).json({ error: 'Ese numero ya tiene cuenta' });
+  const name = String((req.body && req.body.name) || '').trim();
+  const phone = String((req.body && req.body.phone) || '').replace(/\D/g, '');
+  const password = String((req.body && req.body.password) || '');
+  const country = String((req.body && req.body.country) || '').trim();
 
-  const { salt, hash } = hashPassword(password);
-  const user = { id: uid('u_'), name, phone, salt, hash, avatar: '', about: '', createdAt: now() };
-  db.users.push(user);
-  saveDb();
-  const token = signToken({ uid: user.id, exp: now() + 1000 * 60 * 60 * 24 * 60 });
-  res.json({ token, user: publicUser(user) });
+  if (name.length < 2) return res.status(400).json({ error: 'Escribe tu nombre' });
+  if (phone.length < 7) return res.status(400).json({ error: 'Numero de telefono no valido' });
+  if (password.length < 4) return res.status(400).json({ error: 'La contrasena debe tener al menos 4 caracteres' });
+  if (Object.values(db.users).some((u) => u.phone === phone)) {
+    return res.status(409).json({ error: 'Ese numero ya tiene una cuenta' });
+  }
+
+  const user = makeUser(name, phone, password, { country });
+  db.users[user.id] = user;
+  save();
+  res.json({ token: sign({ uid: user.id, exp: now() + 1000 * 60 * 60 * 24 * 90 }), user: publicUser(user) });
 });
 
 app.post('/api/login', (req, res) => {
-  const phone = String(req.body.phone || '').replace(/[^\d]/g, '');
-  const password = String(req.body.password || '');
-  const user = db.users.find((u) => u.phone === phone);
-  if (!user) return res.status(401).json({ error: 'Numero o contrasena incorrectos' });
-  const { hash } = hashPassword(password, user.salt);
-  if (hash !== user.hash) return res.status(401).json({ error: 'Numero o contrasena incorrectos' });
-  const token = signToken({ uid: user.id, exp: now() + 1000 * 60 * 60 * 24 * 60 });
-  res.json({ token, user: publicUser(user) });
+  const phone = String((req.body && req.body.phone) || '').replace(/\D/g, '');
+  const password = String((req.body && req.body.password) || '');
+  const user = Object.values(db.users).find((u) => u.phone === phone);
+  if (!user || user.passHash !== hashPassword(password, user.salt)) {
+    return res.status(401).json({ error: 'Telefono o contrasena incorrectos' });
+  }
+  user.lastSeen = now();
+  save();
+  res.json({ token: sign({ uid: user.id, exp: now() + 1000 * 60 * 60 * 24 * 90 }), user: publicUser(user) });
 });
 
-app.get('/api/me', auth, (req, res) => res.json({ user: publicUser(req.user) }));
-
-app.patch('/api/me', auth, (req, res) => {
-  if (typeof req.body.name === 'string' && req.body.name.trim()) req.user.name = req.body.name.trim();
-  if (typeof req.body.about === 'string') req.user.about = req.body.about.slice(0, 140);
-  if (typeof req.body.avatar === 'string') req.user.avatar = req.body.avatar;
-  saveDb();
+app.get('/api/me', auth, (req, res) => {
+  req.user.lastSeen = now();
+  save();
   res.json({ user: publicUser(req.user) });
 });
 
-app.get('/api/users', auth, (req, res) => {
-  const q = String(req.query.q || '').toLowerCase();
-  const list = db.users
-    .filter((u) => u.id !== req.user.id)
-    .filter((u) => !q || u.name.toLowerCase().includes(q) || u.phone.includes(q))
-    .map((u) => Object.assign(publicUser(u), { online: onlineUsers.has(u.id) }));
-  res.json({ users: list });
+app.post('/api/profile', auth, (req, res) => {
+  const { name, about, avatar } = req.body || {};
+  if (name && String(name).trim().length >= 2) req.user.name = String(name).trim();
+  if (typeof about === 'string') req.user.about = about.slice(0, 160);
+  if (typeof avatar === 'string') req.user.avatar = avatar.slice(0, 400);
+  save();
+  res.json({ user: publicUser(req.user) });
 });
 
-// ------------------------------------------------------------------ Subida de archivos (multimedia)
-const MIME_EXT = {
-  'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
-  'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov',
-  'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/aac': 'aac',
-  'application/pdf': 'pdf',
-};
-
-app.post('/api/upload', auth, (req, res) => {
-  const dataUrl = String(req.body.dataUrl || '');
-  const match = /^data:([^;]+);base64,(.+)$/s.exec(dataUrl);
-  if (!match) return res.status(400).json({ error: 'Archivo no valido' });
-  const mime = match[1];
-  const buffer = Buffer.from(match[2], 'base64');
-  if (buffer.length > 25 * 1024 * 1024) return res.status(413).json({ error: 'El archivo supera 25 MB' });
-  const ext = MIME_EXT[mime] || 'bin';
-  const name = uid('f_') + '.' + ext;
-  fs.writeFileSync(path.join(UPLOAD_DIR, name), buffer);
-  res.json({ url: '/uploads/' + name, mime, size: buffer.length });
-});
-
-// ------------------------------------------------------------------ Chats
-function chatView(chat, meId) {
-  const members = chat.members.map((id) => {
-    const u = db.users.find((x) => x.id === id);
-    return u ? Object.assign(publicUser(u), { online: onlineUsers.has(id) }) : { id, name: 'Usuario' };
-  });
-  const other = chat.type === 'direct' ? members.find((m) => m.id !== meId) : null;
+/* --- chats --- */
+function chatView(chat, forUserId) {
+  const members = chat.members.map((id) => db.users[id]).filter(Boolean).map(publicUser);
   const msgs = db.messages[chat.id] || [];
   const last = msgs.length ? msgs[msgs.length - 1] : null;
+  const other = chat.type === 'direct' ? members.find((m) => m.id !== forUserId) || null : null;
+  const unread = msgs.filter((m) => m.senderId !== forUserId && !(m.readBy || []).includes(forUserId)).length;
   return {
     id: chat.id,
     type: chat.type,
-    name: chat.type === 'direct' ? (other ? other.name : 'Chat') : (chat.name || 'Grupo'),
-    avatar: chat.type === 'direct' ? (other ? other.avatar : '') : (chat.avatar || ''),
+    name: chat.type === 'group' ? chat.name : (other ? other.name : 'Chat'),
     members,
+    other,
+    tramite: chat.tramite || null,
     lastMessage: last,
-    updatedAt: chat.updatedAt || chat.createdAt,
+    unread,
+    updatedAt: chat.updatedAt || chat.createdAt
   };
 }
 
 app.get('/api/chats', auth, (req, res) => {
-  const chats = db.chats
+  const chats = Object.values(db.chats)
     .filter((c) => c.members.includes(req.user.id))
-    .map((c) => chatView(c, req.user.id))
-    .sort((a, b) => (b.lastMessage ? b.lastMessage.ts : b.updatedAt) - (a.lastMessage ? a.lastMessage.ts : a.updatedAt));
+    .sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt))
+    .map((c) => chatView(c, req.user.id));
   res.json({ chats });
 });
 
-app.post('/api/chats/direct', auth, (req, res) => {
-  const otherId = String(req.body.userId || '');
-  const other = db.users.find((u) => u.id === otherId);
-  if (!other) return res.status(404).json({ error: 'Usuario no encontrado' });
-  let chat = db.chats.find((c) => c.type === 'direct' && c.members.length === 2 && c.members.includes(req.user.id) && c.members.includes(otherId));
+/* Inicia (o retoma) la conversacion con el administrador para un tramite */
+app.post('/api/chats/start', auth, (req, res) => {
+  const tramite = req.body && req.body.tramite ? req.body.tramite : null;
+  const admin = Object.values(db.users).find((u) => u.role === 'admin');
+  if (!admin) return res.status(500).json({ error: 'No hay administrador configurado' });
+  if (admin.id === req.user.id) return res.status(400).json({ error: 'El administrador no abre tramites' });
+
+  let chat = Object.values(db.chats).find(
+    (c) => c.type === 'direct' && c.members.length === 2 && c.members.includes(admin.id) && c.members.includes(req.user.id)
+  );
+
   if (!chat) {
-    chat = { id: uid('c_'), type: 'direct', name: '', members: [req.user.id, otherId], createdAt: now(), updatedAt: now() };
-    db.chats.push(chat);
-    saveDb();
-    chat.members.forEach((m) => sendToUser(m, { type: 'chat:new', chat: chatView(chat, m) }));
+    chat = {
+      id: uid('c_'),
+      type: 'direct',
+      name: '',
+      members: [req.user.id, admin.id],
+      tramite: tramite || null,
+      createdAt: now(),
+      updatedAt: now()
+    };
+    db.chats[chat.id] = chat;
+  } else if (tramite) {
+    chat.tramite = tramite;
+    chat.updatedAt = now();
   }
-  res.json({ chatId: chat.id });
+  save();
+
+  sendToUser(admin.id, { type: 'chat:new', chat: chatView(chat, admin.id) });
+  res.json({ chat: chatView(chat, req.user.id) });
 });
 
-app.post('/api/chats/group', auth, (req, res) => {
-  const name = String(req.body.name || '').trim();
-  const members = Array.isArray(req.body.members) ? req.body.members.filter((m) => typeof m === 'string') : [];
-  if (!name) return res.status(400).json({ error: 'Ponle un nombre al grupo' });
-  const all = Array.from(new Set([req.user.id, ...members.filter((m) => db.users.some((u) => u.id === m))]));
-  if (all.length < 2) return res.status(400).json({ error: 'Elige al menos un contacto' });
-  const chat = { id: uid('c_'), type: 'group', name, members: all, createdAt: now(), updatedAt: now() };
-  db.chats.push(chat);
-  saveDb();
-  all.forEach((m) => sendToUser(m, { type: 'chat:new', chat: chatView(chat, m) }));
-  res.json({ chatId: chat.id });
-});
-
+/* --- mensajes --- */
 app.get('/api/chats/:id/messages', auth, (req, res) => {
-  const chat = db.chats.find((c) => c.id === req.params.id);
-  if (!chat || !chat.members.includes(req.user.id)) return res.status(403).json({ error: 'Sin acceso' });
-  const list = db.messages[chat.id] || [];
-  // Marca como leidos los mensajes de otros al abrir el chat.
-  let changed = false;
-  list.forEach((m) => {
-    if (m.senderId !== req.user.id && !(m.readBy || []).includes(req.user.id)) {
-      m.readBy = (m.readBy || []).concat(req.user.id);
-      changed = true;
-    }
+  const chat = db.chats[req.params.id];
+  if (!chat || !chat.members.includes(req.user.id)) return res.status(404).json({ error: 'Chat no encontrado' });
+  const messages = db.messages[chat.id] || [];
+  messages.forEach((m) => {
+    if (!m.readBy) m.readBy = [];
+    if (!m.readBy.includes(req.user.id)) m.readBy.push(req.user.id);
   });
-  if (changed) {
-    saveDb();
-    broadcastToChat(chat, { type: 'chat:read', chatId: chat.id, by: req.user.id }, req.user.id);
-  }
-  res.json({ messages: list, chat: chatView(chat, req.user.id) });
+  save();
+  res.json({ messages, chat: chatView(chat, req.user.id) });
 });
 
-// ------------------------------------------------------------------ HTTP + WebSocket
+/* --- archivos --- */
+const MIME_EXT = {
+  'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif',
+  'video/mp4': '.mp4', 'video/webm': '.webm', 'video/quicktime': '.mov',
+  'audio/webm': '.webm', 'audio/ogg': '.ogg', 'audio/mp4': '.m4a', 'audio/mpeg': '.mp3',
+  'application/pdf': '.pdf', 'application/zip': '.zip',
+  'application/msword': '.doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+  'application/vnd.ms-excel': '.xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+  'text/plain': '.txt'
+};
+
+app.post('/api/upload', auth, (req, res) => {
+  const { dataUrl, name } = req.body || {};
+  if (!dataUrl || typeof dataUrl !== 'string') return res.status(400).json({ error: 'Falta el archivo' });
+  const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
+  if (!match) return res.status(400).json({ error: 'Formato no valido' });
+  const mime = match[1];
+  const buffer = Buffer.from(match[2], 'base64');
+  if (buffer.length > 25 * 1024 * 1024) return res.status(413).json({ error: 'El archivo supera 25 MB' });
+  const ext = MIME_EXT[mime] || path.extname(String(name || '')).slice(0, 8) || '.bin';
+  const fileName = uid('f_') + ext;
+  fs.writeFileSync(path.join(UPLOAD_DIR, fileName), buffer);
+  res.json({ url: '/uploads/' + fileName, mime, size: buffer.length, name: String(name || '').slice(0, 120) });
+});
+
+/* --- panel del administrador --- */
+app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
+  const users = Object.values(db.users)
+    .filter((u) => u.role !== 'admin')
+    .map((u) => {
+      const chats = Object.values(db.chats).filter((c) => c.members.includes(u.id));
+      const msgs = chats.reduce((acc, c) => acc + ((db.messages[c.id] || []).length), 0);
+      const last = chats
+        .map((c) => {
+          const list = db.messages[c.id] || [];
+          return list.length ? list[list.length - 1].ts : 0;
+        })
+        .reduce((a, b) => Math.max(a, b), 0);
+      return {
+        id: u.id,
+        name: u.name,
+        phone: u.phone,
+        country: u.country || 'Sin pais',
+        createdAt: u.createdAt,
+        lastSeen: u.lastSeen,
+        conversations: chats.length,
+        messages: msgs,
+        lastMessageAt: last || null,
+        tramites: chats.map((c) => c.tramite).filter(Boolean)
+      };
+    })
+    .sort((a, b) => (b.lastMessageAt || b.lastSeen) - (a.lastMessageAt || a.lastSeen));
+
+  const byCountry = {};
+  users.forEach((u) => {
+    byCountry[u.country] = byCountry[u.country] || { country: u.country, people: 0, conversations: 0, messages: 0 };
+    byCountry[u.country].people += 1;
+    byCountry[u.country].conversations += u.conversations;
+    byCountry[u.country].messages += u.messages;
+  });
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const visits = db.visits.slice(-500);
+
+  res.json({
+    totals: {
+      people: users.length,
+      conversations: users.reduce((a, u) => a + u.conversations, 0),
+      messages: users.reduce((a, u) => a + u.messages, 0),
+      visits: db.visits.length,
+      visitsToday: db.visits.filter((v) => v.ts >= today.getTime()).length
+    },
+    byCountry: Object.values(byCountry).sort((a, b) => b.people - a.people),
+    users,
+    visits: visits.slice(-60).reverse()
+  });
+});
+
+/* --- servidor + websocket --- */
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
-
-const onlineUsers = new Set();
-const connections = new Map(); // userId -> Set(ws)
+const sockets = new Map(); // userId -> Set(ws)
 
 function sendToUser(userId, payload) {
-  const set = connections.get(userId);
+  const set = sockets.get(userId);
   if (!set) return;
   const raw = JSON.stringify(payload);
   set.forEach((ws) => {
-    if (ws.readyState === 1) {
-      try { ws.send(raw); } catch (e) {}
-    }
-  });
-}
-
-function broadcastToChat(chat, payload, exceptUserId) {
-  chat.members.forEach((m) => {
-    if (m === exceptUserId) return;
-    sendToUser(m, payload);
+    if (ws.readyState === 1) ws.send(raw);
   });
 }
 
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url, 'http://localhost');
-  const data = verifyToken(url.searchParams.get('token'));
-  if (!data) return ws.close(4001, 'no-auth');
-  const user = db.users.find((u) => u.id === data.uid);
-  if (!user) return ws.close(4001, 'no-user');
+  const payload = verify(url.searchParams.get('token'));
+  if (!payload || !db.users[payload.uid]) {
+    ws.close();
+    return;
+  }
+  const userId = payload.uid;
+  if (!sockets.has(userId)) sockets.set(userId, new Set());
+  sockets.get(userId).add(ws);
+  db.users[userId].lastSeen = now();
+  save();
 
-  ws.userId = user.id;
-  if (!connections.has(user.id)) connections.set(user.id, new Set());
-  connections.get(user.id).add(ws);
-  const wasOffline = !onlineUsers.has(user.id);
-  onlineUsers.add(user.id);
-  if (wasOffline) broadcastPresence(user.id, true);
-  ws.send(JSON.stringify({ type: 'ready', userId: user.id }));
+  const announce = () => {
+    Object.keys(db.chats).forEach((chatId) => {
+      const chat = db.chats[chatId];
+      if (chat && chat.members.includes(userId)) {
+        chat.members.forEach((m) => sendToUser(m, { type: 'presence', userId, online: true }));
+      }
+    });
+  };
+  announce();
 
   ws.on('message', (raw) => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch (e) { return; }
-    handleWs(user, ws, msg);
+    if (!msg || !msg.type) return;
+
+    if (msg.type === 'message:send') {
+      const chat = db.chats[msg.chatId];
+      if (!chat || !chat.members.includes(userId)) return;
+      const m = {
+        id: uid('m_'),
+        chatId: chat.id,
+        senderId: userId,
+        type: msg.kind || 'text',
+        text: String(msg.text || '').slice(0, 4000),
+        url: String(msg.url || ''),
+        name: String(msg.name || ''),
+        duration: Number(msg.duration || 0),
+        ts: now(),
+        readBy: [userId]
+      };
+      if (!db.messages[chat.id]) db.messages[chat.id] = [];
+      db.messages[chat.id].push(m);
+      chat.updatedAt = now();
+      save();
+      chat.members.forEach((mem) => sendToUser(mem, { type: 'message:new', message: m, chatId: chat.id }));
+      return;
+    }
+
+    if (msg.type === 'typing') {
+      const chat = db.chats[msg.chatId];
+      if (!chat || !chat.members.includes(userId)) return;
+      chat.members.filter((m) => m !== userId).forEach((m) => sendToUser(m, { type: 'typing', chatId: chat.id, userId }));
+      return;
+    }
+
+    if (msg.type === 'read') {
+      const chat = db.chats[msg.chatId];
+      if (!chat || !chat.members.includes(userId)) return;
+      (db.messages[chat.id] || []).forEach((m) => {
+        if (!m.readBy) m.readBy = [];
+        if (!m.readBy.includes(userId)) m.readBy.push(userId);
+      });
+      save();
+      chat.members.filter((m) => m !== userId).forEach((m) => sendToUser(m, { type: 'read', chatId: chat.id, userId }));
+    }
   });
 
   ws.on('close', () => {
-    const set = connections.get(user.id);
+    const set = sockets.get(userId);
     if (set) {
       set.delete(ws);
-      if (!set.size) {
-        connections.delete(user.id);
-        onlineUsers.delete(user.id);
-        broadcastPresence(user.id, false);
-      }
+      if (!set.size) sockets.delete(userId);
+    }
+    if (db.users[userId]) {
+      db.users[userId].lastSeen = now();
+      save();
     }
   });
 });
 
-function broadcastPresence(userId, online) {
-  db.chats.filter((c) => c.members.includes(userId)).forEach((c) => {
-    c.members.forEach((m) => {
-      if (m !== userId) sendToUser(m, { type: 'presence', userId, online });
-    });
-  });
-}
-
-function handleWs(user, ws, msg) {
-  switch (msg.type) {
-    case 'message:send': {
-      const chat = db.chats.find((c) => c.id === msg.chatId);
-      if (!chat || !chat.members.includes(user.id)) return;
-      const text = typeof msg.text === 'string' ? msg.text.slice(0, 4000) : '';
-      const kind = ['text', 'image', 'video', 'audio', 'file'].includes(msg.kind) ? msg.kind : 'text';
-      if (!text && !msg.url) return;
-      const message = {
-        id: uid('m_'),
-        chatId: chat.id,
-        senderId: user.id,
-        kind,
-        text,
-        url: typeof msg.url === 'string' ? msg.url : '',
-        fileName: typeof msg.fileName === 'string' ? msg.fileName.slice(0, 120) : '',
-        duration: Number(msg.duration) || 0,
-        ts: now(),
-        readBy: [user.id],
-      };
-      if (!db.messages[chat.id]) db.messages[chat.id] = [];
-      db.messages[chat.id].push(message);
-      chat.updatedAt = now();
-      saveDb();
-      chat.members.forEach((m) => sendToUser(m, { type: 'message:new', message, chat: chatView(chat, m), tempId: m === user.id ? msg.tempId : undefined }));
-      break;
-    }
-    case 'typing': {
-      const chat = db.chats.find((c) => c.id === msg.chatId);
-      if (!chat || !chat.members.includes(user.id)) return;
-      broadcastToChat(chat, { type: 'typing', chatId: chat.id, userId: user.id, name: user.name, isTyping: !!msg.isTyping }, user.id);
-      break;
-    }
-    case 'chat:read': {
-      const chat = db.chats.find((c) => c.id === msg.chatId);
-      if (!chat || !chat.members.includes(user.id)) return;
-      let changed = false;
-      (db.messages[chat.id] || []).forEach((m) => {
-        if (m.senderId !== user.id && !(m.readBy || []).includes(user.id)) {
-          m.readBy = (m.readBy || []).concat(user.id);
-          changed = true;
-        }
-      });
-      if (changed) {
-        saveDb();
-        broadcastToChat(chat, { type: 'chat:read', chatId: chat.id, by: user.id }, user.id);
-      }
-      break;
-    }
-  }
-}
-
-// ------------------------------------------------------------------ Arranque
 server.listen(PORT, () => {
-  console.log('Conecta Chat escuchando en el puerto ' + PORT);
+  console.log('Tramites Venezolanos en Linea escuchando en el puerto ' + PORT);
 });

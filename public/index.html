@@ -4,20 +4,21 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1b3a" />
-  <meta name="description" content="Conecta Chat: mensajeria en tiempo real con fotos, videos, audios y archivos." />
-  <title>Conecta Chat</title>
+  <meta name="description" content="Tramites Venezolanos en Linea: cedula, licencia y antecedentes penales. Asesoria y acompanamiento." />
+  <title>Tramites Venezolanos en Linea</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+  <link rel="icon" href="favicon-32.png" sizes="32x32" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <!-- ============================ ACCESO ============================ -->
   <section class="auth" id="authScreen">
+    <div class="tricolor"></div>
     <div class="auth-card">
-      <img class="auth-logo" src="brand.jpg" alt="Conecta Chat" />
-      <h1>Conecta Chat</h1>
-      <p class="muted">Mensajes, fotos, videos, audios y archivos. En tiempo real.</p>
+      <img class="auth-logo" src="icon-192.png" alt="Tramites Venezolanos en Linea" />
+      <h1>Tramites Venezolanos<br />en Linea</h1>
+      <p class="muted">Cedula, licencia y antecedentes penales. Te acompanamos en todo el tramite.</p>
 
       <div class="auth-tabs">
         <button class="auth-tab active" id="tabLogin" onclick="App.authTab('login')">Entrar</button>
@@ -26,114 +27,163 @@
 
       <div id="registerFields" class="hidden">
         <label class="field"><span>Nombre</span><input id="regName" type="text" autocomplete="name" placeholder="Tu nombre" /></label>
+        <label class="field"><span>Pais donde vives</span>
+          <select id="regCountry">
+            <option value="Chile">Chile</option>
+            <option value="Ecuador">Ecuador</option>
+            <option value="Venezuela">Venezuela</option>
+            <option value="Colombia">Colombia</option>
+            <option value="Peru">Peru</option>
+            <option value="Argentina">Argentina</option>
+            <option value="Otro">Otro</option>
+          </select>
+        </label>
       </div>
-      <label class="field"><span>Numero de telefono</span><input id="authPhone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="3001234567" /></label>
+      <label class="field"><span>Numero de celular</span><input id="authPhone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="3001234567" /></label>
       <label class="field"><span>Contrasena</span><input id="authPassword" type="password" autocomplete="current-password" placeholder="Minimo 4 caracteres" /></label>
 
-      <button class="btn primary" id="authSubmit" onclick="App.submitAuth()">Entrar</button>
+      <button class="btn-primary" id="authSubmit" onclick="App.authSubmit()">Entrar</button>
       <p class="auth-error" id="authError"></p>
+      <p class="version-line" id="appVersion"></p>
     </div>
   </section>
 
   <!-- ============================ APP ============================ -->
   <section class="app hidden" id="appScreen">
-    <!-- Lista de chats -->
-    <div class="view" id="listView">
+
+    <!-- Inicio: servicios -->
+    <div class="view" id="viewHome">
       <header class="topbar">
-        <div class="brand"><img class="brand-logo" src="icon-192.png" alt="" />Conecta Chat</div>
-        <div class="top-actions">
-          <button class="iconbtn" onclick="App.openNewChat()" title="Nuevo chat">＋</button>
-          <button class="iconbtn" onclick="App.openProfile()" title="Mi perfil" id="myAvatarBtn">👤</button>
-        </div>
-      </header>
-      <div class="searchbar"><input id="chatSearch" placeholder="Buscar chats" oninput="App.renderChats()" /></div>
-      <div class="chat-list" id="chatList"></div>
-      <button class="fab" onclick="App.openNewChat()" title="Nuevo chat">💬</button>
-    </div>
-
-    <!-- Conversacion -->
-    <div class="view hidden" id="chatView">
-      <header class="topbar chat-top">
-        <button class="iconbtn" onclick="App.closeChat()" title="Atras">←</button>
-        <div class="chat-head" onclick="App.openChatInfo()">
-          <div class="avatar sm" id="chatAvatar"></div>
-          <div>
-            <div class="chat-title" id="chatTitle">Chat</div>
-            <div class="chat-sub" id="chatSub"></div>
-          </div>
-        </div>
+        <img class="brand-logo" src="icon-192.png" alt="" />
+        <div class="brand">Tramites<br /><small>Venezolanos en Linea</small></div>
+        <button class="iconbtn" id="homeChatsBtn" onclick="App.goChats()" title="Mis conversaciones">💬</button>
+        <button class="iconbtn" id="homeAdminBtn" onclick="App.goAdmin()" title="Panel" style="display:none">📊</button>
+        <button class="iconbtn" onclick="App.openProfile()" title="Mi perfil" id="myAvatarBtn">AJ</button>
       </header>
 
-      <div class="messages" id="messages"></div>
+      <div class="scroll">
+        <div class="hero">
+          <h2>Que tramite necesitas?</h2>
+          <p>Elige una opcion y te guiamos paso a paso.</p>
+        </div>
 
-      <div class="composer" id="composer">
-        <button class="round" onclick="App.openAttach()" title="Adjuntar">＋</button>
-        <textarea id="msgInput" rows="1" placeholder="Mensaje" oninput="App.onType()"></textarea>
-        <button class="round mic" id="micBtn" onclick="App.toggleRecord()" title="Grabar audio">🎤</button>
-        <button class="round send hidden" id="sendBtn" onclick="App.sendText()" title="Enviar">➤</button>
+        <div class="services" id="serviceList">
+          <button class="service-card" onclick="App.pickService('cedula')">
+            <span class="service-ic">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><circle cx="8.5" cy="11" r="2.1"/><path d="M5 16.2c.9-1.6 2.2-2.3 3.5-2.3s2.6.7 3.5 2.3"/><path d="M15 10h4M15 13h4M15 16h2.5"/></svg>
+            </span>
+            <span class="service-txt"><strong>Cedula</strong><small>Renovacion, extravio, deterioro o hurto</small></span>
+            <span class="chev">›</span>
+          </button>
 
-        <div class="rec-bar hidden" id="recBar">
-          <div class="rec-pill">
-            <span id="recTime">0:00</span>
-            <div class="rec-wave" id="recWave"></div>
-          </div>
-          <div class="rec-actions">
-            <button class="rec-trash" onclick="App.discardRecording()" title="Eliminar">🗑</button>
-            <button class="rec-pause" id="recPauseBtn" onclick="App.togglePauseRecord()">⏸ Pausar</button>
-            <button class="rec-send" onclick="App.sendRecording()" title="Enviar">➤</button>
-          </div>
+          <button class="service-card" onclick="App.pickService('licencia')">
+            <span class="service-ic">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="M6 9.5h5M6 12.5h4"/><circle cx="16" cy="11" r="2"/><path d="M13.6 16.4c.6-1.2 1.5-1.8 2.4-1.8s1.8.6 2.4 1.8"/></svg>
+            </span>
+            <span class="service-txt"><strong>Licencia</strong><small>Por primera vez o renovacion</small></span>
+            <span class="chev">›</span>
+          </button>
+
+          <button class="service-card" onclick="App.pickService('antecedentes')">
+            <span class="service-ic">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h8l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 20V5A1.5 1.5 0 0 1 6.5 3.5z"/><path d="M14 3.5V8h4.5"/><circle cx="11.5" cy="14" r="2.6"/><path d="M9.9 16.6 9 18.6l2.5-.8 2.5.8-.9-2"/></svg>
+            </span>
+            <span class="service-txt"><strong>Antecedentes penales</strong><small>Sin apostillar o apostillado</small></span>
+            <span class="chev">›</span>
+          </button>
+        </div>
+
+        <div class="trust">
+          <span>Tramite seguro</span><span>Atencion confiable</span><span>Proceso agil</span>
         </div>
       </div>
+    </div>
+
+    <!-- Flujo del tramite -->
+    <div class="view hidden" id="viewFlow">
+      <header class="topbar">
+        <button class="iconbtn back" onclick="App.back()" title="Atras">‹</button>
+        <div class="brand" id="flowTitle">Tramite</div>
+      </header>
+      <div class="scroll" id="flowBody"></div>
+    </div>
+
+    <!-- Conversaciones -->
+    <div class="view hidden" id="viewChats">
+      <header class="topbar">
+        <button class="iconbtn back" onclick="App.goHome()" title="Atras">‹</button>
+        <div class="brand">Mis conversaciones</div>
+      </header>
+      <div class="scroll">
+        <div class="list" id="chatList"></div>
+      </div>
+    </div>
+
+    <!-- Chat -->
+    <div class="view hidden" id="viewChat">
+      <header class="topbar">
+        <button class="iconbtn back" onclick="App.goChats()" title="Atras">‹</button>
+        <div class="brand" id="chatTitle">Conversacion</div>
+      </header>
+      <div class="tramite-chip hidden" id="chatTramite"></div>
+      <div class="chat-body" id="chatBody"></div>
+      <div class="rec-bar hidden" id="recBar">
+        <button class="rec-trash" onclick="App.discardRecording()" title="Descartar">🗑</button>
+        <span class="rec-dot"></span>
+        <div class="rec-wave" id="recWave"></div>
+        <span class="rec-time" id="recTime">0:00</span>
+        <button class="rec-pause" id="recPauseBtn" onclick="App.togglePauseRecord()">Pausar</button>
+        <button class="rec-send" onclick="App.sendRecording()" title="Enviar">➤</button>
+      </div>
+      <div class="composer" id="composer">
+        <button class="cbtn" onclick="App.openAttach()" title="Adjuntar">＋</button>
+        <textarea id="chatText" rows="1" placeholder="Escribe un mensaje" oninput="App.onType()"></textarea>
+        <button class="cbtn mic" id="micBtn" onclick="App.toggleRecord()" title="Grabar audio">🎤</button>
+        <button class="cbtn send" id="sendBtn" onclick="App.sendText()" title="Enviar">➤</button>
+      </div>
+    </div>
+
+    <!-- Panel del administrador -->
+    <div class="view hidden" id="viewAdmin">
+      <header class="topbar">
+        <button class="iconbtn back" onclick="App.goHome()" title="Atras">‹</button>
+        <div class="brand">Panel</div>
+        <button class="iconbtn" onclick="App.loadAdmin()" title="Actualizar">⟳</button>
+      </header>
+      <div class="scroll" id="adminBody"></div>
     </div>
   </section>
 
   <!-- ============================ HOJAS ============================ -->
-  <div class="sheet hidden" id="sheetNewChat" onclick="if(event.target===this)App.closeSheet('sheetNewChat')">
-    <div class="sheet-panel">
-      <h3>Nuevo chat</h3>
-      <input class="sheet-search" id="newChatSearch" placeholder="Buscar personas" oninput="App.renderNewChat()" />
-      <button class="row action" onclick="App.openNewGroup()">👥 Crear grupo</button>
-      <div id="newChatList" class="sheet-list"></div>
-    </div>
-  </div>
-
-  <div class="sheet hidden" id="sheetGroup" onclick="if(event.target===this)App.closeSheet('sheetGroup')">
-    <div class="sheet-panel">
-      <h3>Nuevo grupo</h3>
-      <input class="sheet-search" id="groupName" placeholder="Nombre del grupo" />
-      <div id="groupMembers" class="sheet-list"></div>
-      <button class="btn primary" onclick="App.createGroup()">Crear grupo</button>
-    </div>
-  </div>
-
-  <div class="sheet hidden" id="sheetAttach" onclick="if(event.target===this)App.closeSheet('sheetAttach')">
-    <div class="sheet-panel">
-      <h3>Adjuntar</h3>
+  <div class="sheet hidden" id="sheetAttach">
+    <div class="sheet-card">
+      <h3>Enviar</h3>
       <div class="attach-grid">
-        <button class="attach-item" onclick="App.pickFile('image/*')"><span>🖼</span>Foto</button>
-        <button class="attach-item" onclick="App.pickFile('video/*')"><span>🎬</span>Video</button>
-        <button class="attach-item" onclick="App.pickFile('*/*')"><span>📎</span>Archivo</button>
+        <button onclick="App.pickFile('image')"><span>🖼</span>Foto</button>
+        <button onclick="App.pickFile('video')"><span>🎬</span>Video</button>
+        <button onclick="App.pickFile('audio')"><span>🎵</span>Audio</button>
+        <button onclick="App.pickFile('pdf')"><span>📄</span>PDF</button>
+        <button onclick="App.pickFile('file')"><span>📎</span>Archivo</button>
       </div>
+      <button class="btn-ghost" onclick="App.closeSheet('sheetAttach')">Cancelar</button>
     </div>
   </div>
 
-  <div class="sheet hidden" id="sheetProfile" onclick="if(event.target===this)App.closeSheet('sheetProfile')">
-    <div class="sheet-panel">
+  <div class="sheet hidden" id="sheetProfile">
+    <div class="sheet-card">
       <h3>Mi perfil</h3>
       <div class="profile-head"><div class="avatar lg" id="profileAvatar"></div></div>
       <label class="field"><span>Nombre</span><input id="profileName" /></label>
-      <label class="field"><span>Estado</span><input id="profileAbout" placeholder="Disponible" /></label>
-      <p class="muted version-line" id="appVersion"></p>
-      <button class="btn primary" onclick="App.saveProfile()">Guardar</button>
-      <button class="btn ghost" onclick="App.logout()">Cerrar sesion</button>
+      <label class="field"><span>Pais</span><input id="profileCountry" disabled /></label>
+      <label class="field"><span>Telefono</span><input id="profilePhone" disabled /></label>
+      <button class="btn-primary" onclick="App.saveProfile()">Guardar</button>
+      <button class="btn-ghost" onclick="App.logout()">Cerrar sesion</button>
+      <p class="version-line" id="profileVersion"></p>
     </div>
   </div>
 
-  <div class="viewer hidden" id="viewer" onclick="App.closeViewer()">
-    <img id="viewerImg" alt="Foto" />
-  </div>
-
-  <div class="toast hidden" id="toast"></div>
+  <div class="toast" id="toast"></div>
+  <div class="viewer hidden" id="viewer" onclick="App.closeViewer()"><img id="viewerImg" alt="" /></div>
 
   <script src="app.js"></script>
 </body>
