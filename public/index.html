@@ -279,10 +279,11 @@
       </div>
       <div class="pad">
         <label class="field"><span>Nombre (no se puede cambiar)</span><input id="profileName" disabled /></label>
-        <label class="field"><span>Telefono</span><input id="profilePhone" disabled /></label>
-        <label class="field"><span>Correo</span><input id="profileEmail" disabled /></label>
-        <label class="field"><span>Pais</span><input id="profileCountry" disabled /></label>
-        <button class="btn primary" onclick="App.openEditData()">Editar datos personales</button>
+        <label class="field"><span>Telefono</span><input id="profilePhone" type="tel" inputmode="tel" placeholder="04141234567" /></label>
+        <label class="field"><span>Correo</span><input id="profileEmail" type="email" placeholder="tucorreo@ejemplo.com" /></label>
+        <label class="field"><span>Pais</span><input id="profileCountry" placeholder="Venezuela" /></label>
+        <button class="btn primary" onclick="App.saveProfileChanges()">Guardar cambios</button>
+        <button class="btn ghost" onclick="App.openEditData()">Editar datos personales</button>
         <button class="btn ghost" onclick="App.openAdmin()" id="adminBtn" style="display:none">Panel del servidor publico</button>
         <button class="btn ghost" onclick="App.logout()">Cerrar sesion</button>
         <button class="btn danger" onclick="App.deleteAccount()">Eliminar mi cuenta</button>
@@ -310,7 +311,7 @@
           <option value="Otro">Otro</option>
         </select>
       </label>
-      <button class="btn primary" onclick="App.savePersonalData()">Guardar datos</button>
+      <button class="btn primary" onclick="App.savePersonalData()">Guardar cambios</button>
       <button class="btn ghost" onclick="App.closeEditData()">Cancelar</button>
     </div>
   </div>
