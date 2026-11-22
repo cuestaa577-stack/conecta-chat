@@ -11,10 +11,10 @@ let nodemailer = null;
 try { nodemailer = require('nodemailer'); } catch (e) { nodemailer = null; }
 
 const PORT = process.env.PORT || 10000;
-const SECRET = process.env.SECRET || crypto.randomBytes(32).toString('hex');
-if (!process.env.SECRET) {
-  console.warn('[aviso] Falta la variable SECRET. Se genero una clave temporal: las sesiones se cierran al reiniciar el servidor. Configura SECRET.');
-}
+// Clave que firma las sesiones. Si no viene por variable de entorno, se genera
+// una vez y se guarda en la base de datos, asi las sesiones NO se cierran al
+// reiniciar el servidor.
+let SECRET = String(process.env.SECRET || '').trim();
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
@@ -114,33 +114,117 @@ if (nodemailer && SMTP_HOST && SMTP_USER && SMTP_PASS) {
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 /* ------------------------------------------------------------------ datos */
+/* ---------------- persistencia en la nube (Supabase) ----------------
+   Si SUPABASE_URL y SUPABASE_KEY están definidos, TODO (cuentas, chats,
+   mensajes, archivos) se guarda en Supabase y NO se borra cuando Render
+   reinicia el servicio. Sin esas variables se usa el archivo local. */
+let createClient = null;
+try { ({ createClient } = require('@supabase/supabase-js')); } catch (e) { createClient = null; }
+const cleanEnv = (v) => String(v || '').trim().replace(/^["']+|["']+$/g, '');
+const SUPABASE_URL = cleanEnv(process.env.SUPABASE_URL);
+const SUPABASE_KEY = cleanEnv(process.env.SUPABASE_KEY);
+const SUPABASE_TABLE = process.env.SUPABASE_TABLE || 'conecta_state';
+const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || 'media';
+const STATE_ID = 'main';
+let supabase = null;
+if (createClient && SUPABASE_URL && SUPABASE_KEY) {
+  try {
+    supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      realtime: { transport: require('ws') },
+    });
+  } catch (e) {
+    console.error('[aviso] Supabase no pudo iniciarse:', e.message);
+    supabase = null;
+  }
+} else if (SUPABASE_URL && !SUPABASE_KEY) {
+  console.error('[aviso] Definiste SUPABASE_URL pero falta SUPABASE_KEY. Se usara el archivo local.');
+}
+
+function explainSupabaseError(msg) {
+  const m = String(msg || '');
+  if (/does not exist|no existe|schema/i.test(m)) return 'Falta crear la tabla en Supabase: SQL Editor → create table if not exists conecta_state (id text primary key, data jsonb, updated_at timestamptz default now());';
+  if (/row-level security|rls/i.test(m)) return 'La tabla tiene RLS bloqueando el acceso. Usa la secret key (sb_secret_...) en SUPABASE_KEY.';
+  if (/permission denied|violat|jwt/i.test(m)) return 'Clave incorrecta: en SUPABASE_KEY va la secret key del proyecto.';
+  if (/fetch failed|ENOTFOUND|ECONNREFUSED|getaddrinfo/i.test(m)) return 'No se pudo conectar: revisa SUPABASE_URL (https://xxxx.supabase.co).';
+  return '';
+}
+
 let db = { users: {}, chats: {}, messages: {}, visits: [] };
 
-function load() {
-  try {
-    if (fs.existsSync(DB_FILE)) {
-      const parsed = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-      db = { users: {}, chats: {}, messages: {}, visits: [], ...parsed };
+async function load() {
+  let desdeNube = false;
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from(SUPABASE_TABLE).select('data').eq('id', STATE_ID).maybeSingle();
+      if (error) {
+        console.error('Supabase load error:', error.message);
+        const tip = explainSupabaseError(error.message);
+        if (tip) console.error('   →', tip);
+      } else if (data && data.data) {
+        db = { users: {}, chats: {}, messages: {}, visits: [], ...data.data };
+        desdeNube = true;
+        console.log('Datos cargados desde Supabase (' + Object.keys(db.users).length + ' cuentas)');
+      }
+    } catch (e) {
+      console.error('Supabase load exception:', e.message);
     }
-  } catch (e) {
-    console.error('No se pudo leer la base de datos:', e.message);
+  }
+  if (!desdeNube) {
+    try {
+      if (fs.existsSync(DB_FILE)) {
+        const parsed = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        db = { users: {}, chats: {}, messages: {}, visits: [], ...parsed };
+        console.log('Datos cargados del respaldo local (' + Object.keys(db.users).length + ' cuentas)');
+      }
+    } catch (e) {
+      console.error('No se pudo leer la base de datos:', e.message);
+    }
+  }
+
+  // Clave de sesiones: variable de entorno, o la guardada, o una nueva.
+  if (!SECRET) {
+    if (db.secret && typeof db.secret === 'string') {
+      SECRET = db.secret;
+    } else {
+      SECRET = crypto.randomBytes(32).toString('hex');
+      db.secret = SECRET;
+      save();
+    }
   }
 }
 
 let saveTimer = null;
+let nubeOk = false;
 function save() {
   if (saveTimer) return;
-  saveTimer = setTimeout(() => {
+  saveTimer = setTimeout(async () => {
     saveTimer = null;
+    // 1) Respaldo local siempre (nunca se pierde nada si la nube falla)
     try {
       fs.writeFileSync(DB_FILE, JSON.stringify(db));
     } catch (e) {
-      console.error('No se pudo guardar:', e.message);
+      console.error('No se pudo guardar local:', e.message);
+    }
+    // 2) Nube (Supabase)
+    if (!supabase) return;
+    try {
+      const { error } = await supabase.from(SUPABASE_TABLE)
+        .upsert({ id: STATE_ID, data: db, updated_at: new Date().toISOString() });
+      if (error) {
+        console.error('Supabase save error:', error.message);
+        const tip = explainSupabaseError(error.message);
+        if (tip) console.error('   →', tip);
+        console.error('   (Los datos siguen guardandose en el archivo local)');
+      } else if (!nubeOk) {
+        nubeOk = true;
+        console.log('Supabase funcionando: los datos se guardan en la nube');
+      }
+    } catch (e) {
+      console.error('Supabase save exception:', e.message);
     }
   }, 200);
 }
-
-load();
 
 const uid = (p) => p + crypto.randomBytes(8).toString('hex');
 const now = () => Date.now();
@@ -320,7 +404,7 @@ function ensureAdmin() {
   console.log('Administrador creado: ' + (ADMIN_EMAIL || ADMIN_PHONE));
 }
 
-ensureAdmin();
+/* ensureAdmin() se ejecuta al arrancar, despues de cargar los datos */
 
 /* ------------------------------------------------------------------ sesiones */
 function sign(payload) {
@@ -386,7 +470,12 @@ app.get('/uploads/:file', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, users: Object.keys(db.users).length, version: '2.0.0' });
+  res.json({
+    ok: true,
+    users: Object.keys(db.users).length,
+    version: '2.0.0',
+    persistencia: supabase ? 'supabase' : 'local',
+  });
 });
 
 /* --- visitas (quien entra al enlace) --- */
@@ -813,7 +902,7 @@ const MIME_EXT = {
   'text/plain': '.txt'
 };
 
-app.post('/api/upload', auth, (req, res) => {
+app.post('/api/upload', auth, async (req, res) => {
   const { dataUrl, name } = req.body || {};
   if (!dataUrl || typeof dataUrl !== 'string') return res.status(400).json({ error: 'Falta el archivo' });
   const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
@@ -823,6 +912,22 @@ app.post('/api/upload', auth, (req, res) => {
   if (buffer.length > 25 * 1024 * 1024) return res.status(413).json({ error: 'El archivo supera 25 MB' });
   const ext = MIME_EXT[mime] || path.extname(String(name || '')).slice(0, 8) || '.bin';
   const fileName = uid('f_') + ext;
+  // Nube primero: el archivo queda permanente
+  if (supabase) {
+    try {
+      const { error } = await supabase.storage.from(SUPABASE_BUCKET)
+        .upload(fileName, buffer, { contentType: mime, upsert: true });
+      if (!error) {
+        const { data } = supabase.storage.from(SUPABASE_BUCKET).getPublicUrl(fileName);
+        if (!db.uploads) db.uploads = {};
+        db.uploads[fileName] = req.user.id;
+        save();
+        return res.json({ url: data.publicUrl, mime, size: buffer.length, name: String(name || '').slice(0, 120) });
+      }
+      console.error('Supabase storage error:', error.message);
+      if (/not found|bucket/i.test(error.message)) console.error('   → Crea el bucket "' + SUPABASE_BUCKET + '" en Supabase → Storage (Public bucket).');
+    } catch (e) { console.error('Supabase storage exception:', e.message); }
+  }
   fs.writeFileSync(path.join(UPLOAD_DIR, fileName), buffer);
   // Se guarda el dueño del archivo para poder borrarlo si elimina su cuenta
   if (!db.uploads) db.uploads = {};
@@ -1011,6 +1116,11 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log('Tramites Venezolanos en Linea escuchando en el puerto ' + PORT);
-});
+(async () => {
+  await load();
+  ensureAdmin();
+  server.listen(PORT, () => {
+    console.log('Tramites Venezolanos en Linea escuchando en el puerto ' + PORT);
+    console.log('Persistencia: ' + (supabase ? 'Supabase (permanente)' : 'archivo local (se borra al reiniciar)'));
+  });
+})();
