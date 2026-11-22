@@ -207,11 +207,11 @@ async function consultarCedulaApi(nacionalidad, numero) {
     if (/saldo|credito|crédito|balance|pago|cuota|limite|límite|agotad|sin consultas|quota|insufficient/.test(low) || res.status === 402) {
       code = 'sin_saldo';
       status = 402;
-      message = 'El servicio de cedulas no tiene saldo disponible. Avisa al administrador.';
+      message = 'La consulta automatica no esta disponible en este momento. Escribenos y la verificamos por ti.';
     } else if (/invalid_token|token|app|credencial|autentic|autoriz|invali|denegad|forbidden|unauthor/.test(low) || res.status === 401 || res.status === 403) {
       code = 'credenciales';
       status = 502;
-      message = 'Las credenciales del servicio de cedulas no son validas. Avisa al administrador.';
+      message = 'La consulta automatica no esta disponible en este momento. Escribenos y la verificamos por ti.';
     } else if (/record_not_found|not_found|no (se )?encontr|no exist|sin resultado|no registrad|inexistente|no hay|404/.test(low) || res.status === 404) {
       code = 'no_encontrada';
       status = 404;
@@ -219,7 +219,7 @@ async function consultarCedulaApi(nacionalidad, numero) {
     } else if (res.status === 429) {
       code = 'sin_saldo';
       status = 402;
-      message = 'El servicio de cedulas alcanzo su limite de consultas. Avisa al administrador.';
+      message = 'La consulta automatica no esta disponible en este momento. Escribenos y la verificamos por ti.';
     }
     return { ok: false, code, status, message, detalle };
   }
