@@ -1271,7 +1271,7 @@ app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
    comprobante se suben con /api/upload (la misma tuberia del chat) y aqui
    solo se guarda la referencia.
    ===================================================================== */
-const TRAMITE_ESTADOS = ['recibido', 'en_proceso', 'listo', 'pago_en_revision', 'aprobado', 'rechazado'];
+const TRAMITE_ESTADOS = ['recibido', 'en_proceso', 'listo', 'pago_en_revision', 'aprobado', 'entregado', 'rechazado'];
 const TRAMITE_ESTADO_TXT = {
   recibido: 'Recibido',
   en_proceso: 'En proceso',
@@ -1279,6 +1279,7 @@ const TRAMITE_ESTADO_TXT = {
   pago_en_revision: 'Pago en revision',
   aprobado: 'Aprobado',
   rechazado: 'Comprobante rechazado',
+  entregado: 'Entregado',
 };
 
 function tramitesDb() {
@@ -1297,11 +1298,11 @@ function pagoInfo() {
 
 function tramitePuedeVerPreview(t) {
   if (!t || !t.doc || !t.doc.url) return false;
-  return ['listo', 'pago_en_revision', 'aprobado', 'rechazado'].indexOf(t.status) >= 0;
+  return ['listo', 'pago_en_revision', 'aprobado', 'entregado', 'rechazado'].indexOf(t.status) >= 0;
 }
 
 function tramitePuedeDescargar(t) {
-  return !!(t && t.status === 'aprobado' && t.doc && t.doc.url);
+  return !!(t && (t.status === 'aprobado' || t.status === 'entregado') && t.doc && t.doc.url);
 }
 
 /* --- Intentos de captura del documento --- */
@@ -1542,7 +1543,12 @@ app.get('/api/tramites/:id/download', auth, async (req, res) => {
   t.downloadCount = Number(t.downloadCount || 0) + 1;
   t.lastDownloadAt = now();
   t.updatedAt = now();
-  tramiteHistorial(t, 'aprobado', 'Documento descargado', req.user.id);
+  tramiteHistorial(t, t.status, 'Documento descargado', req.user.id);
+  if (t.status === 'aprobado') {
+    t.status = 'entregado';
+    t.deliveredAt = now();
+    tramiteHistorial(t, 'entregado', 'Documento entregado a la persona', req.user.id);
+  }
   save();
   await servirArchivoTramite(t.doc, res, 'attachment');
 });

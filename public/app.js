@@ -1116,6 +1116,7 @@ const App = (() => {
     pago_en_revision: { txt: 'Pago en revisión', cls: 'st-revision', hint: 'Recibimos tu comprobante. El servidor público lo está verificando y te confirma aquí mismo.' },
     aprobado: { txt: 'Aprobado', cls: 'st-aprobado', hint: 'Pago confirmado. Tu documento ya se puede descargar.' },
     rechazado: { txt: 'Comprobante rechazado', cls: 'st-rechazado', hint: 'El comprobante no se pudo validar. Lee la nota y envíalo otra vez.' },
+    entregado: { txt: 'Entregado', cls: 'st-aprobado', hint: 'Documento entregado. Puedes volver a descargarlo cuando lo necesites.' },
   };
 
   function estadoDe(t) {
@@ -1233,7 +1234,7 @@ const App = (() => {
     if (subEl) subEl.textContent = st.txt;
 
     const pasos = ['Solicitud', 'Documento listo', 'Pago en revisión', 'Descarga'];
-    const orden = { recibido: 1, en_proceso: 1, listo: 2, pago_en_revision: 3, rechazado: 3, aprobado: 4 };
+    const orden = { recibido: 1, en_proceso: 1, listo: 2, pago_en_revision: 3, rechazado: 3, aprobado: 4, entregado: 4 };
     const actual = orden[t.status] || 1;
     const pasosHtml = pasos.map((txt, i) => {
       const n = i + 1;
@@ -1269,12 +1270,15 @@ const App = (() => {
 
     let descargaHtml;
     if (t.canDownload) {
+      const entregado = t.status === 'entregado';
       descargaHtml = `
         <div class="panel ok-panel">
-          <h3>Pago confirmado</h3>
-          <p class="pnote muted">${t.approvedAt ? 'Confirmado el ' + esc(fechaCorta(t.approvedAt)) + '. ' : ''}Ya puedes descargar tu documento.</p>
+          <h3>${entregado ? 'Documento entregado' : 'Pago confirmado'}</h3>
+          <p class="pnote muted">${entregado
+            ? 'Ya descargaste tu documento' + (t.downloadCount > 1 ? ' ' + t.downloadCount + ' veces' : '') + '. Puedes descargarlo otra vez cuando lo necesites.'
+            : (t.approvedAt ? 'Confirmado el ' + esc(fechaCorta(t.approvedAt)) + '. ' : '') + 'Ya puedes descargar tu documento.'}</p>
           <a class="btn primary" href="${esc(archivoUrl(t.id, 'download'))}" download>Descargar mi documento</a>
-          ${t.downloadCount ? '<p class="pnote muted">Descargas realizadas: ' + t.downloadCount + '</p>' : ''}
+          ${(!entregado && t.downloadCount) ? '<p class="pnote muted">Descargas realizadas: ' + t.downloadCount + '</p>' : ''}
         </div>`;
     } else {
       const motivo = t.status === 'pago_en_revision'

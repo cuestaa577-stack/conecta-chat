@@ -154,6 +154,7 @@ abre desde **Mis tramites** (portada o perfil) y ve el estado en todo momento.
 | `listo` | administrador al subir el documento | **Vista previa del documento** + datos para pagar |
 | `pago_en_revision` | automatico cuando la persona envia su comprobante | Comprobante en revision |
 | `aprobado` | administrador al confirmar el pago | **Descarga habilitada** |
+| `entregado` | automatico cuando la persona descarga | **Documento entregado** (puede descargarlo otra vez) |
 | `rechazado` | administrador con una nota | El motivo y el boton para enviar otro comprobante |
 
 **Como funciona, paso a paso**
