@@ -106,7 +106,11 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
   align-items: center; justify-content: center; flex-shrink: 0; padding: 0;
 }
 .iconbtn:active { background: rgba(255, 255, 255, .22); }
-.avatar-btn { background: var(--blue); font-weight: 700; font-size: 14px; }
+.avatar-btn {
+  background-color: var(--blue); font-weight: 700; font-size: 14px;
+  background-size: cover; background-position: center; background-repeat: no-repeat;
+  overflow: hidden; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .35);
+}
 
 .scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 22px; }
 .hero { padding: 20px 18px 8px; }
@@ -216,10 +220,12 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .profile-head { padding: 22px 18px 6px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .avatar-wrap { position: relative; }
 .avatar {
-  width: 92px; height: 92px; border-radius: 50%; background: var(--navy); color: #fff;
+  width: 92px; height: 92px; border-radius: 50%; background-color: var(--navy); color: #fff;
   display: flex; align-items: center; justify-content: center; font-size: 30px; font-weight: 700;
-  background-size: cover; background-position: center;
+  background-size: cover; background-position: center; background-repeat: no-repeat;
+  overflow: hidden; flex-shrink: 0;
 }
+.avatar.xl { width: 104px; height: 104px; font-size: 34px; box-shadow: 0 0 0 3px var(--card), 0 0 0 5px var(--blue-soft); }
 .cam-badge {
   position: absolute; right: -2px; bottom: -2px; width: 32px; height: 32px; border-radius: 50%;
   background: var(--blue); color: #fff; border: 3px solid var(--bg); cursor: pointer;
