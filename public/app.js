@@ -693,7 +693,7 @@ const App = (() => {
       let inner = '';
       if (m.type === 'image') inner = `<img class="media" src="${esc(media(m.url))}" onclick="App.viewImage('${esc(media(m.url))}')" alt="" />`;
       else if (m.type === 'video') inner = `<video class="media" src="${esc(media(m.url))}" controls playsinline></video>`;
-      else if (m.type === 'audio') inner = `<audio src="${esc(media(m.url))}" controls preload="metadata"></audio>`;
+      else if (m.type === 'audio') inner = `<span class="gone">Mensaje de audio no disponible</span>`;
       else if (m.type === 'file' || m.type === 'pdf') {
         inner = `<a class="file-link" href="${esc(media(m.url))}" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1 1 0 01-1 1H6a1 1 0 01-1-1V4.5a1 1 0 011-1z"/><path d="M14 3.6V8h4"/></svg>
@@ -767,7 +767,6 @@ const App = (() => {
     closeAttach();
     const accept = {
       image: 'image/*',
-      audio: 'audio/*',
       pdf: 'application/pdf',
       file: '*/*',
     }[kind] || '*/*';
@@ -784,7 +783,6 @@ const App = (() => {
         const up = await api('/api/upload', { method: 'POST', body: JSON.stringify({ dataUrl, name: f.name }) });
         let type = 'file';
         if (f.type.startsWith('image/')) type = 'image';
-        else if (f.type.startsWith('audio/')) type = 'audio';
         else if (f.type === 'application/pdf') type = 'pdf';
         sendMessage({ type, url: up.url, text: f.name });
       } catch (e) {

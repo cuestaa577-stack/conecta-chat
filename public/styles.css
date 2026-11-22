@@ -237,7 +237,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .bubble.theirs { align-self: flex-start; background: var(--card); border: 1px solid var(--border); border-bottom-left-radius: 5px; }
 .bubble .meta { display: block; font-size: 10.5px; opacity: .65; margin-top: 4px; text-align: right; }
 .bubble img.media { max-width: 100%; border-radius: 10px; display: block; margin-bottom: 5px; }
-.bubble audio { width: 210px; max-width: 100%; }
+.bubble .gone { opacity: .6; font-style: italic; }
 .bubble .file-link { display: flex; align-items: center; gap: 8px; color: inherit; text-decoration: none; font-weight: 600; }
 .bubble .file-link svg { width: 20px; height: 20px; flex-shrink: 0; }
 .chat-input {
@@ -346,7 +346,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .sheet-card { width: 100%; background: var(--card); border-radius: 18px 18px 0 0; padding: 14px 14px max(14px, env(safe-area-inset-bottom)); }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-weight: 700; font-size: 15px; }
 .sheet-head .iconbtn { background: var(--bg); color: var(--navy); }
-.attach-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 8px; }
+.attach-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 8px; }
 .attach-grid button {
   display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 12px 4px;
   background: var(--bg); border: 1px solid var(--border); border-radius: 13px; cursor: pointer;

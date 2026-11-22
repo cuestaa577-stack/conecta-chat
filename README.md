@@ -13,8 +13,7 @@ Web de mensajería y multimedia para asesoría de trámites venezolanos: cédula
 - Botón de atrás dentro de la app (no cierra ni sale de la aplicación).
 - Registro de personas con su cédula venezolana (V-12345678) y fecha de nacimiento.
 - Acceso con cédula y contraseña, y recuperación con un código de 6 dígitos al correo.
-- Chat en tiempo real con texto, fotos, videos, audios, PDF y archivos hasta 25 MB.
-- Notas de voz con barra de grabación: borrar, pausar, reanudar y enviar.
+- Chat en tiempo real con texto, fotos, PDF y archivos hasta 25 MB (sin audio).
 - Sesión guardada: la persona vuelve y sigue dentro de la app.
 - Panel de administrador:
   - Personas registradas, conversaciones y mensajes.
@@ -179,7 +178,7 @@ Sin disco persistente, los chats y archivos se pierden cuando el servicio se rei
 - Un número de celular = una cuenta.
 - Contraseña de 8 caracteres como mínimo.
 - Cédula de 8 o 9 dígitos. Una cédula = una cuenta.
-- Los archivos subidos solo se ven con sesión iniciada: no hay enlaces públicos a fotos, audios ni documentos.
+- Los archivos subidos solo se ven con sesión iniciada: no hay enlaces públicos a fotos ni documentos.
 
 
 ## Acceso del servidor publico
