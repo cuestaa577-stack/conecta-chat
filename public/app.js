@@ -153,58 +153,187 @@ const App = (() => {
   });
 
   /* ------------------------------ acceso ------------------------------ */
-  let authMode = 'login';
+  const AUTH_PANELS = ['login', 'register', 'forgot', 'reset', 'code'];
+  let authPending = { cedula: '' };
 
-  function authTab(mode) {
-    authMode = mode;
-    const isLogin = mode === 'login';
-    $('#tabLogin').classList.toggle('active', isLogin);
-    $('#tabRegister').classList.toggle('active', !isLogin);
-    $('#registerFields').classList.toggle('hidden', isLogin);
-    $('#countryWrap').classList.toggle('hidden', isLogin);
-    $('#authBtn').textContent = isLogin ? 'Entrar' : 'Crear cuenta';
-    $('#identifierLabel').textContent = isLogin ? 'Telefono o correo' : 'Telefono o correo';
-    $('#authIdentifier').placeholder = isLogin ? '3001234567 o tucorreo@ejemplo.com' : '3001234567 o tucorreo@ejemplo.com';
+  function showAuthPanel(name) {
+    AUTH_PANELS.forEach((key) => {
+      const el = document.getElementById(key + 'Panel');
+      if (el) el.classList.toggle('hidden', key !== name);
+    });
+    const tabs = $('#authTabs');
+    const isTab = name === 'login' || name === 'register';
+    if (tabs) tabs.classList.toggle('hidden', !isTab);
+    const tl = $('#tabLogin');
+    const tr = $('#tabRegister');
+    if (tl) tl.classList.toggle('active', name === 'login');
+    if (tr) tr.classList.toggle('active', name === 'register');
   }
 
-  async function submitAuth() {
-    const identifier = ($('#authIdentifier').value || '').trim();
-    const password = ($('#authPassword').value || '').trim();
-    if (!identifier) return toast('Escribe tu telefono o correo');
-    if (password.length < 4) return toast('La contrasena debe tener al menos 4 caracteres');
+  function authTab(name) {
+    if (name !== 'register' && name !== 'forgot') name = 'login';
+    showAuthPanel(name);
+  }
+
+  /* La cedula se escribe y se guarda siempre como V-12345678 */
+  function cedulaText(value) {
+    let s = String(value || '').toUpperCase().replace(/[^VE0-9]/g, '');
+    let letter = 'V';
+    if (s.charAt(0) === 'E') { letter = 'E'; s = s.slice(1); }
+    else if (s.charAt(0) === 'V') { s = s.slice(1); }
+    s = s.replace(/\D/g, '').slice(0, 9);
+    if (!s) return '';
+    return letter + '-' + s;
+  }
+
+  function cedulaOk(value) {
+    const d = String(value || '').replace(/\D/g, '');
+    return d.length >= 8 && d.length <= 9;
+  }
+
+  function bindAuthKeys() {
+    ['loginCedula', 'regCedula', 'forgotCedula', 'codeCedula'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('blur', () => { el.value = cedulaText(el.value); });
+    });
+    const enter = {
+      loginCedula: () => { const el = $('#loginPassword'); if (el) el.focus(); },
+      regCedula: () => { const el = $('#regBirth'); if (el) el.focus(); },
+      forgotCedula: () => sendForgot(),
+      codeCedula: () => { const el = $('#codeInput'); if (el) el.focus(); },
+      loginPassword: () => submitLogin(),
+      regPassword: () => submitRegister(),
+      resetCode: () => { const el = $('#resetPassword'); if (el) el.focus(); },
+      resetPassword: () => submitReset(),
+      codeInput: () => submitCode(),
+    };
+    Object.keys(enter).forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        enter[id]();
+      });
+    });
+  }
+
+  async function finishAuth(data, isNew) {
+    state.token = data.token;
+    state.me = data.user;
+    localStorage.setItem('tve_token', data.token);
+    await enterApp();
+    if (isNew) { try { await openFirstChat(); } catch (e) {} }
+  }
+
+  /* Entrar: cedula + contrasena */
+  async function submitLogin() {
+    const cedula = cedulaText($('#loginCedula').value);
+    const password = ($('#loginPassword').value || '');
+    if (!cedulaOk(cedula)) return toast('Escribe tu cedula, por ejemplo V-12345678');
+    if (!password) return toast('Escribe tu contrasena');
+    try {
+      const data = await api('/api/login', {
+        method: 'POST',
+        body: JSON.stringify({ cedula, password }),
+      });
+      await finishAuth(data, false);
+    } catch (e) { toast(e.message); }
+  }
+
+  /* Crear cuenta: cedula + fecha de nacimiento + correo */
+  async function submitRegister() {
+    const name = ($('#regName').value || '').trim();
+    const cedula = cedulaText($('#regCedula').value);
+    const birthDate = $('#regBirth').value || '';
+    const email = ($('#regEmail').value || '').trim();
+    const password = ($('#regPassword').value || '');
+    const country = $('#authCountry').value;
+
+    if (name.length < 2) return toast('Escribe tu nombre y apellido');
+    if (!cedulaOk(cedula)) return toast('La cedula debe tener al menos 8 digitos');
+    if (!birthDate) return toast('Escribe tu fecha de nacimiento');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return toast('Escribe un correo valido');
+    if (password.length < 8) return toast('La contrasena debe tener al menos 8 caracteres');
 
     try {
-      let data;
-      if (authMode === 'login') {
-        data = await api('/api/login', { method: 'POST', body: JSON.stringify({ identifier, password }) });
+      const data = await api('/api/register', {
+        method: 'POST',
+        body: JSON.stringify({ name, cedula, birthDate, email, password, country }),
+      });
+      await finishAuth(data, true);
+      if (data.codeSent) {
+        toast('Bienvenido. Enviamos un codigo de 6 digitos a tu correo.');
       } else {
-        const name = ($('#regName').value || '').trim();
-        const email = ($('#regEmail').value || '').trim();
-        const country = $('#authCountry').value;
-        if (name.length < 2) return toast('Escribe tu nombre');
-        const isEmail = identifier.includes('@');
-        data = await api('/api/register', {
-          method: 'POST',
-          body: JSON.stringify({
-            name,
-            phone: isEmail ? '' : identifier,
-            email: isEmail ? identifier : email,
-            password,
-            country,
-          }),
-        });
+        toast('Bienvenido. Tu cuenta quedo creada.');
       }
-      state.token = data.token;
-      state.me = data.user;
-      localStorage.setItem('tve_token', data.token);
-      await enterApp();
-      if (authMode === 'register') {
-        // Toda persona nueva escribe al servidor publico para iniciar su tramite.
-        await openFirstChat();
+    } catch (e) { toast(e.message); }
+  }
+
+  /* Olvide mi contrasena: pide el codigo al correo */
+  async function sendForgot() {
+    const cedula = cedulaText($('#forgotCedula').value);
+    if (!cedulaOk(cedula)) return toast('Escribe tu cedula, por ejemplo V-12345678');
+    try {
+      const data = await api('/api/forgot', {
+        method: 'POST',
+        body: JSON.stringify({ cedula }),
+      });
+      authPending = { cedula };
+      const hint = $('#resetHint');
+      if (hint) {
+        hint.textContent = data.email
+          ? 'Enviamos un codigo de 6 digitos a ' + data.email + '. Escribelo aqui con tu nueva contrasena.'
+          : 'Enviamos un codigo de 6 digitos a tu correo.';
       }
-    } catch (e) {
-      toast(e.message);
-    }
+      showAuthPanel('reset');
+      toast('Revisa tu correo');
+    } catch (e) { toast(e.message); }
+  }
+
+  async function resendReset() {
+    if (!cedulaOk(authPending.cedula)) return authTab('forgot');
+    try {
+      await api('/api/resend-code', {
+        method: 'POST',
+        body: JSON.stringify({ cedula: authPending.cedula, purpose: 'reset' }),
+      });
+      toast('Codigo enviado otra vez');
+    } catch (e) { toast(e.message); }
+  }
+
+  /* Cambiar la contrasena con el codigo del correo */
+  async function submitReset() {
+    const code = ($('#resetCode').value || '').trim();
+    const password = ($('#resetPassword').value || '');
+    if (!/^\d{6}$/.test(code)) return toast('Escribe el codigo de 6 digitos');
+    if (password.length < 8) return toast('La contrasena debe tener al menos 8 caracteres');
+    if (!cedulaOk(authPending.cedula)) return authTab('forgot');
+    try {
+      const data = await api('/api/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ cedula: authPending.cedula, code, password }),
+      });
+      await finishAuth(data, false);
+      toast('Contrasena cambiada');
+    } catch (e) { toast(e.message); }
+  }
+
+  /* Confirmar el correo con el codigo de 6 digitos */
+  async function submitCode() {
+    const cedula = cedulaText($('#codeCedula').value);
+    const code = ($('#codeInput').value || '').trim();
+    if (!cedulaOk(cedula)) return toast('Escribe tu cedula');
+    if (!/^\d{6}$/.test(code)) return toast('Escribe el codigo de 6 digitos');
+    try {
+      await api('/api/verify-email', {
+        method: 'POST',
+        body: JSON.stringify({ cedula, code }),
+      });
+      toast('Correo confirmado');
+      authTab('login');
+    } catch (e) { toast(e.message); }
   }
 
   async function enterApp() {
@@ -232,6 +361,7 @@ const App = (() => {
     if (state.ws) { try { state.ws.close(); } catch (e) {} state.ws = null; }
     $('#appScreen').classList.add('hidden');
     $('#authScreen').classList.remove('hidden');
+    authTab('login');
     if (!silent) toast('Sesion cerrada');
   }
 
@@ -716,8 +846,7 @@ const App = (() => {
 
   /* ------------------------------ arranque ------------------------------ */
   function boot() {
-    $('#authBtn').addEventListener('click', submitAuth);
-    $('#authPassword').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitAuth(); });
+    bindAuthKeys();
     $('#chatText').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
     });
@@ -734,7 +863,8 @@ const App = (() => {
   document.addEventListener('DOMContentLoaded', boot);
 
   return {
-    authTab, submitAuth, back, pickService, pickOption, pickGrade, startChat,
+    authTab, submitLogin, submitRegister, sendForgot, submitReset, submitCode, resendReset,
+    back, pickService, pickOption, pickGrade, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
     openProfile, pickAvatar, saveProfile, deleteAccount, openAdmin, openChatFromAdmin, openFirstChat,
     viewImage, closeViewer, logout,

@@ -21,20 +21,26 @@
     <h1>Tramites Venezolanos en Linea</h1>
     <p class="muted">Cedula, licencia y antecedentes penales. Te acompanamos en todo el tramite.</p>
 
-    <div class="auth-tabs">
+    <div class="auth-tabs" id="authTabs">
       <button class="auth-tab active" id="tabLogin" onclick="App.authTab('login')">Entrar</button>
       <button class="auth-tab" id="tabRegister" onclick="App.authTab('register')">Crear cuenta</button>
     </div>
 
-    <div id="registerFields" class="hidden">
-      <label class="field"><span>Nombre y apellido</span><input id="regName" type="text" autocomplete="name" placeholder="Tu nombre" /></label>
-      <label class="field"><span>Correo electronico (opcional)</span><input id="regEmail" type="email" autocomplete="email" placeholder="tucorreo@ejemplo.com" /></label>
+    <!-- Entrar con cedula -->
+    <div id="loginPanel">
+      <label class="field"><span>Cedula de identidad</span><input id="loginCedula" type="text" inputmode="numeric" autocomplete="username" placeholder="V-12345678" /></label>
+      <label class="field"><span>Contrasena</span><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Tu contrasena" /></label>
+      <button class="btn primary" id="loginBtn" onclick="App.submitLogin()">Entrar</button>
+      <button class="linkbtn" type="button" onclick="App.authTab('forgot')">Olvide mi contrasena</button>
     </div>
 
-    <label class="field"><span id="identifierLabel">Telefono o correo</span><input id="authIdentifier" type="text" autocomplete="username" placeholder="3001234567 o tucorreo@ejemplo.com" /></label>
-    <label class="field"><span>Contrasena</span><input id="authPassword" type="password" autocomplete="current-password" placeholder="Minimo 4 caracteres" /></label>
-
-    <div id="countryWrap" class="hidden">
+    <!-- Crear cuenta con cedula -->
+    <div id="registerPanel" class="hidden">
+      <label class="field"><span>Nombre y apellido</span><input id="regName" type="text" autocomplete="name" placeholder="Tu nombre" /></label>
+      <label class="field"><span>Cedula de identidad</span><input id="regCedula" type="text" inputmode="numeric" placeholder="V-12345678" /></label>
+      <label class="field"><span>Fecha de nacimiento</span><input id="regBirth" type="date" autocomplete="bday" /></label>
+      <label class="field"><span>Correo electronico</span><input id="regEmail" type="email" autocomplete="email" placeholder="tucorreo@ejemplo.com" /></label>
+      <label class="field"><span>Contrasena</span><input id="regPassword" type="password" autocomplete="new-password" placeholder="Minimo 8 caracteres" /></label>
       <label class="field"><span>Pais donde vives</span>
         <select id="authCountry">
           <option value="Venezuela">Venezuela</option>
@@ -46,9 +52,37 @@
           <option value="Otro">Otro</option>
         </select>
       </label>
+      <button class="btn primary" id="registerBtn" onclick="App.submitRegister()">Crear cuenta</button>
+      <p class="auth-note muted">Te enviamos un codigo de 6 digitos al correo para confirmar tu cuenta.</p>
     </div>
 
-    <button class="btn primary" id="authBtn" onclick="App.submitAuth()">Entrar</button>
+    <!-- Olvide mi contrasena -->
+    <div id="forgotPanel" class="hidden">
+      <p class="muted">Escribe tu cedula y te enviamos un codigo de 6 digitos al correo con el que te registraste.</p>
+      <label class="field"><span>Cedula de identidad</span><input id="forgotCedula" type="text" inputmode="numeric" placeholder="V-12345678" /></label>
+      <button class="btn primary" onclick="App.sendForgot()">Enviar codigo</button>
+      <button class="linkbtn" type="button" onclick="App.authTab('login')">Volver</button>
+    </div>
+
+    <!-- Nueva contrasena con codigo -->
+    <div id="resetPanel" class="hidden">
+      <p class="muted" id="resetHint">Escribe el codigo de 6 digitos que enviamos a tu correo y tu nueva contrasena.</p>
+      <label class="field"><span>Codigo del correo</span><input id="resetCode" type="text" inputmode="numeric" maxlength="6" placeholder="000000" /></label>
+      <label class="field"><span>Nueva contrasena</span><input id="resetPassword" type="password" autocomplete="new-password" placeholder="Minimo 8 caracteres" /></label>
+      <button class="btn primary" onclick="App.submitReset()">Cambiar contrasena</button>
+      <button class="linkbtn" type="button" onclick="App.resendReset()">Reenviar codigo</button>
+      <button class="linkbtn" type="button" onclick="App.authTab('login')">Volver</button>
+    </div>
+
+    <!-- Confirmar correo con codigo -->
+    <div id="codePanel" class="hidden">
+      <p class="muted" id="codeHint">Escribe el codigo de 6 digitos que enviamos a tu correo.</p>
+      <label class="field"><span>Cedula de identidad</span><input id="codeCedula" type="text" inputmode="numeric" placeholder="V-12345678" /></label>
+      <label class="field"><span>Codigo del correo</span><input id="codeInput" type="text" inputmode="numeric" maxlength="6" placeholder="000000" /></label>
+      <button class="btn primary" onclick="App.submitCode()">Confirmar correo</button>
+      <button class="linkbtn" type="button" onclick="App.authTab('login')">Volver</button>
+    </div>
+
     <p class="auth-note muted">Tu sesion queda guardada en este dispositivo.</p>
   </div>
 </section>

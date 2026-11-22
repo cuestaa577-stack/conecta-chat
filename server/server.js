@@ -7,6 +7,9 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 
+let nodemailer = null;
+try { nodemailer = require('nodemailer'); } catch (e) { nodemailer = null; }
+
 const PORT = process.env.PORT || 10000;
 const SECRET = process.env.SECRET || crypto.randomBytes(32).toString('hex');
 if (!process.env.SECRET) {
@@ -19,6 +22,25 @@ const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
 const ADMIN_PHONE = String(process.env.ADMIN_PHONE || '').replace(/\D/g, '');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || crypto.randomBytes(9).toString('base64url');
 const ADMIN_NAME = process.env.ADMIN_NAME || 'Servidor publico';
+
+/* correo saliente (codigos de 6 digitos) */
+const SMTP_HOST = String(process.env.SMTP_HOST || '').trim();
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_USER = String(process.env.SMTP_USER || '').trim();
+const SMTP_PASS = String(process.env.SMTP_PASS || '');
+const MAIL_FROM = String(process.env.MAIL_FROM || (SMTP_USER ? 'Tramites Venezolanos <' + SMTP_USER + '>' : '')).trim();
+
+let mailer = null;
+if (nodemailer && SMTP_HOST && SMTP_USER && SMTP_PASS) {
+  mailer = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_PORT === 465,
+    auth: { user: SMTP_USER, pass: SMTP_PASS }
+  });
+} else {
+  console.warn('[aviso] Correo no configurado (SMTP_HOST, SMTP_USER, SMTP_PASS). Los codigos se mostraran solo en este registro.');
+}
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -83,6 +105,9 @@ function publicUser(u) {
     name: u.name,
     phone: u.phone,
     email: u.email || '',
+    cedula: u.cedula || '',
+    birthDate: u.birthDate || '',
+    emailVerified: !!u.emailVerified,
     role: u.role,
     country: u.country || '',
     avatar: u.avatar || '',
@@ -90,6 +115,92 @@ function publicUser(u) {
     createdAt: u.createdAt,
     lastSeen: u.lastSeen
   };
+}
+
+/* ------------------------------------------------------------------ cedula y codigos */
+/* Acepta V-12345678, v12345678, 12345678 y devuelve siempre V-12345678 */
+function normalizeCedula(raw) {
+  let s = String(raw == null ? '' : raw).toUpperCase().replace(/[^VE0-9]/g, '');
+  if (!s) return null;
+  let letter = 'V';
+  if (s.charAt(0) === 'E') { letter = 'E'; s = s.slice(1); }
+  else if (s.charAt(0) === 'V') { s = s.slice(1); }
+  s = s.replace(/\D/g, '');
+  if (!/^\d{8,9}$/.test(s)) return null;
+  return letter + '-' + s;
+}
+
+function isValidBirth(value) {
+  const s = String(value == null ? '' : value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(s + 'T00:00:00Z');
+  if (isNaN(d.getTime())) return false;
+  const t = d.getTime();
+  if (t > now()) return false;
+  if (t < Date.UTC(1900, 0, 1)) return false;
+  return true;
+}
+
+function maskEmail(email) {
+  const e = String(email || '');
+  const at = e.indexOf('@');
+  if (at < 1) return e;
+  const user = e.slice(0, at);
+  const domain = e.slice(at);
+  const head = user.slice(0, Math.min(2, user.length));
+  return head + '***' + domain;
+}
+
+function hashCode(code, salt) {
+  return crypto.createHash('sha256').update(String(code) + ':' + salt).digest('hex');
+}
+
+function issueCode(user, purpose) {
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  const salt = crypto.randomBytes(8).toString('hex');
+  user.codeSalt = salt;
+  user.codeHash = hashCode(code, salt);
+  user.codePurpose = purpose;
+  user.codeExp = now() + 10 * 60 * 1000;
+  user.codeTries = 0;
+  user.codeIssuedAt = now();
+  save();
+  return code;
+}
+
+function checkCode(user, code, purpose) {
+  if (!user || !user.codeHash || user.codePurpose !== purpose) return false;
+  if (!user.codeExp || user.codeExp < now()) return false;
+  if ((user.codeTries || 0) >= 6) return false;
+  user.codeTries = (user.codeTries || 0) + 1;
+  const given = Buffer.from(hashCode(String(code).trim(), user.codeSalt), 'hex');
+  const saved = Buffer.from(user.codeHash, 'hex');
+  const ok = given.length === saved.length && crypto.timingSafeEqual(given, saved);
+  if (ok) {
+    delete user.codeHash; delete user.codeSalt; delete user.codeExp;
+    delete user.codePurpose; delete user.codeTries;
+  }
+  save();
+  return ok;
+}
+
+async function sendCodeEmail(to, code, purpose) {
+  const subject = purpose === 'reset'
+    ? 'Codigo para cambiar tu contrasena'
+    : 'Codigo para confirmar tu correo';
+  const text = 'Tu codigo de 6 digitos es ' + code + '.\n\nVence en 10 minutos.\n\n' +
+    'Tramites Venezolanos en Linea\nSi no lo pediste, ignora este mensaje.';
+  if (!mailer) {
+    console.warn('[correo] Sin SMTP configurado. Codigo para ' + to + ': ' + code);
+    return false;
+  }
+  try {
+    await mailer.sendMail({ from: MAIL_FROM || SMTP_USER, to, subject, text });
+    return true;
+  } catch (e) {
+    console.error('[correo] No se pudo enviar a ' + to + ': ' + e.message);
+    return false;
+  }
 }
 
 /* Administrador inicial */
@@ -212,44 +323,153 @@ app.post('/api/visit', async (req, res) => {
 });
 
 /* --- registro / acceso --- */
-app.post('/api/register', (req, res) => {
-  const name = String((req.body && req.body.name) || '').trim();
-  const phone = String((req.body && req.body.phone) || '').replace(/\D/g, '');
-  const email = String((req.body && req.body.email) || '').trim().toLowerCase();
-  const password = String((req.body && req.body.password) || '');
-  const country = String((req.body && req.body.country) || '').trim();
+const codeGuard = new Map(); // cedula -> { count, first, last }
 
-  if (name.length < 2) return res.status(400).json({ error: 'Escribe tu nombre' });
-  if (!phone && !email) return res.status(400).json({ error: 'Escribe tu telefono o tu correo' });
-  if (phone && phone.length < 7) return res.status(400).json({ error: 'Numero de telefono no valido' });
-  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Correo no valido' });
-  if (password.length < 8) return res.status(400).json({ error: 'La contrasena debe tener al menos 8 caracteres' });
-  if (phone && Object.values(db.users).some((u) => u.phone === phone)) {
-    return res.status(409).json({ error: 'Ese numero ya tiene una cuenta' });
+function codeGuardOk(cedula) {
+  const key = String(cedula || '');
+  const nowT = now();
+  let g = codeGuard.get(key);
+  if (!g || nowT - g.first > 60 * 60 * 1000) {
+    g = { count: 0, first: nowT, last: 0 };
+    codeGuard.set(key, g);
   }
-  if (email && Object.values(db.users).some((u) => (u.email || '') === email)) {
+  if (nowT - g.last < 60 * 1000) return { ok: false, error: 'Espera un minuto antes de pedir otro codigo' };
+  if (g.count >= 6) return { ok: false, error: 'Pediste demasiados codigos. Intenta mas tarde' };
+  g.count += 1;
+  g.last = nowT;
+  return { ok: true };
+}
+
+function tokenFor(user) {
+  return sign({ uid: user.id, exp: now() + 1000 * 60 * 60 * 24 * 90 });
+}
+
+/* Crear cuenta con cedula + fecha de nacimiento */
+app.post('/api/register', async (req, res) => {
+  const body = req.body || {};
+  const name = String(body.name || '').trim();
+  const cedula = normalizeCedula(body.cedula);
+  const birthDate = String(body.birthDate || '').trim();
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  const country = String(body.country || '').trim();
+
+  if (name.length < 2) return res.status(400).json({ error: 'Escribe tu nombre y apellido' });
+  if (!cedula) return res.status(400).json({ error: 'Cedula no valida. Escribe por ejemplo V-12345678' });
+  if (!isValidBirth(birthDate)) return res.status(400).json({ error: 'Fecha de nacimiento no valida' });
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Correo electronico no valido' });
+  if (password.length < 8) return res.status(400).json({ error: 'La contrasena debe tener al menos 8 caracteres' });
+  if (Object.values(db.users).some((u) => u.cedula === cedula)) {
+    return res.status(409).json({ error: 'Esa cedula ya tiene una cuenta. Entra con tu cedula y tu contrasena' });
+  }
+  if (Object.values(db.users).some((u) => (u.email || '') === email)) {
     return res.status(409).json({ error: 'Ese correo ya tiene una cuenta' });
   }
 
-  const user = makeUser(name, phone, password, { country, email });
+  const user = makeUser(name, '', password, { country, email });
+  user.cedula = cedula;
+  user.birthDate = birthDate;
+  user.emailVerified = false;
   db.users[user.id] = user;
   save();
-  res.json({ token: sign({ uid: user.id, exp: now() + 1000 * 60 * 60 * 24 * 90 }), user: publicUser(user) });
+
+  const code = issueCode(user, 'verify');
+  const codeSent = await sendCodeEmail(email, code, 'verify');
+
+  res.json({ token: tokenFor(user), user: publicUser(user), codeSent });
 });
 
+/* Confirmar el correo con el codigo de 6 digitos */
+app.post('/api/verify-email', (req, res) => {
+  const body = req.body || {};
+  const cedula = normalizeCedula(body.cedula);
+  const code = String(body.code || '').trim();
+  if (!cedula) return res.status(400).json({ error: 'Cedula no valida' });
+  if (!/^\d{6}$/.test(code)) return res.status(400).json({ error: 'El codigo tiene 6 digitos' });
+  const user = Object.values(db.users).find((u) => u.cedula === cedula);
+  if (!user) return res.status(404).json({ error: 'Esa cedula no esta registrada' });
+  if (!checkCode(user, code, 'verify')) {
+    return res.status(400).json({ error: 'Codigo incorrecto o vencido' });
+  }
+  user.emailVerified = true;
+  save();
+  res.json({ ok: true, user: publicUser(user) });
+});
+
+/* Reenviar codigo (confirmar correo o cambiar contrasena) */
+app.post('/api/resend-code', async (req, res) => {
+  const body = req.body || {};
+  const cedula = normalizeCedula(body.cedula);
+  const purpose = body.purpose === 'reset' ? 'reset' : 'verify';
+  if (!cedula) return res.status(400).json({ error: 'Cedula no valida' });
+  const user = Object.values(db.users).find((u) => u.cedula === cedula);
+  if (!user) return res.status(404).json({ error: 'Esa cedula no esta registrada' });
+  if (!user.email) return res.status(400).json({ error: 'Esa cuenta no tiene correo' });
+  const guard = codeGuardOk(cedula);
+  if (!guard.ok) return res.status(429).json({ error: guard.error });
+  const code = issueCode(user, purpose);
+  const sent = await sendCodeEmail(user.email, code, purpose);
+  res.json({ ok: true, codeSent: sent, email: maskEmail(user.email) });
+});
+
+/* Entrar con cedula y contrasena */
 app.post('/api/login', (req, res) => {
-  const raw = String((req.body && (req.body.identifier || req.body.phone || req.body.email)) || '').trim();
-  const password = String((req.body && req.body.password) || '');
+  const body = req.body || {};
+  const raw = String(body.cedula || body.identifier || body.phone || body.email || '').trim();
+  const password = String(body.password || '');
+  if (!raw || !password) return res.status(400).json({ error: 'Escribe tu cedula y tu contrasena' });
+
+  const ced = normalizeCedula(raw);
   const digits = raw.replace(/\D/g, '');
   const mail = raw.toLowerCase();
   const user = Object.values(db.users).find((u) =>
-    (u.email && u.email === mail) || (digits && u.phone && u.phone === digits));
+    (ced && u.cedula === ced) ||
+    (digits.length >= 7 && u.phone && u.phone === digits) ||
+    (mail.indexOf('@') > 0 && u.email && u.email === mail));
+
   if (!user || user.passHash !== hashPassword(password, user.salt)) {
-    return res.status(401).json({ error: 'Telefono, correo o contrasena incorrectos' });
+    return res.status(401).json({ error: 'Cedula o contrasena incorrecta' });
   }
   user.lastSeen = now();
   save();
-  res.json({ token: sign({ uid: user.id, exp: now() + 1000 * 60 * 60 * 24 * 90 }), user: publicUser(user) });
+  res.json({ token: tokenFor(user), user: publicUser(user) });
+});
+
+/* Olvide mi contrasena: envia un codigo de 6 digitos al correo */
+app.post('/api/forgot', async (req, res) => {
+  const body = req.body || {};
+  const cedula = normalizeCedula(body.cedula || body.identifier || '');
+  if (!cedula) return res.status(400).json({ error: 'Cedula no valida. Escribe por ejemplo V-12345678' });
+  const user = Object.values(db.users).find((u) => u.cedula === cedula);
+  if (!user) return res.status(404).json({ error: 'Esa cedula no esta registrada. Crea una cuenta' });
+  if (!user.email) return res.status(400).json({ error: 'Esa cuenta no tiene correo. Escribe al servidor publico' });
+  const guard = codeGuardOk(cedula);
+  if (!guard.ok) return res.status(429).json({ error: guard.error });
+  const code = issueCode(user, 'reset');
+  const sent = await sendCodeEmail(user.email, code, 'reset');
+  if (!sent) return res.status(502).json({ error: 'No se pudo enviar el correo. Intenta de nuevo en un momento' });
+  res.json({ ok: true, email: maskEmail(user.email) });
+});
+
+/* Cambiar la contrasena con el codigo del correo */
+app.post('/api/reset-password', (req, res) => {
+  const body = req.body || {};
+  const cedula = normalizeCedula(body.cedula);
+  const code = String(body.code || '').trim();
+  const password = String(body.password || '');
+  if (!cedula) return res.status(400).json({ error: 'Cedula no valida' });
+  if (!/^\d{6}$/.test(code)) return res.status(400).json({ error: 'El codigo tiene 6 digitos' });
+  if (password.length < 8) return res.status(400).json({ error: 'La contrasena debe tener al menos 8 caracteres' });
+  const user = Object.values(db.users).find((u) => u.cedula === cedula);
+  if (!user) return res.status(404).json({ error: 'Esa cedula no esta registrada' });
+  if (!checkCode(user, code, 'reset')) {
+    return res.status(400).json({ error: 'Codigo incorrecto o vencido' });
+  }
+  user.salt = crypto.randomBytes(16).toString('hex');
+  user.passHash = hashPassword(password, user.salt);
+  user.lastSeen = now();
+  save();
+  res.json({ token: tokenFor(user), user: publicUser(user) });
 });
 
 app.get('/api/me', auth, (req, res) => {

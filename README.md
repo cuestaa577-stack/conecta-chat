@@ -11,7 +11,8 @@ Web de mensajería y multimedia para asesoría de trámites venezolanos: cédula
   - Antecedentes penales: sin apostillar o apostillado.
 - Resumen del trámite y apertura automática del chat con el asesor.
 - Botón de atrás dentro de la app (no cierra ni sale de la aplicación).
-- Registro de personas con número de celular y país.
+- Registro de personas con su cédula venezolana (V-12345678) y fecha de nacimiento.
+- Acceso con cédula y contraseña, y recuperación con un código de 6 dígitos al correo.
 - Chat en tiempo real con texto, fotos, videos, audios, PDF y archivos hasta 25 MB.
 - Notas de voz con barra de grabación: borrar, pausar, reanudar y enviar.
 - Sesión guardada: la persona vuelve y sigue dentro de la app.
@@ -34,6 +35,34 @@ La cuenta del servidor público se crea sola la primera vez que arranca el servi
 | `SECRET` | sí | Firma las sesiones; sin ella se genera una temporal |
 
 Si falta `ADMIN_PASSWORD`, el servidor genera una clave al azar y la muestra en el registro (logs) del primer arranque: entra con esa clave y cámbiala, o define la variable antes de publicar. El administrador entra con su correo o teléfono y contraseña como cualquier persona, y al entrar le aparece el botón del panel.
+
+## Registro y acceso de las personas
+
+Todo se maneja con la **cédula venezolana**, con la V y al menos 8 dígitos (`V-12345678`). Se acepta escribirlos con o sin la V y sin puntos.
+
+**Crear cuenta.** La persona escribe nombre y apellido, cédula, fecha de nacimiento, correo, contraseña y el país donde vive. Al enviar el formulario la cuenta queda creada y la aplicación se abre sola. En ese momento se envía un **código de 6 dígitos** al correo para confirmar la cuenta.
+
+**Entrar.** Cédula y contraseña. Nada más.
+
+**Olvidé mi contraseña.** Escribe su cédula, la aplicación manda un **código de 6 dígitos** al correo con el que se registró, y con ese código escribe la contraseña nueva. El código vence a los 10 minutos y admite 6 intentos.
+
+Las cuentas antiguas creadas con teléfono o correo siguen entrando igual que antes, escribiendo su teléfono o correo en el campo de cédula.
+
+## Correo saliente (códigos de 6 dígitos)
+
+Los códigos salen por SMTP. Se configura en el servidor:
+
+| Variable | Ejemplo | Para qué sirve |
+| --- | --- | --- |
+| `SMTP_HOST` | `smtp.gmail.com` | Servidor de correo |
+| `SMTP_PORT` | `587` | Puerto (465 si es SSL) |
+| `SMTP_USER` | `enelextranjerovenezolanos@gmail.com` | Cuenta que envía |
+| `SMTP_PASS` | clave de aplicación | Clave del correo, no la normal |
+| `MAIL_FROM` | `Tramites <correo@gmail.com>` | Remitente que ve la persona |
+
+Con Gmail hay que crear una **clave de aplicación** (Cuenta de Google → Seguridad → Verificación en dos pasos → Contraseñas de aplicaciones) y usar esa en `SMTP_PASS`.
+
+Si el correo no está configurado, la aplicación sigue funcionando: los códigos aparecen solo en el registro (logs) del servidor y "olvidé mi contraseña" avisa que no pudo enviar el correo.
 
 ## Estructura
 
@@ -72,6 +101,7 @@ Sin disco persistente, los chats y archivos se pierden cuando el servicio se rei
 - 25 MB por archivo.
 - Un número de celular = una cuenta.
 - Contraseña de 8 caracteres como mínimo.
+- Cédula de 8 o 9 dígitos. Una cédula = una cuenta.
 - Los archivos subidos solo se ven con sesión iniciada: no hay enlaces públicos a fotos, audios ni documentos.
 
 
