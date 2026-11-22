@@ -162,6 +162,8 @@ function cedulaApiConfigured() {
 }
 
 /* Estado de la configuracion, sin mostrar los valores. */
+let cedulaUltimoError = null;
+
 function cedulaEstado() {
   return {
     configurada: cedulaApiConfigured(),
@@ -169,6 +171,7 @@ function cedulaEstado() {
     appId: CEDULA_API_APP_ID ? 'ok' : 'falta',
     token: CEDULA_API_TOKEN ? 'ok' : 'falta',
     variables: ['CEDULA_APP_ID', 'CEDULA_TOKEN'],
+    ultimoError: cedulaUltimoError,
   };
 }
 
@@ -212,17 +215,24 @@ async function consultarCedulaApi(nacionalidad, numero) {
   if (json.error === true) {
     const detalle = String(json.error_str || '').trim();
     const low = detalle.toLowerCase();
+    cedulaUltimoError = {
+      detalle: detalle.slice(0, 200),
+      http: res.status,
+      cuando: new Date().toISOString(),
+      appId: CEDULA_API_APP_ID ? (CEDULA_API_APP_ID.slice(0, 4) + '…') : 'falta',
+    };
+    console.warn('[cedula] el servicio rechazo la consulta:', detalle, '| HTTP', res.status);
     let code = 'api_error';
     let status = 502;
     let message = detalle || 'El servicio de cedulas rechazo la consulta.';
     if (/saldo|credito|crédito|balance|pago|cuota|limite|límite|agotad|sin consultas|quota|insufficient/.test(low) || res.status === 402) {
       code = 'sin_saldo';
       status = 402;
-      message = 'La consulta automatica no esta disponible en este momento. Escribenos y la verificamos por ti.';
+      message = 'La verificacion automatica esta en pausa. Escribenos y la revisamos por ti.';
     } else if (/invalid_token|token|app|credencial|autentic|autoriz|invali|denegad|forbidden|unauthor/.test(low) || res.status === 401 || res.status === 403) {
       code = 'credenciales';
       status = 502;
-      message = 'La consulta automatica no esta disponible en este momento. Escribenos y la verificamos por ti.';
+      message = 'No pudimos verificar la cedula automaticamente. Escribenos y la revisamos por ti.';
     } else if (/record_not_found|not_found|no (se )?encontr|no exist|sin resultado|no registrad|inexistente|no hay|404/.test(low) || res.status === 404) {
       code = 'no_encontrada';
       status = 404;
@@ -230,7 +240,7 @@ async function consultarCedulaApi(nacionalidad, numero) {
     } else if (res.status === 429) {
       code = 'sin_saldo';
       status = 402;
-      message = 'La consulta automatica no esta disponible en este momento. Escribenos y la verificamos por ti.';
+      message = 'Demasiadas consultas seguidas. Espera un minuto y vuelve a intentar.';
     }
     return { ok: false, code, status, message, detalle };
   }
