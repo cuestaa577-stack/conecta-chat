@@ -187,6 +187,31 @@
         </button>
       </div>
 
+      <!-- Consultar cedula venezolana (datos reales) -->
+      <div class="mydata" id="myDataCard">
+        <button class="mydata-head" type="button" onclick="App.toggleMyData()" id="myDataToggle">
+          <span class="mydata-ic">
+            <svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.4"/><circle cx="8.6" cy="11" r="2.2"/><path d="M5.2 16.4c.6-1.5 1.9-2.3 3.4-2.3s2.8.8 3.4 2.3"/><path d="M14.6 9.6h4.2M14.6 12.6h4.2M14.6 15.6h2.8"/></svg>
+          </span>
+          <span class="mydata-txt">
+            <span class="mydata-title">Consultar cedula Venezolana</span>
+            <span class="mydata-sub" id="myDataSub">Consulta tus datos personales reales</span>
+          </span>
+          <span class="chev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
+        </button>
+        <div class="mydata-body collapsed" id="myDataBody">
+          <div class="cedula-row">
+            <select id="cedulaNac" aria-label="Nacionalidad">
+              <option value="V">V</option>
+              <option value="E">E</option>
+            </select>
+            <input id="cedulaNum" type="tel" inputmode="numeric" placeholder="12345678" />
+          </div>
+          <button class="btn ghost" onclick="App.verifyCedula()" id="cedulaBtn">Consultar datos reales</button>
+          <div id="cedulaResult" class="cedula-result hidden"></div>
+        </div>
+      </div>
+
       <div class="institutions">
         <div class="inst-title">Gestionamos ante</div>
         <div class="inst-grid">
@@ -283,19 +308,6 @@
         <label class="field"><span>Correo</span><input id="profileEmail" type="email" placeholder="tucorreo@ejemplo.com" /></label>
         <label class="field"><span>Pais</span><input id="profileCountry" placeholder="Venezuela" /></label>
         <button class="btn primary" onclick="App.saveProfileChanges()">Guardar cambios</button>
-        <div class="cedula-block">
-          <label class="field"><span>Verificar cedula (datos reales)</span>
-            <div class="cedula-row">
-              <select id="cedulaNac" aria-label="Nacionalidad">
-                <option value="V">V</option>
-                <option value="E">E</option>
-              </select>
-              <input id="cedulaNum" type="tel" inputmode="numeric" placeholder="12345678" />
-            </div>
-          </label>
-          <button class="btn ghost" onclick="App.verifyCedula()" id="cedulaBtn">Consultar datos reales</button>
-          <div id="cedulaResult" class="cedula-result hidden"></div>
-        </div>
         <button class="btn ghost" onclick="App.openEditData()">Editar datos personales</button>
         <button class="btn ghost" onclick="App.openAdmin()" id="adminBtn" style="display:none">Panel del servidor publico</button>
         <button class="btn ghost" onclick="App.logout()">Cerrar sesion</button>
