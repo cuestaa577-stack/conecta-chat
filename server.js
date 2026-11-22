@@ -908,7 +908,18 @@ app.post('/api/cedula/verify', auth, async (req, res) => {
   }
   const r = await consultarCedulaApi(nacionalidad, numero);
   if (!r.ok) {
-    return res.status(r.status || 502).json({ error: r.message, code: r.code });
+    // El administrador ve la causa tecnica; la persona ve el mensaje amable.
+    let mensaje = r.message;
+    if (req.user && req.user.role === 'admin') {
+      if (r.code === 'no_configurada') {
+        mensaje += ' [admin: faltan CEDULA_APP_ID y CEDULA_TOKEN en el servidor]';
+      } else if (r.detalle) {
+        mensaje += ' [admin: ' + r.detalle + ']';
+      } else if (r.code) {
+        mensaje += ' [admin: ' + r.code + ']';
+      }
+    }
+    return res.status(r.status || 502).json({ error: mensaje, code: r.code });
   }
   req.user.cedulaData = Object.assign({}, r.datos, { verifiedAt: now() });
   req.user.rif = r.datos.rif || req.user.rif || '';
