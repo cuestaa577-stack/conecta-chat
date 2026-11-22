@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v3.3';
+  const APP_VERSION = 'v3.5';
 
   const SERVICES = {
     cedula: {
@@ -45,6 +45,8 @@ const App = (() => {
     viewStack: [],
     flowSteps: [],
     uploading: false,
+    installEvent: null,
+    installShown: false,
   };
 
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -1101,18 +1103,109 @@ const App = (() => {
     } catch (e) {}
   }
 
+  /* --------------------------- instalar la app --------------------------- */
+  function isStandalone() {
+    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+      window.navigator.standalone === true;
+  }
+
+  function isIos() {
+    const ua = window.navigator.userAgent || '';
+    return /iPhone|iPad|iPod/i.test(ua) && !window.MSStream;
+  }
+
+  function showInstall() {
+    if (isStandalone()) return;
+    const el = $('#installBanner');
+    if (!el) return;
+    if (localStorage.getItem('install_dismissed') === '1') return;
+    el.classList.remove('hidden');
+    state.installShown = true;
+  }
+
+  function hideInstall() {
+    const el = $('#installBanner');
+    if (el) el.classList.add('hidden');
+  }
+
+  function dismissInstall() {
+    localStorage.setItem('install_dismissed', '1');
+    hideInstall();
+    toast('Puedes instalarla despues desde Mi perfil');
+  }
+
+  async function installApp() {
+    if (isStandalone()) return toast('La app ya esta instalada en tu celular');
+
+    if (state.installEvent) {
+      try {
+        state.installEvent.prompt();
+        const res = await state.installEvent.userChoice;
+        state.installEvent = null;
+        hideInstall();
+        if (res && res.outcome === 'accepted') toast('Instalando la app...');
+        else toast('Puedes instalarla cuando quieras desde Mi perfil');
+        return;
+      } catch (e) {
+        state.installEvent = null;
+      }
+    }
+
+    if (isIos()) {
+      $('#iosSheet').classList.remove('hidden');
+      return;
+    }
+
+    // Otros navegadores: instrucciones manuales
+    const enChrome = /Chrome|Chromium|Edg|SamsungBrowser/i.test(window.navigator.userAgent || '');
+    toast(enChrome
+      ? 'Abre el menu del navegador y elige "Instalar aplicacion"'
+      : 'Abre el menu del navegador y elige "Agregar a pantalla de inicio"');
+  }
+
+  function closeIosSheet() {
+    const el = $('#iosSheet');
+    if (el) el.classList.add('hidden');
+  }
+
   /* ------------------------------ arranque ------------------------------ */
   function boot() {
     bindAuthKeys();
     $('#chatText').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
     });
-    authTab('login');
+    // Si ya la tiene instalada y aun no tiene cuenta, empieza en el registro
+    authTab(isStandalone() && !state.token ? 'register' : 'login');
     logVisit();
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').then((reg) => {
         reg.update().catch(() => {});
       }).catch(() => {});
+    }
+
+    // Instalacion en un toque
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      state.installEvent = e;
+      showInstall();
+    });
+    window.addEventListener('appinstalled', () => {
+      state.installEvent = null;
+      hideInstall();
+      localStorage.removeItem('install_dismissed');
+      if (!state.token) {
+        // App instalada y sin cuenta: se abre el registro para que la cree
+        authTab('register');
+        toast('App instalada. Crea tu cuenta para empezar');
+        const idField = $('#regName');
+        if (idField) setTimeout(() => { try { idField.focus(); } catch (e) {} }, 400);
+      } else {
+        toast('App instalada. Ya la tienes en tu celular');
+      }
+    });
+    // En iPhone no hay aviso automatico: se muestra el boton con los pasos
+    if (isIos() && !isStandalone()) {
+      setTimeout(showInstall, 1800);
     }
     restoreSession();
   }
@@ -1127,6 +1220,7 @@ const App = (() => {
     openProfile, pickAvatar, saveProfileChanges, verifyCedula, renderCedulaData, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat,
     deleteAccount, openAdmin, openChatFromAdmin, openFirstChat,
     viewImage, closeViewer, logout,
+    installApp, dismissInstall, closeIosSheet,
   };
 })();
 window.App = App;

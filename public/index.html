@@ -317,6 +317,7 @@
         <button class="btn primary" onclick="App.saveProfileChanges()">Guardar cambios</button>
         <button class="btn ghost" onclick="App.openEditData()">Editar datos personales</button>
         <button class="btn ghost" onclick="App.openAdmin()" id="adminBtn" style="display:none">Panel del servidor publico</button>
+        <button class="btn ghost" onclick="App.installApp()">Instalar la app en mi celular</button>
         <button class="btn ghost" onclick="App.logout()">Cerrar sesion</button>
         <button class="btn danger" onclick="App.deleteAccount()">Eliminar mi cuenta</button>
         <p class="muted center" style="font-size:12px;margin-top:6px">Eliminar mi cuenta borra todo: tus datos, tus conversaciones y tus archivos.</p>
@@ -396,6 +397,37 @@
 
 <div class="viewer hidden" id="viewer" onclick="App.closeViewer()">
   <img id="viewerImg" alt="" />
+</div>
+
+<!-- Instalar la app -->
+<div class="install hidden" id="installBanner">
+  <img class="install-logo" src="icon-192.png" alt="" />
+  <div class="install-txt">
+    <div class="install-title">Instala la app</div>
+    <div class="install-sub">Queda en tu celular, como una app</div>
+  </div>
+  <button class="btn primary install-go" onclick="App.installApp()">Instalar</button>
+  <button class="iconbtn install-x" onclick="App.dismissInstall()" title="Ahora no">
+    <svg viewBox="0 0 24 24" class="ico"><path d="M7 7l10 10M17 7L7 17"/></svg>
+  </button>
+</div>
+
+<!-- Como instalar en iPhone -->
+<div class="sheet hidden" id="iosSheet">
+  <div class="sheet-card">
+    <div class="sheet-head">
+      <span>Instalar en iPhone</span>
+      <button class="iconbtn" onclick="App.closeIosSheet()" title="Cerrar">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M7 7l10 10M17 7L7 17"/></svg>
+      </button>
+    </div>
+    <div class="ios-steps">
+      <div class="ios-step"><b>1.</b> Toca el boton Compartir en Safari (el cuadro con la flecha hacia arriba).</div>
+      <div class="ios-step"><b>2.</b> Baja y elige <b>Agregar a inicio</b>.</div>
+      <div class="ios-step"><b>3.</b> Toca <b>Agregar</b> y listo: queda el icono en tu pantalla.</div>
+    </div>
+    <button class="btn ghost" onclick="App.closeIosSheet()">Entendido</button>
+  </div>
 </div>
 
 <div class="toast hidden" id="toast"></div>
