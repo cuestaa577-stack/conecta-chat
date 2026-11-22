@@ -36,6 +36,38 @@ La cuenta del servidor público se crea sola la primera vez que arranca el servi
 
 Si falta `ADMIN_PASSWORD`, el servidor genera una clave al azar y la muestra en el registro (logs) del primer arranque: entra con esa clave y cámbiala, o define la variable antes de publicar. El administrador entra con su correo o teléfono y contraseña como cualquier persona, y al entrar le aparece el botón del panel.
 
+
+## Consulta de cédula (api.cedula.com.ve)
+
+La verificación consulta el nombre y el RIF reales en `api.cedula.com.ve`. Las
+credenciales viven **solo en el servidor**, nunca llegan al navegador.
+
+| Variable | Para qué sirve |
+| --- | --- |
+| `CEDULA_APP_ID` | APP-ID de tu cuenta en cedula.com.ve |
+| `CEDULA_TOKEN` | Token de esa misma cuenta |
+| `CEDULA_API_URL` | Opcional. Por defecto `https://api.cedula.com.ve/api/v1` |
+
+**Dónde se ponen en Render:** servicio → *Environment* → *Add Environment
+Variable*. Las dos están marcadas `sync: false` en `render.yaml`, así que Render
+te las pide al crear el servicio y no quedan escritas en el repositorio. Al
+guardarlas, el servicio se reinicia solo.
+
+**Cómo comprobar que quedaron bien**, sin abrir la web:
+
+```bash
+CEDULA_APP_ID=tu-app-id CEDULA_TOKEN=tu-token node scripts/probar-cedula.js V12345678
+```
+
+- Si responde `INVALID_TOKEN`, una de las dos no coincide con tu cuenta.
+- Si responde que no hay saldo, las credenciales están bien pero la cuenta se
+  quedó sin consultas.
+- Si devuelve nombre y RIF, ya funciona y la web la usará igual.
+
+Desde el panel de administrador hay dos rutas para lo mismo:
+`GET /api/admin/cedula` dice si están configuradas (sin mostrar los valores) y
+`POST /api/admin/cedula/probar` hace una consulta de prueba.
+
 ## Registro y acceso de las personas
 
 Todo se maneja con la **cédula venezolana**, con la V y al menos 8 dígitos (`V-12345678`). Se acepta escribirlos con o sin la V y sin puntos.
