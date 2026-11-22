@@ -637,8 +637,25 @@ app.get('/api/me', auth, (req, res) => {
 });
 
 app.post('/api/profile', auth, (req, res) => {
-  const { name, about, avatar } = req.body || {};
-  if (name && String(name).trim().length >= 2) req.user.name = String(name).trim();
+  // El nombre NO se puede editar: solo correo, telefono, pais y foto.
+  const { email, phone, country, about, avatar } = req.body || {};
+
+  if (typeof email === 'string' && email.trim()) {
+    const mail = email.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) return res.status(400).json({ error: 'Correo electronico no valido' });
+    const ocupado = Object.values(db.users).some((u) => u.id !== req.user.id && String(u.email || '').toLowerCase() === mail);
+    if (ocupado) return res.status(409).json({ error: 'Ese correo ya esta en uso por otra cuenta' });
+    req.user.email = mail;
+  }
+
+  if (typeof phone === 'string' && phone.trim()) {
+    const soloDigitos = phone.replace(/\D/g, '');
+    if (soloDigitos.length < 7 || soloDigitos.length > 15) return res.status(400).json({ error: 'Escribe un numero de celular valido' });
+    req.user.phone = soloDigitos;
+  }
+
+  if (typeof country === 'string' && country.trim()) req.user.country = country.trim().slice(0, 40);
+
   if (typeof about === 'string') req.user.about = about.slice(0, 160);
   if (typeof avatar === 'string') req.user.avatar = avatar.slice(0, 500);
   save();
@@ -724,8 +741,17 @@ app.post('/api/chats/start', auth, (req, res) => {
   if (!admin) return res.status(500).json({ error: 'No hay administrador configurado' });
   if (admin.id === req.user.id) return res.status(400).json({ error: 'El administrador no abre tramites' });
 
+  const mismoTramite = (c) => {
+    if (!tramite) return !c.tramite;
+    if (!c.tramite) return false;
+    return (c.tramite.service || '') === (tramite.service || '') &&
+      (c.tramite.subtype || '') === (tramite.subtype || '') &&
+      (c.tramite.grade || '') === (tramite.grade || '');
+  };
+
   let chat = Object.values(db.chats).find(
-    (c) => c.type === 'direct' && c.members.length === 2 && c.members.includes(admin.id) && c.members.includes(req.user.id)
+    (c) => c.type === 'direct' && c.members.length === 2 && c.members.includes(admin.id) &&
+      c.members.includes(req.user.id) && mismoTramite(c)
   );
 
   if (!chat) {
@@ -747,6 +773,18 @@ app.post('/api/chats/start', auth, (req, res) => {
 
   sendToUser(admin.id, { type: 'chat:new', chat: chatView(chat, admin.id) });
   res.json({ chat: chatView(chat, req.user.id) });
+});
+
+/* Eliminar una conversación (solo quien participa en ella) */
+app.delete('/api/chats/:id', auth, (req, res) => {
+  const chat = db.chats[req.params.id];
+  if (!chat || !Array.isArray(chat.members) || !chat.members.includes(req.user.id)) {
+    return res.status(404).json({ error: 'Conversacion no encontrada' });
+  }
+  delete db.chats[chat.id];
+  delete db.messages[chat.id];
+  save();
+  res.json({ ok: true });
 });
 
 /* --- mensajes --- */

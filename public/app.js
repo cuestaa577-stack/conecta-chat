@@ -227,7 +227,8 @@ const App = (() => {
     state.me = data.user;
     localStorage.setItem('tve_token', data.token);
     await enterApp();
-    if (isNew) { try { await openFirstChat(); } catch (e) {} }
+    // La persona entra a la portada; la conversación la inicia ella al elegir un trámite.
+    if (isNew) { state.viewStack = []; }
   }
 
   /* Entrar: cedula + contrasena */
@@ -825,14 +826,47 @@ const App = (() => {
     inp.click();
   }
 
-  async function saveProfile() {
+  function openEditData() {
+    if (!state.me) return;
+    $('#editEmail').value = state.me.email || '';
+    $('#editPhone').value = state.me.phone || '';
+    $('#editCountry').value = state.me.country || 'Venezuela';
+    $('#editDataSheet').classList.remove('hidden');
+  }
+
+  function closeEditData() { $('#editDataSheet').classList.add('hidden'); }
+
+  async function savePersonalData() {
+    const email = ($('#editEmail').value || '').trim();
+    const phone = ($('#editPhone').value || '').trim();
+    const country = $('#editCountry').value;
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return toast('Escribe un correo valido');
+    if (phone.replace(/\D/g, '').length < 7) return toast('Escribe un numero de celular valido');
     try {
-      const name = ($('#profileName').value || '').trim();
-      const data = await api('/api/profile', { method: 'POST', body: JSON.stringify({ name }) });
+      const data = await api('/api/profile', {
+        method: 'POST',
+        body: JSON.stringify({ email, phone, country }),
+      });
       state.me = data.user;
-      const av = $('#myAvatarBtn');
-      if (av && !state.me.avatar) av.textContent = initials(state.me.name);
-      toast('Datos guardados');
+      $('#profilePhone').value = state.me.phone || '';
+      $('#profileEmail').value = state.me.email || '';
+      $('#profileCountry').value = state.me.country || '';
+      closeEditData();
+      toast('Datos personales actualizados');
+    } catch (e) { toast(e.message); }
+  }
+
+  async function deleteChat() {
+    if (!state.currentChatId) return;
+    const ok = confirm('Se eliminara esta conversacion con todos sus mensajes. Continuar?');
+    if (!ok) return;
+    try {
+      await api('/api/chats/' + encodeURIComponent(state.currentChatId), { method: 'DELETE' });
+      state.messages[state.currentChatId] = [];
+      state.currentChatId = null;
+      await loadChats();
+      back();
+      toast('Conversacion eliminada');
     } catch (e) { toast(e.message); }
   }
 
@@ -950,7 +984,8 @@ const App = (() => {
     submitVerify, resendVerify, showAdminAuth, submitAdminLogin,
     back, pickService, pickOption, pickGrade, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
-    openProfile, pickAvatar, saveProfile, deleteAccount, openAdmin, openChatFromAdmin, openFirstChat,
+    openProfile, pickAvatar, openEditData, closeEditData, savePersonalData, deleteChat,
+    deleteAccount, openAdmin, openChatFromAdmin, openFirstChat,
     viewImage, closeViewer, logout,
   };
 })();

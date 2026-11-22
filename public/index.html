@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="styles.css" />
   <style>
     .auth-card{position:relative}
-    .admin-corner{position:absolute;top:10px;right:10px;background:transparent;border:0;color:#64748b;font-size:11.5px;text-decoration:underline;padding:4px 6px;cursor:pointer;font-family:inherit}
+    .admin-corner{position:fixed;top:calc(8px + env(safe-area-inset-top));right:10px;z-index:20;background:rgba(255,255,255,.94);border:1px solid #d7dee9;border-radius:999px;color:#334155;font-size:11px;font-weight:600;padding:5px 10px;cursor:pointer;font-family:inherit;box-shadow:0 2px 8px rgba(6,16,38,.25)}
   </style>
 </head>
 <body>
@@ -223,6 +223,9 @@
         <div class="brand" id="chatTitle">Servidor publico</div>
         <div class="brand-sub" id="chatSubtitle">En linea</div>
       </div>
+      <button class="iconbtn" onclick="App.deleteChat()" title="Eliminar conversacion">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/></svg>
+      </button>
     </header>
     <div class="chat-tramite hidden" id="chatTramite"></div>
     <div class="chat-body" id="chatBody"></div>
@@ -256,11 +259,11 @@
         <p class="muted center">Toca la camara para subir tu foto</p>
       </div>
       <div class="pad">
-        <label class="field"><span>Nombre</span><input id="profileName" /></label>
+        <label class="field"><span>Nombre (no se puede cambiar)</span><input id="profileName" disabled /></label>
         <label class="field"><span>Telefono</span><input id="profilePhone" disabled /></label>
         <label class="field"><span>Correo</span><input id="profileEmail" disabled /></label>
         <label class="field"><span>Pais</span><input id="profileCountry" disabled /></label>
-        <button class="btn primary" onclick="App.saveProfile()">Guardar cambios</button>
+        <button class="btn primary" onclick="App.openEditData()">Editar datos personales</button>
         <button class="btn ghost" onclick="App.openAdmin()" id="adminBtn" style="display:none">Panel del servidor publico</button>
         <button class="btn ghost" onclick="App.logout()">Cerrar sesion</button>
         <button class="btn danger" onclick="App.deleteAccount()">Eliminar mi cuenta</button>
@@ -269,6 +272,29 @@
       </div>
     </div>
   </section>
+
+  <!-- Editar datos personales -->
+  <div class="sheet hidden" id="editDataSheet">
+    <div class="sheet-card">
+      <h3>Editar datos personales</h3>
+      <p class="muted" style="font-size:13px;margin:0 0 12px">El nombre no se puede cambiar.</p>
+      <label class="field"><span>Correo electronico</span><input id="editEmail" type="email" placeholder="tucorreo@ejemplo.com" /></label>
+      <label class="field"><span>Numero de celular</span><input id="editPhone" type="tel" inputmode="tel" placeholder="04141234567" /></label>
+      <label class="field"><span>Pais donde vives</span>
+        <select id="editCountry">
+          <option value="Venezuela">Venezuela</option>
+          <option value="Chile">Chile</option>
+          <option value="Ecuador">Ecuador</option>
+          <option value="Colombia">Colombia</option>
+          <option value="Peru">Peru</option>
+          <option value="Argentina">Argentina</option>
+          <option value="Otro">Otro</option>
+        </select>
+      </label>
+      <button class="btn primary" onclick="App.savePersonalData()">Guardar datos</button>
+      <button class="btn ghost" onclick="App.closeEditData()">Cancelar</button>
+    </div>
+  </div>
 
   <!-- Panel del servidor publico -->
   <section class="view" id="adminView">
