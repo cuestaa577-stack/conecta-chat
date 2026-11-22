@@ -20,7 +20,7 @@ Web de mensajería y multimedia para asesoría de trámites venezolanos: cédula
   - Personas registradas, conversaciones y mensajes.
   - Control por país (Chile, Ecuador y los demás) con datos reales.
   - Quién entró al enlace y cuándo.
-- Instalable como app en el teléfono (PWA) con escudo como icono.
+- Instalable como app en el teléfono (PWA) con el logo del Ministerio como icono.
 
 ## Acceso del administrador
 
@@ -77,11 +77,11 @@ Con Gmail hay que crear una **clave de aplicación** (Cuenta de Google → Segur
 
 Si no se configura nada, la aplicación sigue funcionando: los códigos aparecen solo en el registro (logs) del servidor y "olvidé mi contraseña" avisa que no pudo enviar el correo.
 
-## Verificación de cédula con datos reales (api.cedula.com.ve)
+## Verificación de cédula (api.cedula.com.ve)
 
 **Automático al registrarse.** Cuando la persona crea su cuenta y escribe su cédula, el servidor consulta `api.cedula.com.ve` en ese momento y **guarda de una vez en su perfil** los datos reales que devuelve la API: nacionalidad, cédula, RIF, primer y segundo apellido, primer y segundo nombre, y los datos del CNE (estado, municipio, parroquia y centro electoral). La persona **no los escribe a mano**: la API es la fuente. Al entrar a la app esos datos ya aparecen en la pantalla principal (bloque **"Consultar cédula Venezolana"**) y en su perfil. Si la API no responde o no encuentra la cédula, la cuenta se crea igual (no se bloquea) y se reintenta al confirmar el correo.
 
-**Consulta manual.** Además, en la pantalla principal hay un bloque **"Consultar cédula Venezolana"**: la persona elige la nacionalidad (V/E), escribe el número y pulsa **"Consultar datos reales"** para refrescar o completar sus datos.
+**Consulta manual.** Además, en la pantalla principal hay un bloque **"Consultar cédula Venezolana"**: la persona elige la nacionalidad (V/E), escribe el número y pulsa **"Verificar"** para refrescar o completar sus datos.
 
 **La consulta la hace el servidor, nunca el navegador.** Las credenciales (`APP-ID` y token) se leen de variables de entorno y no se envían al cliente: el frontend solo llama a `POST /api/cedula/verify` con la cédula, y el backend consulta `api.cedula.com.ve` y devuelve los datos ya limpios.
 
@@ -97,7 +97,7 @@ Si no se configura nada, la aplicación sigue funcionando: los códigos aparecen
 2. Añade `CEDULA_APP_ID` con tu APP-ID y `CEDULA_TOKEN` con tu token (tipo *Secret*).
 3. Guarda: Render reinicia solo con las nuevas variables.
 
-Hasta que no se configuren, el bloque sigue visible pero al consultar avisa **"La verificación de cédula no está configurada en el servidor"**; no se rompe nada.
+Hasta que no se configuren, el bloque sigue visible pero al pulsar **Verificar** avisa **"La verificación de cédula no está disponible en este momento. Intenta más tarde."**; no se rompe nada.
 
 ### Mensajes de error que maneja
 
@@ -107,7 +107,7 @@ Hasta que no se configuren, el bloque sigue visible pero al consultar avisa **"L
 | Error del API / sin conexión | "No se pudo conectar con el servicio de cédulas…" |
 | Credenciales inválidas | "Las credenciales del servicio de cédulas no son válidas. Avisa al administrador." |
 | Sin saldo / límite | "El servicio de cédulas no tiene saldo disponible. Avisa al administrador." |
-| Sin configurar | "La verificación de cédula no está configurada en el servidor." |
+| Sin configurar | "La verificación de cédula no está disponible en este momento. Intenta más tarde." |
 
 ## Estructura
 
