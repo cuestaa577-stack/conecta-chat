@@ -32,7 +32,7 @@ const App = (() => {
     },
   };
 
-  const GRADES = ['Grado 2°', 'Grado 3°', 'Grado 4°', 'Grado 5°'];
+  const GRADES = ['Grado 2\u00b0', 'Grado 3\u00b0', 'Grado 4\u00b0', 'Grado 5\u00b0'];
 
   const state = {
     token: localStorage.getItem('tve_token') || '',
@@ -220,6 +220,20 @@ const App = (() => {
         enter[id]();
       });
     });
+
+    // Ver / ocultar contrasena (delegado: funciona en todos los campos)
+    document.addEventListener('click', (e) => {
+      const t = e.target;
+      const btn = t && t.closest ? t.closest('.pass-toggle') : null;
+      if (!btn) return;
+      e.preventDefault();
+      const input = document.getElementById(btn.getAttribute('data-target') || '');
+      if (!input) return;
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.textContent = show ? 'Ocultar' : 'Ver';
+      btn.setAttribute('aria-label', show ? 'Ocultar contrasena' : 'Ver contrasena');
+    });
   }
 
   async function finishAuth(data, isNew) {
@@ -227,7 +241,7 @@ const App = (() => {
     state.me = data.user;
     localStorage.setItem('tve_token', data.token);
     await enterApp();
-    // La persona entra a la portada; la conversación la inicia ella al elegir un trámite.
+    // La persona entra a la portada; la conversaci\u00f3n la inicia ella al elegir un tr\u00e1mite.
     if (isNew) { state.viewStack = []; }
   }
 
@@ -275,7 +289,7 @@ const App = (() => {
         method: 'POST',
         body: JSON.stringify({ name, cedula, birthDate, email, password, country }),
       });
-      // La cuenta queda SIN verificar: primero debe escribir el código del correo.
+      // La cuenta queda SIN verificar: primero debe escribir el c\u00f3digo del correo.
       showVerifyPanel(data.cedula || cedula, data.email, data.codeSent);
     } catch (e) { toast(e.message); }
     finally { enviandoRegistro = false; }
@@ -352,7 +366,7 @@ const App = (() => {
     } catch (e) { toast(e.message); }
   }
 
-  /* Pantalla obligatoria de verificación (antes de entrar a la app) */
+  /* Pantalla obligatoria de verificaci\u00f3n (antes de entrar a la app) */
   function showVerifyPanel(cedula, email, codeSent) {
     authPending = { cedula: cedula || '', email: email || '' };
     const hint = $('#verifyHint');
@@ -380,7 +394,7 @@ const App = (() => {
         method: 'POST',
         body: JSON.stringify({ cedula: authPending.cedula, code }),
       });
-      // Código correcto: ahora sí se inicia la sesión y entra a la app.
+      // C\u00f3digo correcto: ahora s\u00ed se inicia la sesi\u00f3n y entra a la app.
       await finishAuth(data, true);
       toast('Correo confirmado. Bienvenido');
     } catch (e) { toast(e.message); }
@@ -535,7 +549,7 @@ const App = (() => {
         <div class="options">
           ${GRADES.map((g) => `
             <button class="option" onclick="App.pickGrade('${g}')">
-              <span class="grade-badge">${esc(g.replace('Grado ', '').replace('°', ''))}°</span>
+              <span class="grade-badge">${esc(g.replace('Grado ', '').replace('\u00b0', ''))}\u00b0</span>
               <span class="option-title">${esc(g)}</span>
               <span class="chev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
             </button>`).join('')}
@@ -613,7 +627,7 @@ const App = (() => {
       const name = state.me.role === 'admin' ? (other ? other.name : 'Persona') : 'Servidor publico';
       const lm = c.lastMessage;
       const last = lm ? (lm.type === 'text' ? lm.text : '[' + lm.type + ']') : 'Sin mensajes';
-      const tramite = c.tramite ? `${c.tramite.serviceLabel || ''}${c.tramite.subtypeLabel ? ' · ' + c.tramite.subtypeLabel : ''}` : '';
+      const tramite = c.tramite ? `${c.tramite.serviceLabel || ''}${c.tramite.subtypeLabel ? ' \u00b7 ' + c.tramite.subtypeLabel : ''}` : '';
       return `<button class="chat-row" onclick="App.openChat('${c.id}')">
         <div class="avatar" style="width:46px;height:46px;font-size:16px;${other && other.avatar ? `background-image:url(${esc(media(other.avatar))})` : ''}">${other && other.avatar ? '' : initials(name)}</div>
         <div class="grow">
@@ -641,7 +655,7 @@ const App = (() => {
     const tEl = $('#chatTramite');
     if (chat && chat.tramite) {
       const t = chat.tramite;
-      tEl.textContent = [t.serviceLabel, t.subtypeLabel, t.grade].filter(Boolean).join(' · ');
+      tEl.textContent = [t.serviceLabel, t.subtypeLabel, t.grade].filter(Boolean).join(' \u00b7 ');
       tEl.classList.remove('hidden');
     } else {
       tEl.classList.add('hidden');
@@ -899,18 +913,18 @@ const App = (() => {
         <div class="panel">
           <h3>Conversaciones</h3>
           ${(d.conversations || []).map((c) => `<button class="panel-row tap" onclick="App.openChatFromAdmin('${c.chatId}')">
-            <div class="who"><b>${esc(c.name)}</b><small>${esc(c.country)} · ${esc(c.tramite ? c.tramite.serviceLabel + ' · ' + c.tramite.subtypeLabel : 'Sin tramite')}</small><small>${esc(c.lastText || 'Sin mensajes todavia')}</small></div>
+            <div class="who"><b>${esc(c.name)}</b><small>${esc(c.country)} \u00b7 ${esc(c.tramite ? c.tramite.serviceLabel + ' \u00b7 ' + c.tramite.subtypeLabel : 'Sin tramite')}</small><small>${esc(c.lastText || 'Sin mensajes todavia')}</small></div>
             <span class="pill ${c.unread ? 'hot' : ''}">${c.unread ? c.unread + ' sin leer' : c.messages + ' msj'}</span>
           </button>`).join('') || '<div class="panel-row"><span>Todavia nadie te ha escrito</span></div>'}
         </div>
         <div class="panel">
           <h3>Por pais</h3>
-          ${countries.map((c) => `<div class="panel-row"><span>${esc(c.country || 'Sin pais')}</span><span class="pill">${c.people} personas · ${c.conversations} chats</span></div>`).join('') || '<div class="panel-row"><span>Sin datos</span></div>'}
+          ${countries.map((c) => `<div class="panel-row"><span>${esc(c.country || 'Sin pais')}</span><span class="pill">${c.people} personas \u00b7 ${c.conversations} chats</span></div>`).join('') || '<div class="panel-row"><span>Sin datos</span></div>'}
         </div>
         <div class="panel">
           <h3>Personas</h3>
           ${(d.users || []).map((p) => `<div class="panel-row">
-            <div class="who"><b>${esc(p.name)}</b><small>${esc(p.country || 'Sin pais')} · ${esc(p.phone || p.email || '')}</small></div>
+            <div class="who"><b>${esc(p.name)}</b><small>${esc(p.country || 'Sin pais')} \u00b7 ${esc(p.phone || p.email || '')}</small></div>
             <span class="pill">${p.messages} msj</span>
           </div>`).join('') || '<div class="panel-row"><span>Todavia no hay personas</span></div>'}
         </div>
