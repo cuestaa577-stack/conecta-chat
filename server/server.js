@@ -430,7 +430,21 @@ app.post('/api/register', async (req, res) => {
   if (!isValidBirth(birthDate)) return res.status(400).json({ error: 'Fecha de nacimiento no valida' });
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Correo electronico no valido' });
   if (password.length < 8) return res.status(400).json({ error: 'La contrasena debe tener al menos 8 caracteres' });
-  if (Object.values(db.users).some((u) => u.cedula === cedula)) {
+  const existing = Object.values(db.users).find((u) => u.cedula === cedula);
+  if (existing) {
+    // Si la cuenta existe pero NO ha confirmado el correo, reenviamos el código
+    // y la llevamos a la pantalla de verificación (no se le da acceso todavía).
+    if (existing.emailVerified === false) {
+      const code = issueCode(existing, 'verify');
+      const codeSent = await sendCodeEmail(existing.email || email, code, 'verify');
+      return res.json({
+        ok: true,
+        needVerify: true,
+        cedula: existing.cedula,
+        email: maskEmail(existing.email || email),
+        codeSent,
+      });
+    }
     return res.status(409).json({ error: 'Esa cedula ya tiene una cuenta. Entra con tu cedula y tu contrasena' });
   }
   if (Object.values(db.users).some((u) => (u.email || '') === email)) {
@@ -447,7 +461,15 @@ app.post('/api/register', async (req, res) => {
   const code = issueCode(user, 'verify');
   const codeSent = await sendCodeEmail(email, code, 'verify');
 
-  res.json({ token: tokenFor(user), user: publicUser(user), codeSent });
+  // IMPORTANTE: NO se entrega sesión aquí. La cuenta queda sin verificar y la
+  // persona debe escribir el código de 6 dígitos antes de entrar a la app.
+  res.json({
+    ok: true,
+    needVerify: true,
+    cedula: user.cedula,
+    email: maskEmail(email),
+    codeSent,
+  });
 });
 
 /* Confirmar el correo con el codigo de 6 digitos */
@@ -463,8 +485,10 @@ app.post('/api/verify-email', (req, res) => {
     return res.status(400).json({ error: 'Codigo incorrecto o vencido' });
   }
   user.emailVerified = true;
+  user.lastSeen = now();
   save();
-  res.json({ ok: true, user: publicUser(user) });
+  // Código correcto: recién aquí se inicia la sesión y entra a la app.
+  res.json({ ok: true, token: tokenFor(user), user: publicUser(user) });
 });
 
 /* Reenviar codigo (confirmar correo o cambiar contrasena) */
@@ -484,7 +508,7 @@ app.post('/api/resend-code', async (req, res) => {
 });
 
 /* Entrar con cedula y contrasena */
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   const body = req.body || {};
   const raw = String(body.cedula || body.identifier || body.phone || body.email || '').trim();
   const password = String(body.password || '');
@@ -501,6 +525,24 @@ app.post('/api/login', (req, res) => {
   if (!user || user.passHash !== hashPassword(password, user.salt)) {
     return res.status(401).json({ error: 'Cedula o contrasena incorrecta' });
   }
+
+  // Cuenta sin correo confirmado: no entra hasta validar el código de 6 dígitos.
+  // (Las cuentas antiguas y el administrador no tienen el campo y pasan normal.)
+  if (user.emailVerified === false) {
+    let codeSent = false;
+    try {
+      const code = issueCode(user, 'verify');
+      codeSent = await sendCodeEmail(user.email, code, 'verify');
+    } catch (e) {}
+    return res.status(403).json({
+      error: 'Confirma tu correo para entrar. Enviamos un codigo de 6 digitos.',
+      needVerify: true,
+      cedula: user.cedula || ced,
+      email: maskEmail(user.email || ''),
+      codeSent,
+    });
+  }
+
   user.lastSeen = now();
   save();
   res.json({ token: tokenFor(user), user: publicUser(user) });

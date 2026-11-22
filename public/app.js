@@ -103,7 +103,10 @@ const App = (() => {
     if (!res.ok) {
       const msg = (data && data.error) || 'Error de conexion';
       if (res.status === 401 && state.token) logout(true);
-      throw new Error(msg);
+      const err = new Error(msg);
+      err.status = res.status;
+      err.data = data || {};
+      throw err;
     }
     return data;
   }
@@ -153,7 +156,7 @@ const App = (() => {
   });
 
   /* ------------------------------ acceso ------------------------------ */
-  const AUTH_PANELS = ['login', 'register', 'forgot', 'reset', 'code'];
+  const AUTH_PANELS = ['login', 'register', 'forgot', 'reset', 'code', 'verify'];
   let authPending = { cedula: '' };
 
   function showAuthPanel(name) {
@@ -239,7 +242,13 @@ const App = (() => {
         body: JSON.stringify({ cedula, password }),
       });
       await finishAuth(data, false);
-    } catch (e) { toast(e.message); }
+    } catch (e) {
+      if (e.data && e.data.needVerify) {
+        showVerifyPanel(e.data.cedula || cedula, e.data.email, e.data.codeSent);
+        return;
+      }
+      toast(e.message);
+    }
   }
 
   /* Crear cuenta: cedula + fecha de nacimiento + correo */
@@ -262,12 +271,8 @@ const App = (() => {
         method: 'POST',
         body: JSON.stringify({ name, cedula, birthDate, email, password, country }),
       });
-      await finishAuth(data, true);
-      if (data.codeSent) {
-        toast('Bienvenido. Enviamos un codigo de 6 digitos a tu correo.');
-      } else {
-        toast('Bienvenido. Tu cuenta quedo creada.');
-      }
+      // La cuenta queda SIN verificar: primero debe escribir el código del correo.
+      showVerifyPanel(data.cedula || cedula, data.email, data.codeSent);
     } catch (e) { toast(e.message); }
   }
 
@@ -320,6 +325,49 @@ const App = (() => {
     } catch (e) { toast(e.message); }
   }
 
+  /* Pantalla obligatoria de verificación (antes de entrar a la app) */
+  function showVerifyPanel(cedula, email, codeSent) {
+    authPending = { cedula: cedula || '', email: email || '' };
+    const hint = $('#verifyHint');
+    if (hint) {
+      hint.textContent = (codeSent === false
+        ? 'Tu cuenta esta creada, pero no pudimos enviar el correo. Toca "Reenviar codigo".'
+        : 'Enviamos un codigo de 6 digitos' + (email ? ' a ' + email : ' a tu correo') + '. Escribelo para entrar.');
+    }
+    const inp = $('#verifyCode');
+    if (inp) inp.value = '';
+    showAuthPanel('verify');
+    if (codeSent !== false) toast('Revisa tu correo y escribe el codigo');
+    setTimeout(() => { const i = $('#verifyCode'); if (i) i.focus(); }, 250);
+  }
+
+  async function submitVerify() {
+    const code = ($('#verifyCode').value || '').replace(/\D/g, '');
+    if (!/^\d{6}$/.test(code)) return toast('Escribe el codigo de 6 digitos');
+    if (!authPending.cedula) return authTab('login');
+    try {
+      const data = await api('/api/verify-email', {
+        method: 'POST',
+        body: JSON.stringify({ cedula: authPending.cedula, code }),
+      });
+      // Código correcto: ahora sí se inicia la sesión y entra a la app.
+      await finishAuth(data, true);
+      toast('Correo confirmado. Bienvenido');
+    } catch (e) { toast(e.message); }
+  }
+
+  async function resendVerify() {
+    if (!authPending.cedula) return authTab('register');
+    try {
+      const data = await api('/api/resend-code', {
+        method: 'POST',
+        body: JSON.stringify({ cedula: authPending.cedula, purpose: 'verify' }),
+      });
+      if (data && data.codeSent === false) return toast('No pudimos enviar el correo. Intenta mas tarde');
+      toast('Codigo enviado otra vez a tu correo');
+    } catch (e) { toast(e.message); }
+  }
+
   /* Confirmar el correo con el codigo de 6 digitos */
   async function submitCode() {
     const cedula = cedulaText($('#codeCedula').value);
@@ -327,10 +375,15 @@ const App = (() => {
     if (!cedulaOk(cedula)) return toast('Escribe tu cedula');
     if (!/^\d{6}$/.test(code)) return toast('Escribe el codigo de 6 digitos');
     try {
-      await api('/api/verify-email', {
+      const data = await api('/api/verify-email', {
         method: 'POST',
         body: JSON.stringify({ cedula, code }),
       });
+      if (data && data.token) {
+        await finishAuth(data, false);
+        toast('Correo confirmado');
+        return;
+      }
       toast('Correo confirmado');
       authTab('login');
     } catch (e) { toast(e.message); }
@@ -864,6 +917,7 @@ const App = (() => {
 
   return {
     authTab, submitLogin, submitRegister, sendForgot, submitReset, submitCode, resendReset,
+    submitVerify, resendVerify,
     back, pickService, pickOption, pickGrade, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
     openProfile, pickAvatar, saveProfile, deleteAccount, openAdmin, openChatFromAdmin, openFirstChat,

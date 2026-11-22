@@ -75,6 +75,14 @@
     </div>
 
     <!-- Confirmar correo con codigo -->
+    <div id="verifyPanel" class="hidden">
+      <p class="muted" id="verifyHint">Enviamos un codigo de 6 digitos a tu correo. Escribelo para entrar.</p>
+      <label class="field"><span>Codigo del correo</span><input id="verifyCode" type="text" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" /></label>
+      <button class="btn primary" onclick="App.submitVerify()">Verificar y entrar</button>
+      <button class="linkbtn" type="button" onclick="App.resendVerify()">Reenviar codigo</button>
+      <button class="linkbtn" type="button" onclick="App.authTab('login')">Volver</button>
+    </div>
+
     <div id="codePanel" class="hidden">
       <p class="muted" id="codeHint">Escribe el codigo de 6 digitos que enviamos a tu correo.</p>
       <label class="field"><span>Cedula de identidad</span><input id="codeCedula" type="text" inputmode="numeric" placeholder="V-12345678" /></label>
