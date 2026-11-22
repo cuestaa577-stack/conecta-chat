@@ -20,7 +20,7 @@ const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'enelextranjerovenezolanos@gmail.com').trim().toLowerCase();
 const ADMIN_PHONE = String(process.env.ADMIN_PHONE || '').replace(/\D/g, '');
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Angelo18@';
+const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || '');
 const ADMIN_NAME = process.env.ADMIN_NAME || 'Servidor publico';
 
 /* correo saliente (codigos de 6 digitos) */
@@ -524,8 +524,8 @@ async function sendCodeEmail(to, code, purpose) {
 function ensureAdmin() {
   const admin = Object.values(db.users).find((u) => u.role === 'admin');
   if (admin) {
-    // Mantiene las credenciales del administrador alineadas con la configuracion
-    // (por defecto: enelextranjerovenezolanos@gmail.com / Angelo18@)
+    // Mantiene el correo del administrador alineado con ADMIN_EMAIL.
+    // La clave solo se toca cuando ADMIN_PASSWORD esta definida en el servidor.
     let changed = false;
     if (ADMIN_EMAIL && (admin.email || '').toLowerCase() !== ADMIN_EMAIL) { admin.email = ADMIN_EMAIL; changed = true; }
     if (ADMIN_PASSWORD && admin.passHash !== hashPassword(ADMIN_PASSWORD, admin.salt)) {
@@ -537,11 +537,16 @@ function ensureAdmin() {
     if (changed) save();
     return;
   }
-  const nuevo = makeUser(ADMIN_NAME, ADMIN_PHONE, ADMIN_PASSWORD, { role: 'admin', country: 'Venezuela', email: ADMIN_EMAIL });
+  const pass = ADMIN_PASSWORD || crypto.randomBytes(9).toString('base64url');
+  const nuevo = makeUser(ADMIN_NAME, ADMIN_PHONE, pass, { role: 'admin', country: 'Venezuela', email: ADMIN_EMAIL });
   nuevo.emailVerified = true;
   db.users[nuevo.id] = nuevo;
   save();
   console.log('Administrador creado: ' + (ADMIN_EMAIL || ADMIN_PHONE));
+  if (!ADMIN_PASSWORD) {
+    console.warn('[aviso] Falta ADMIN_PASSWORD. Clave inicial generada: ' + pass);
+    console.warn('[aviso] Entra con esa clave y cambiala, o define ADMIN_PASSWORD en el servidor.');
+  }
 }
 
 /* ensureAdmin() se ejecuta al arrancar, despues de cargar los datos */
