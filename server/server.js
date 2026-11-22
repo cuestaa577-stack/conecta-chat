@@ -248,6 +248,25 @@ async function consultarCedulaApi(nacionalidad, numero) {
   return { ok: true, datos };
 }
 
+/* Guarda en la cuenta los datos reales de la cedula, tomando la API como fuente.
+   Se llama al REGISTRAR (con la cedula que escribe la persona) y, como respaldo,
+   al confirmar el correo. Si la API falla o no encuentra la cedula, no bloquea
+   nada: la cuenta queda creada igual y la persona puede consultar luego. */
+async function attachCedulaData(user) {
+  if (!user || user.cedulaData || !user.cedula) return;
+  if (!cedulaApiConfigured()) return;
+  const num = String(user.cedula).replace(/\D/g, '');
+  const nac = String(user.cedula).charAt(0).toUpperCase() === 'E' ? 'E' : 'V';
+  try {
+    const r = await consultarCedulaApi(nac, num);
+    if (r.ok) {
+      user.cedulaData = Object.assign({}, r.datos, { verifiedAt: now() });
+      user.rif = r.datos.rif || user.rif || '';
+      save();
+    }
+  } catch (e) { /* sin datos reales, no pasa nada */ }
+}
+
 let db = { users: {}, chats: {}, messages: {}, visits: [] };
 
 async function load() {
@@ -674,6 +693,10 @@ app.post('/api/register', async (req, res) => {
   db.users[user.id] = user;
   save();
 
+  // Al registrarse con la cedula, se consultan y guardan de una vez los datos
+  // reales (nombres, apellidos, RIF, CNE) tomando la API como fuente.
+  await attachCedulaData(user);
+
   const code = issueCode(user, 'verify');
   const codeSent = await sendCodeEmail(email, code, 'verify');
 
@@ -705,6 +728,10 @@ app.post('/api/verify-email', (req, res) => {
   save();
   // Código correcto: recién aquí se inicia la sesión y entra a la app.
   res.json({ ok: true, token: tokenFor(user), user: publicUser(user) });
+
+  // Respaldo: si al registrarse la API no respondio, se reintenta al confirmar
+  // el correo (en segundo plano, para no retrasar la entrada a la app).
+  attachCedulaData(user).catch(() => {});
 });
 
 /* Reenviar codigo (confirmar correo o cambiar contrasena) */
@@ -923,7 +950,7 @@ function chatView(chat, forUserId) {
     id: chat.id,
     type: chat.type,
     name: chat.type === 'group' ? chat.name : (other ? other.name : 'Chat'),
-    members,
+    members: members,
     other,
     tramite: chat.tramite || null,
     lastMessage: last,
