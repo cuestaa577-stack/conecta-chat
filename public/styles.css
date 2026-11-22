@@ -234,6 +234,20 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .cam-badge svg { width: 17px; height: 17px; }
 .pad { padding: 10px 16px 26px; }
 
+/* Verificacion de cedula */
+.cedula-block { margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--border); }
+.cedula-row { display: flex; gap: 8px; }
+.cedula-row select { width: 74px; flex-shrink: 0; text-align: center; }
+.cedula-row input { flex: 1; }
+.cedula-result { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 13px; margin-top: 10px; }
+.cedula-result h4 { margin: 0 0 8px; font-size: 14px; color: var(--navy); }
+.cedula-result .row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 13px; padding: 5px 0; border-bottom: 1px dashed var(--border); }
+.cedula-result .row:last-child { border-bottom: 0; }
+.cedula-result .row span:first-child { color: var(--muted); flex-shrink: 0; }
+.cedula-result .row b { text-align: right; max-width: 62%; word-break: break-word; }
+.cedula-result .cne { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.cedula-error { font-size: 13px; color: var(--red); font-weight: 600; }
+
 /* Panel */
 #adminContent { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }

@@ -283,6 +283,19 @@
         <label class="field"><span>Correo</span><input id="profileEmail" type="email" placeholder="tucorreo@ejemplo.com" /></label>
         <label class="field"><span>Pais</span><input id="profileCountry" placeholder="Venezuela" /></label>
         <button class="btn primary" onclick="App.saveProfileChanges()">Guardar cambios</button>
+        <div class="cedula-block">
+          <label class="field"><span>Verificar cedula (datos reales)</span>
+            <div class="cedula-row">
+              <select id="cedulaNac" aria-label="Nacionalidad">
+                <option value="V">V</option>
+                <option value="E">E</option>
+              </select>
+              <input id="cedulaNum" type="tel" inputmode="numeric" placeholder="12345678" />
+            </div>
+          </label>
+          <button class="btn ghost" onclick="App.verifyCedula()" id="cedulaBtn">Consultar datos reales</button>
+          <div id="cedulaResult" class="cedula-result hidden"></div>
+        </div>
         <button class="btn ghost" onclick="App.openEditData()">Editar datos personales</button>
         <button class="btn ghost" onclick="App.openAdmin()" id="adminBtn" style="display:none">Panel del servidor publico</button>
         <button class="btn ghost" onclick="App.logout()">Cerrar sesion</button>
