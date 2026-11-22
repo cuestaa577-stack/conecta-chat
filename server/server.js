@@ -150,6 +150,104 @@ function explainSupabaseError(msg) {
   return '';
 }
 
+/* ------------- consulta de cedula (api.cedula.com.ve) -------------
+   Las credenciales (APP-ID y token) viven SOLO en el servidor, en
+   variables de entorno. Nunca se envian al navegador. */
+const CEDULA_API_BASE = String(process.env.CEDULA_API_URL || 'https://api.cedula.com.ve/api/v1').trim();
+const CEDULA_API_APP_ID = cleanEnv(process.env.CEDULA_APP_ID || process.env.CEDULA_API_APP_ID);
+const CEDULA_API_TOKEN = cleanEnv(process.env.CEDULA_TOKEN || process.env.CEDULA_API_TOKEN);
+
+function cedulaApiConfigured() {
+  return !!(CEDULA_API_APP_ID && CEDULA_API_TOKEN);
+}
+
+/* Consulta la cedula en api.cedula.com.ve. Devuelve siempre un objeto
+   { ok, datos } o { ok:false, code, status, message } listo para responder. */
+async function consultarCedulaApi(nacionalidad, numero) {
+  if (!cedulaApiConfigured()) {
+    return {
+      ok: false, code: 'no_configurada', status: 503,
+      message: 'La verificacion de cedula no esta configurada en el servidor. Faltan CEDULA_APP_ID y CEDULA_TOKEN.',
+    };
+  }
+  const nac = String(nacionalidad || 'V').toUpperCase() === 'E' ? 'E' : 'V';
+  const ced = String(numero || '').replace(/\D/g, '');
+  if (!/^\d{6,9}$/.test(ced)) {
+    return { ok: false, code: 'cedula_invalida', status: 400, message: 'Escribe un numero de cedula valido (solo digitos).' };
+  }
+  const url = CEDULA_API_BASE + '?app_id=' + encodeURIComponent(CEDULA_API_APP_ID)
+    + '&token=' + encodeURIComponent(CEDULA_API_TOKEN)
+    + '&nacionalidad=' + encodeURIComponent(nac)
+    + '&cedula=' + encodeURIComponent(ced);
+
+  let res;
+  let raw = '';
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    res = await fetch(url, { signal: controller.signal, headers: { accept: 'application/json' } });
+    clearTimeout(timer);
+    raw = await res.text();
+  } catch (e) {
+    return { ok: false, code: 'api_error', status: 502, message: 'No se pudo conectar con el servicio de cedulas. Intenta de nuevo en un momento.' };
+  }
+
+  let json = null;
+  try { json = JSON.parse(raw); } catch (e) { json = null; }
+  if (!json || typeof json !== 'object') {
+    return { ok: false, code: 'api_error', status: 502, message: 'El servicio de cedulas respondio de forma inesperada. Intenta de nuevo.' };
+  }
+
+  if (json.error === true) {
+    const detalle = String(json.error_str || '').trim();
+    const low = detalle.toLowerCase();
+    let code = 'api_error';
+    let status = 502;
+    let message = detalle || 'El servicio de cedulas rechazo la consulta.';
+    if (/saldo|credito|crédito|balance|pago|cuota|limite|límite|agotad|sin consultas|quota|insufficient/.test(low) || res.status === 402) {
+      code = 'sin_saldo';
+      status = 402;
+      message = 'El servicio de cedulas no tiene saldo disponible. Avisa al administrador.';
+    } else if (/invalid_token|token|app|credencial|autentic|autoriz|invali|denegad|forbidden|unauthor/.test(low) || res.status === 401 || res.status === 403) {
+      code = 'credenciales';
+      status = 502;
+      message = 'Las credenciales del servicio de cedulas no son validas. Avisa al administrador.';
+    } else if (/record_not_found|not_found|no (se )?encontr|no exist|sin resultado|no registrad|inexistente|no hay|404/.test(low) || res.status === 404) {
+      code = 'no_encontrada';
+      status = 404;
+      message = 'No se encontro esa cedula en el registro. Verifica la nacionalidad y el numero.';
+    } else if (res.status === 429) {
+      code = 'sin_saldo';
+      status = 402;
+      message = 'El servicio de cedulas alcanzo su limite de consultas. Avisa al administrador.';
+    }
+    return { ok: false, code, status, message, detalle };
+  }
+
+  const d = json.data;
+  if (!d || typeof d !== 'object' || (!d.primer_nombre && !d.primer_apellido && !d.cedula)) {
+    return { ok: false, code: 'no_encontrada', status: 404, message: 'No se encontro esa cedula en el registro. Verifica la nacionalidad y el numero.' };
+  }
+  const cne = (d.cne && typeof d.cne === 'object') ? d.cne : {};
+  const datos = {
+    nacionalidad: String(d.nacionalidad || nac).toUpperCase(),
+    cedula: String(d.cedula || ced),
+    rif: String(d.rif || ''),
+    primer_apellido: String(d.primer_apellido || ''),
+    segundo_apellido: String(d.segundo_apellido || ''),
+    primer_nombre: String(d.primer_nombre || ''),
+    segundo_nombre: String(d.segundo_nombre || ''),
+    cne: {
+      estado: String(cne.estado || ''),
+      municipio: String(cne.municipio || ''),
+      parroquia: String(cne.parroquia || ''),
+      centro_electoral: String(cne.centro_electoral || ''),
+    },
+    request_date: String(d.request_date || ''),
+  };
+  return { ok: true, datos };
+}
+
 let db = { users: {}, chats: {}, messages: {}, visits: [] };
 
 async function load() {
@@ -259,6 +357,7 @@ function publicUser(u) {
     phone: u.phone,
     email: u.email || '',
     cedula: u.cedula || '',
+    cedulaData: u.cedulaData || null,
     birthDate: u.birthDate || '',
     emailVerified: !!u.emailVerified,
     role: u.role,
@@ -749,6 +848,24 @@ app.post('/api/profile', auth, (req, res) => {
   if (typeof avatar === 'string') req.user.avatar = avatar.slice(0, 500);
   save();
   res.json({ user: publicUser(req.user) });
+});
+
+/* --- verificar la cedula con api.cedula.com.ve (consulta en el servidor) --- */
+app.post('/api/cedula/verify', auth, async (req, res) => {
+  const body = req.body || {};
+  const nacionalidad = String(body.nacionalidad || '').trim().toUpperCase() === 'E' ? 'E' : 'V';
+  const numero = String(body.cedula == null ? '' : body.cedula).replace(/\D/g, '');
+  if (!/^\d{6,9}$/.test(numero)) {
+    return res.status(400).json({ error: 'Escribe un numero de cedula valido (solo digitos).' });
+  }
+  const r = await consultarCedulaApi(nacionalidad, numero);
+  if (!r.ok) {
+    return res.status(r.status || 502).json({ error: r.message, code: r.code });
+  }
+  req.user.cedulaData = Object.assign({}, r.datos, { verifiedAt: now() });
+  req.user.rif = r.datos.rif || req.user.rif || '';
+  save();
+  res.json({ ok: true, user: publicUser(req.user), data: r.datos });
 });
 
 /* --- eliminar cuenta --- */
