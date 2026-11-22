@@ -1,12 +1,12 @@
 {
-  "name": "Tramites Venezolanos en Linea",
-  "short_name": "Tramites VE",
+  "name": "Trámites en Línea",
+  "short_name": "Trámites en Línea",
   "description": "Cedula, licencia y antecedentes penales. Asesoria y acompanamiento en linea.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#0b1b3a",
-  "theme_color": "#0b1b3a",
+  "background_color": "#1f5f9e",
+  "theme_color": "#1f5f9e",
   "lang": "es",
   "icons": [
     {
