@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v2.2';
+  const APP_VERSION = 'v2.3';
 
   const SERVICES = {
     cedula: {
@@ -840,6 +840,26 @@ const App = (() => {
     inp.click();
   }
 
+  async function saveProfileChanges() {
+    if (!state.me) return;
+    const email = ($('#profileEmail').value || '').trim();
+    const phone = ($('#profilePhone').value || '').trim();
+    const country = ($('#profileCountry').value || '').trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return toast('Escribe un correo valido');
+    if (phone.replace(/\D/g, '').length < 7) return toast('Escribe un numero de celular valido');
+    try {
+      const data = await api('/api/profile', {
+        method: 'POST',
+        body: JSON.stringify({ email, phone, country }),
+      });
+      state.me = data.user;
+      $('#profilePhone').value = state.me.phone || '';
+      $('#profileEmail').value = state.me.email || '';
+      $('#profileCountry').value = state.me.country || '';
+      toast('Cambios guardados');
+    } catch (e) { toast(e.message); }
+  }
+
   function openEditData() {
     if (!state.me) return;
     $('#editEmail').value = state.me.email || '';
@@ -1002,7 +1022,7 @@ const App = (() => {
     submitVerify, resendVerify, showAdminAuth, submitAdminLogin,
     back, pickService, pickOption, pickGrade, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
-    openProfile, pickAvatar, openEditData, closeEditData, savePersonalData, deleteChat,
+    openProfile, pickAvatar, saveProfileChanges, openEditData, closeEditData, savePersonalData, deleteChat,
     deleteAccount, openAdmin, openChatFromAdmin, openFirstChat,
     viewImage, closeViewer, logout,
   };
