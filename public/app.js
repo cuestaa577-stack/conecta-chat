@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v3.7';
+  const APP_VERSION = 'v3.8';
 
   const SERVICES = {
     cedula: {
@@ -50,6 +50,7 @@ const App = (() => {
     uploading: false,
     installEvent: null,
     installShown: false,
+    captura: { limite: 3, horas: 3, salirCuenta: false },
   };
 
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -108,6 +109,7 @@ const App = (() => {
     if (!res.ok) {
       const msg = (data && data.error) || 'Error de conexion';
       if (res.status === 401 && state.token) logout(true);
+      if (res.status === 423) mostrarBloqueo((data && data.hasta) || 0);
       const err = new Error(msg);
       err.status = res.status;
       err.data = data || {};
@@ -122,6 +124,7 @@ const App = (() => {
       const current = $('.view.active');
       if (current && current.id !== name + 'View') state.viewStack.push(current.id);
     }
+    if (name !== 'tramite') desactivarGuardaVisor();
     $$('.view').forEach((v) => v.classList.remove('active'));
     const el = $('#' + name + 'View');
     if (el) el.classList.add('active');
@@ -1147,6 +1150,7 @@ const App = (() => {
       const data = await api('/api/tramites');
       state.tramites = data.tramites || [];
       state.pagoInfo = data.pagoInfo || '';
+      if (data.captura) state.captura = data.captura;
       renderTramites();
       updateTramitesCard();
     } catch (e) {
@@ -1240,22 +1244,18 @@ const App = (() => {
 
     let previewHtml;
     if (t.canPreview && t.doc) {
-      const url = archivoUrl(t.id, 'preview');
-      const esImagen = /^image\//i.test(t.doc.mime || '') || /\.(png|jpe?g|webp|gif)$/i.test(t.doc.name || '');
-      const esPdf = /pdf/i.test(t.doc.mime || '') || /\.pdf$/i.test(t.doc.name || '');
-      let marco;
-      if (esImagen) marco = `<img class="preview-img" src="${esc(url)}" alt="Vista previa de ${esc(t.doc.name)}" />`;
-      else if (esPdf) marco = `<iframe class="preview-pdf" src="${esc(url)}#toolbar=0&navpanes=0&view=FitH" title="Vista previa"></iframe>`;
-      else marco = `<div class="preview-none">Este tipo de archivo no se puede ver aquí.<a class="linkbtn" href="${esc(url)}" target="_blank" rel="noopener">Abrir vista previa</a></div>`;
       previewHtml = `
         <div class="panel preview-panel">
           <h3>Vista previa de tu documento</h3>
           <p class="pnote muted">${esc(t.doc.name)}${peso(t.doc.size) ? ' \u00b7 ' + peso(t.doc.size) : ''}</p>
-          <div class="preview-wrap">
-            ${marco}
+          <div class="preview-wrap doc-viewer" id="docViewer" data-tramite="${esc(t.id)}">
+            <div class="doc-pages" id="docPages"><div class="doc-loading">Abriendo el documento...</div></div>
+            <div class="doc-shield" id="docShield" aria-hidden="true"></div>
             <div class="preview-mark" aria-hidden="true"><span>VISTA PREVIA</span></div>
+            <div class="doc-alert" id="docAlert" hidden></div>
           </div>
           <p class="pnote muted">Revisa que todo esté correcto. La descarga se habilita cuando el servidor público confirme tu pago.</p>
+          <p class="pnote muted doc-aviso">El documento no se puede capturar ni guardar. Cada intento queda registrado y al tercero la cuenta se bloquea por ${Number(state.captura && state.captura.horas) || 3} horas.</p>
         </div>`;
     } else {
       previewHtml = `
@@ -1327,6 +1327,19 @@ const App = (() => {
       return `<div class="panel-row"><div class="who"><b>${esc(et.txt || h.estado)}</b><small>${esc(h.nota || '')}</small></div><span class="pill">${esc(fechaCorta(h.ts))}</span></div>`;
     }).join('') || '<div class="panel-row"><span>Sin movimientos todavía</span></div>';
 
+    const esAdmin = !!(state.me && state.me.role === 'admin');
+    const adminDocHtml = esAdmin ? `
+      <div class="panel admin-doc-panel">
+        <h3>${t.doc ? 'Documento del trámite' : 'Sube el documento del trámite'}</h3>
+        <p class="pnote muted">${t.doc
+          ? 'Ahora la persona ve: ' + esc(t.doc.name) + (t.doc.uploadedAt ? ' \u00b7 ' + esc(fechaCorta(t.doc.uploadedAt)) : '')
+          : 'Todavía no has subido el documento. La persona no puede ver nada hasta que lo subas.'}</p>
+        <button class="btn primary" onclick="App.adminSubirDocumento('${esc(t.id)}')">
+          ${t.doc ? 'Cambiar el documento' : 'Buscar el PDF o la foto'}
+        </button>
+        <p class="pnote muted">Se abre el explorador de archivos del teléfono: elige el PDF o la foto. Al terminar, la persona lo ve en vista previa dentro de la app.</p>
+      </div>` : '';
+
     box.innerHTML = `
       <div class="tramite-head">
         <span class="chip ${st.cls}">${esc(st.txt)}</span>
@@ -1334,6 +1347,7 @@ const App = (() => {
         ${t.status === 'rechazado' && t.note ? '<p class="rechazo-nota">' + esc(t.note) + '</p>' : ''}
       </div>
       <div class="steps">${pasosHtml}</div>
+      ${adminDocHtml}
       ${previewHtml}
       ${descargaHtml}
       ${pagoHtml}
@@ -1342,6 +1356,290 @@ const App = (() => {
         ${historial}
       </div>
       ${t.chatId ? '<button class="btn ghost" onclick="App.openTramiteChat()">Escribir al servidor público</button>' : ''}`;
+
+    if (t.canPreview && t.doc) montarVisor(t);
+    else desactivarGuardaVisor();
+  }
+
+
+  /* --------------------- visor del documento (sin salir de la app) --------------------- */
+  /* El PDF se dibuja en canvas con marca de agua: se ve dentro de la app, no se abre
+     en otra pestaña y no se puede guardar con una pulsación larga. Cada intento de
+     captura se registra y al tercero la cuenta queda bloqueada 3 horas. */
+  const visor = { abierto: false, tramiteId: '', ultimo: 0, guardaActiva: false, touchTimer: null, pdf: null };
+
+  function marcaAgua(t) {
+    const yo = state.me || {};
+    const nombre = String(yo.name || '').toUpperCase().slice(0, 28);
+    const ced = String(yo.cedula || '').toUpperCase();
+    const ahora = new Date();
+    const fecha = ahora.toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const hora = ahora.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    return [nombre, ced, fecha + ' ' + hora, 'PROHIBIDA SU DIFUSIÓN'].filter(Boolean).join(' · ');
+  }
+
+  function pintarMarca(ctx, w, h, texto) {
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = '#0b2a4a';
+    ctx.font = '600 ' + Math.max(11, Math.round(w / 32)) + 'px system-ui, Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(-Math.PI / 7);
+    const pasoX = Math.max(230, Math.round(w / 2.2));
+    const pasoY = Math.max(110, Math.round(h / 7));
+    const rango = Math.max(w, h) * 1.9;
+    for (let y = -rango; y < rango; y += pasoY) {
+      for (let x = -rango; x < rango; x += pasoX) ctx.fillText(texto, x, y);
+    }
+    ctx.restore();
+  }
+
+  function cargarPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    if (visor.pdf) return visor.pdf;
+    visor.pdf = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = '/vendor/pdfjs/pdf.min.js';
+      s.onload = () => {
+        if (!window.pdfjsLib) return reject(new Error('No se pudo cargar el visor de PDF'));
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.js';
+        resolve(window.pdfjsLib);
+      };
+      s.onerror = () => reject(new Error('No se pudo cargar el visor de PDF'));
+      document.head.appendChild(s);
+    });
+    return visor.pdf;
+  }
+
+  function cargarImagen(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('No se pudo abrir la imagen'));
+      img.src = src;
+    });
+  }
+
+  function anchoVisor() {
+    const v = $('#docViewer');
+    const w = (v && v.clientWidth) || 340;
+    return Math.max(280, Math.min(760, w));
+  }
+
+  async function montarVisor(t) {
+    const pages = $('#docPages');
+    if (!pages || !t || !t.doc) return;
+    visor.abierto = true;
+    visor.tramiteId = t.id;
+    const esPdf = /pdf/i.test(t.doc.mime || '') || /\.pdf$/i.test(t.doc.name || '');
+    try {
+      const res = await fetch(archivoUrl(t.id, 'preview'));
+      if (!res.ok) throw new Error('No se pudo abrir el documento');
+      const buf = await res.arrayBuffer();
+      const marca = marcaAgua(t);
+      const ancho = anchoVisor();
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      pages.innerHTML = '';
+      if (esPdf) {
+        const lib = await cargarPdfJs();
+        const pdf = await lib.getDocument({ data: buf }).promise;
+        const total = Math.min(pdf.numPages, 25);
+        for (let i = 1; i <= total; i++) {
+          const page = await pdf.getPage(i);
+          const base = page.getViewport({ scale: 1 });
+          const vp = page.getViewport({ scale: (ancho / base.width) * dpr });
+          const cv = document.createElement('canvas');
+          cv.width = Math.floor(vp.width);
+          cv.height = Math.floor(vp.height);
+          cv.className = 'doc-page';
+          pages.appendChild(cv);
+          const ctx = cv.getContext('2d');
+          await page.render({ canvasContext: ctx, viewport: vp }).promise;
+          pintarMarca(ctx, cv.width, cv.height, marca);
+        }
+        if (pdf.numPages > total) {
+          const av = document.createElement('div');
+          av.className = 'doc-more';
+          av.textContent = 'Documento de ' + pdf.numPages + ' páginas: aquí se ven las primeras ' + total + '.';
+          pages.appendChild(av);
+        }
+      } else {
+        const blob = new Blob([buf], { type: t.doc.mime || 'application/octet-stream' });
+        const img = await cargarImagen(URL.createObjectURL(blob));
+        const cv = document.createElement('canvas');
+        cv.width = Math.floor(ancho * dpr);
+        cv.height = Math.floor((ancho * (img.height / img.width)) * dpr);
+        cv.className = 'doc-page';
+        pages.appendChild(cv);
+        const ctx = cv.getContext('2d');
+        ctx.drawImage(img, 0, 0, cv.width, cv.height);
+        pintarMarca(ctx, cv.width, cv.height, marca);
+      }
+      activarGuardaVisor();
+    } catch (e) {
+      pages.innerHTML = '<div class="doc-loading">No se pudo abrir el documento. ' + esc(e.message) + '</div>';
+    }
+  }
+
+  function enVisor(el) {
+    const v = $('#docViewer');
+    return !!(v && el && (el === v || v.contains(el)));
+  }
+
+  function onContexto(e) {
+    if (!visor.abierto || !enVisor(e.target)) return;
+    e.preventDefault();
+    registrarIntento('menu-contextual');
+  }
+
+  function onTecla(e) {
+    if (!visor.abierto) return;
+    const k = String(e.key || '');
+    const lk = k.toLowerCase();
+    const esCaptura = k === 'PrintScreen' || k === 'Snapshot'
+      || ((e.ctrlKey || e.metaKey) && (lk === 'p' || lk === 's'))
+      || (e.metaKey && e.shiftKey && ['3', '4', '5'].indexOf(k) >= 0)
+      || (e.ctrlKey && e.shiftKey && (lk === 's' || lk === 'i' || lk === 'c'));
+    if (esCaptura) {
+      e.preventDefault();
+      e.stopPropagation();
+      registrarIntento('teclado');
+    }
+  }
+
+  function onTouchStart() {
+    if (!visor.abierto) return;
+    clearTimeout(visor.touchTimer);
+    visor.touchTimer = setTimeout(() => registrarIntento('pulsacion-larga'), 600);
+  }
+
+  function onTouchEnd() {
+    clearTimeout(visor.touchTimer);
+  }
+
+  function onVisibilidad() {
+    if (!visor.abierto) return;
+    if (document.visibilityState !== 'hidden') return;
+    if (!(state.captura && state.captura.salirCuenta)) return;
+    registrarIntento('salida-de-la-app');
+  }
+
+  function activarGuardaVisor() {
+    if (visor.guardaActiva) return;
+    visor.guardaActiva = true;
+    document.addEventListener('contextmenu', onContexto, true);
+    document.addEventListener('keydown', onTecla, true);
+    document.addEventListener('visibilitychange', onVisibilidad);
+    const v = $('#docViewer');
+    if (v) {
+      v.addEventListener('touchstart', onTouchStart, { passive: true });
+      v.addEventListener('touchend', onTouchEnd);
+      v.addEventListener('touchmove', onTouchEnd);
+      v.addEventListener('dragstart', (e) => { e.preventDefault(); registrarIntento('arrastrar'); });
+    }
+  }
+
+  function desactivarGuardaVisor() {
+    if (!visor.guardaActiva) { visor.abierto = false; return; }
+    visor.guardaActiva = false;
+    visor.abierto = false;
+    clearTimeout(visor.touchTimer);
+    document.removeEventListener('contextmenu', onContexto, true);
+    document.removeEventListener('keydown', onTecla, true);
+    document.removeEventListener('visibilitychange', onVisibilidad);
+  }
+
+  function taparDocumento() {
+    const pages = $('#docPages');
+    if (pages) pages.classList.add('tapado');
+    const v = $('#docViewer');
+    if (v) v.classList.add('tapado');
+  }
+
+  function destaparDocumento() {
+    const pages = $('#docPages');
+    if (pages) pages.classList.remove('tapado');
+    const v = $('#docViewer');
+    if (v) v.classList.remove('tapado');
+    const alerta = $('#docAlert');
+    if (alerta) { alerta.hidden = true; alerta.innerHTML = ''; }
+  }
+
+  async function registrarIntento(tipo) {
+    if (!visor.abierto || !visor.tramiteId) return;
+    if (Date.now() - visor.ultimo < 2500) return;
+    visor.ultimo = Date.now();
+    taparDocumento();
+    try {
+      const r = await api('/api/tramites/' + encodeURIComponent(visor.tramiteId) + '/intento-captura', {
+        method: 'POST',
+        body: JSON.stringify({ tipo: tipo }),
+      });
+      if (r && r.esAdmin) { destaparDocumento(); return; }
+      if (r && r.bloqueado) return mostrarBloqueo(r.hasta);
+      mostrarAvisoCaptura(r.intentos, r.limite, r.restantes);
+    } catch (e) {
+      if (e.status === 423) return mostrarBloqueo((e.data && e.data.hasta) || 0);
+      mostrarAvisoCaptura(1, (state.captura && state.captura.limite) || 3, 2);
+    }
+  }
+
+  function mostrarAvisoCaptura(intentos, limite, restantes) {
+    const alerta = $('#docAlert');
+    if (!alerta) return;
+    alerta.hidden = false;
+    alerta.innerHTML = `
+      <div class="doc-alert-box">
+        <b>Captura bloqueada</b>
+        <p>Esta captura no se guardó. Intento ${esc(String(intentos))} de ${esc(String(limite))}.</p>
+        <p class="doc-alert-warn">${restantes > 0
+          ? 'Te queda' + (restantes === 1 ? ' 1 intento' : 'n ' + restantes + ' intentos') + ' antes de que tu cuenta quede bloqueada ' + ((state.captura && state.captura.horas) || 3) + ' horas.'
+          : 'Tu cuenta quedará bloqueada.'}</p>
+        <button class="btn primary" onclick="App.entendidoCaptura()">Entendido</button>
+      </div>`;
+  }
+
+  function entendidoCaptura() {
+    destaparDocumento();
+  }
+
+  function mostrarBloqueo(hasta) {
+    const t = Number(hasta || 0);
+    let el = $('#bloqueoScreen');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'bloqueoScreen';
+      el.className = 'bloqueo-screen';
+      document.body.appendChild(el);
+    }
+    const pintar = () => {
+      let txt = 'Tu cuenta está bloqueada.';
+      if (t) {
+        const ms = t - Date.now();
+        if (ms <= 0) { el.remove(); location.reload(); return; }
+        const min = Math.ceil(ms / 60000);
+        const h = Math.floor(min / 60);
+        const m = min % 60;
+        txt = 'Podrás volver a entrar en ' + (h ? h + ' h ' : '') + m + ' min.';
+      }
+      el.innerHTML = `
+        <div class="bloqueo-box">
+          <div class="bloqueo-ic">🔒</div>
+          <h2>Cuenta bloqueada por 3 horas</h2>
+          <p>Se detectaron intentos de capturar el documento. Por seguridad, el documento no se puede fotografiar, capturar ni guardar.</p>
+          <p class="bloqueo-timer">${esc(txt)}</p>
+          <button class="btn ghost" onclick="App.salirBloqueo()">Salir</button>
+        </div>`;
+    };
+    pintar();
+    clearInterval(el._timer);
+    el._timer = setInterval(pintar, 30000);
+  }
+
+  function salirBloqueo() {
+    logout(true);
   }
 
   function avisoDescarga() {
@@ -1422,6 +1720,7 @@ const App = (() => {
     const opcionesPersona = people.length
       ? people.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}${p.cedula ? ' \u00b7 ' + esc(p.cedula) : ''}</option>`).join('')
       : '<option value="">Sin personas registradas</option>';
+    const bloqueados = people.filter((p) => p && p.bloqueo);
     const filas = lista.map((t) => {
       const st = estadoDe(t);
       return `<div class="admin-tramite">
@@ -1459,6 +1758,16 @@ const App = (() => {
           <textarea id="pagoInfoInput" rows="3" placeholder="Banco, cuenta, Pago Móvil, monto...">${esc(d.pagoInfo || '')}</textarea>
         </label>
         <button class="btn ghost" onclick="App.guardarPagoInfo()">Guardar datos de pago</button>
+      </div>
+      <div class="panel">
+        <h3>Seguridad del documento</h3>
+        <p class="pnote muted">El documento se ve dentro de la app y no se puede descargar hasta que confirmes el pago. Si la persona intenta capturarlo (menú del teléfono, guardar, imprimir, pulsación larga), queda registrado y al tercer intento la cuenta se bloquea ${esc(String((d.captura && d.captura.horas) || 3))} horas.</p>
+        <label class="check">
+          <input type="checkbox" ${d.captura && d.captura.salirCuenta ? 'checked' : ''} onchange="App.guardarCapturaConfig(this.checked)">
+          <span>Contar “salir de la app con el documento abierto” como intento</span>
+        </label>
+        <p class="pnote muted">Déjalo apagado si no quieres que cambiar a WhatsApp cuente como intento.</p>
+        ${bloqueados.length ? bloqueados.map((p) => `<div class="panel-row"><div class="who"><b>${esc(p.name)}</b><small>${esc(p.cedula || p.phone || '')} · bloqueada ${esc(String(p.bloqueo.restanteMin))} min más</small></div><button class="mini" onclick="App.adminDesbloquear('${esc(p.id)}')">Desbloquear</button></div>`).join('') : '<div class="panel-row"><span>Nadie está bloqueado ahora</span></div>'}
       </div>
       <div class="panel">
         <h3>Nuevo trámite para una persona</h3>
@@ -1545,9 +1854,29 @@ const App = (() => {
         });
         toast('Documento listo: la persona ya lo puede ver en vista previa');
         loadAdminTramites();
+        if (state.currentTramiteId === id) openTramite(id, false);
       } catch (e) { toast(e.message); }
     };
     inp.click();
+  }
+
+  async function guardarCapturaConfig(salirCuenta) {
+    try {
+      const r = await api('/api/admin/captura-config', { method: 'POST', body: JSON.stringify({ salirCuenta: !!salirCuenta }) });
+      if (r && r.captura) state.captura = r.captura;
+      toast(salirCuenta
+        ? 'Listo: salir de la app con el documento abierto cuenta como intento'
+        : 'Listo: salir de la app ya no cuenta como intento');
+      loadAdminTramites();
+    } catch (e) { toast(e.message); }
+  }
+
+  async function adminDesbloquear(id) {
+    try {
+      await api('/api/admin/usuarios/' + encodeURIComponent(id) + '/desbloquear', { method: 'POST', body: JSON.stringify({}) });
+      toast('Persona desbloqueada');
+      loadAdminTramites();
+    } catch (e) { toast(e.message); }
   }
 
   async function adminAprobar(id) {
@@ -1757,6 +2086,7 @@ const App = (() => {
     openTramites, loadTramites, openTramite, openTramiteChat, subirComprobante, avisoDescarga,
     adminFillSubtypes, crearTramite, adminSubirDocumento, adminAprobar, adminRechazar,
     adminBorrarTramite, guardarPagoInfo,
+    entendidoCaptura, salirBloqueo, guardarCapturaConfig, adminDesbloquear,
   };
 })();
 window.App = App;

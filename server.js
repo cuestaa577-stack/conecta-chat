@@ -405,7 +405,8 @@ function publicUser(u) {
     avatar: u.avatar || '',
     about: u.about || '',
     createdAt: u.createdAt,
-    lastSeen: u.lastSeen
+    lastSeen: u.lastSeen,
+    bloqueado: bloqueoView(u)
   };
 }
 
@@ -578,6 +579,15 @@ function userFromReq(req) {
 function auth(req, res, next) {
   const user = userFromReq(req);
   if (!user) return res.status(401).json({ error: 'Sesion no valida' });
+  const bloqueo = bloqueoView(user);
+  if (bloqueo) {
+    return res.status(423).json({
+      error: bloqueoMensaje(bloqueo),
+      bloqueado: true,
+      hasta: bloqueo.hasta,
+      restanteMin: bloqueo.restanteMin,
+    });
+  }
   req.user = user;
   next();
 }
@@ -821,6 +831,16 @@ app.post('/api/login', async (req, res) => {
       cedula: user.cedula || ced,
       email: maskEmail(user.email || ''),
       codeSent,
+    });
+  }
+
+  const bloqueoLogin = bloqueoView(user);
+  if (bloqueoLogin) {
+    return res.status(423).json({
+      error: bloqueoMensaje(bloqueoLogin),
+      bloqueado: true,
+      hasta: bloqueoLogin.hasta,
+      restanteMin: bloqueoLogin.restanteMin,
     });
   }
 
@@ -1299,6 +1319,50 @@ function tramitePuedeDescargar(t) {
   return !!(t && t.status === 'aprobado' && t.doc && t.doc.url);
 }
 
+/* --- Intentos de captura del documento --- */
+/* El documento no debe salir de la app: cada intento de capturarlo o guardarlo
+   (menu contextual, imprimir, guardar, tecla de captura, pulsacion larga) se
+   cuenta. Al tercer intento la cuenta queda bloqueada 3 horas. */
+const CAPTURA_LIMITE = 3;
+const CAPTURA_BLOQUEO_MS = 3 * 60 * 60 * 1000;
+const CAPTURA_VENTANA_MS = 24 * 60 * 60 * 1000;
+
+function capturaConfig() {
+  if (!db.settings || typeof db.settings !== 'object') db.settings = {};
+  if (typeof db.settings.capturaSalirCuenta !== 'boolean') db.settings.capturaSalirCuenta = false;
+  return {
+    limite: CAPTURA_LIMITE,
+    horas: CAPTURA_BLOQUEO_MS / 3600000,
+    ventanaHoras: CAPTURA_VENTANA_MS / 3600000,
+    salirCuenta: !!db.settings.capturaSalirCuenta,
+  };
+}
+
+function bloqueoView(user) {
+  const hasta = Number((user && user.lockUntil) || 0);
+  if (!hasta || hasta <= now()) return null;
+  return { hasta: hasta, restanteMin: Math.max(1, Math.ceil((hasta - now()) / 60000)) };
+}
+
+function intentosCaptura(user) {
+  const lista = Array.isArray(user && user.captureAttempts) ? user.captureAttempts : [];
+  const desde = now() - CAPTURA_VENTANA_MS;
+  return lista.filter((a) => Number(a && a.at) > desde);
+}
+
+function bloqueoMensaje(b) {
+  const min = Number((b && b.restanteMin) || 0);
+  let txt;
+  if (min >= 60) {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    txt = h + ' hora' + (h === 1 ? '' : 's') + (m ? ' y ' + m + ' min' : '');
+  } else {
+    txt = min + ' minuto' + (min === 1 ? '' : 's');
+  }
+  return 'Tu cuenta esta bloqueada por intentos de captura del documento. Podras volver a entrar en ' + txt + '.';
+}
+
 function tramiteHistorial(t, estado, nota, por) {
   if (!Array.isArray(t.history)) t.history = [];
   t.history.push({ estado: estado, nota: String(nota || '').slice(0, 400), por: por || '', ts: now() });
@@ -1424,13 +1488,53 @@ app.get('/api/tramites', auth, (req, res) => {
   const lista = Object.values(tramitesDb())
     .filter((t) => esAdmin || t.userId === req.user.id)
     .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
-  res.json({ tramites: lista.map((t) => tramiteView(t, req.user)), pagoInfo: pagoInfo() });
+  res.json({ tramites: lista.map((t) => tramiteView(t, req.user)), pagoInfo: pagoInfo(), captura: capturaConfig() });
 });
 
 app.get('/api/tramites/:id', auth, (req, res) => {
   const t = tramiteDe(req);
   if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
-  res.json({ tramite: tramiteView(t, req.user), pagoInfo: pagoInfo() });
+  res.json({ tramite: tramiteView(t, req.user), pagoInfo: pagoInfo(), captura: capturaConfig() });
+});
+
+/* La persona intento capturar o guardar el documento */
+app.post('/api/tramites/:id/intento-captura', auth, (req, res) => {
+  const t = tramiteDe(req);
+  if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
+  if (req.user.role === 'admin') {
+    return res.json({ intentos: 0, limite: CAPTURA_LIMITE, restantes: CAPTURA_LIMITE, bloqueado: false, esAdmin: true });
+  }
+  const u = db.users[t.userId];
+  if (!u) return res.status(404).json({ error: 'Persona no encontrada' });
+  if (Number(u.lockUntil || 0) && Number(u.lockUntil) <= now()) {
+    u.lockUntil = 0;
+    u.lockReason = '';
+    u.captureAttempts = [];
+  }
+  const tipo = String((req.body && req.body.tipo) || 'captura').slice(0, 40);
+  const previos = intentosCaptura(u);
+  previos.push({ at: now(), tipo: tipo, tramiteId: t.id });
+  u.captureAttempts = previos;
+  const intentos = previos.length;
+  let bloqueado = false;
+  if (intentos >= CAPTURA_LIMITE) {
+    u.lockUntil = now() + CAPTURA_BLOQUEO_MS;
+    u.lockReason = 'intentos de captura del documento';
+    bloqueado = true;
+    tramiteHistorial(t, t.status, 'Cuenta bloqueada 3 horas: ' + intentos + ' intentos de captura del documento', 'sistema');
+  } else {
+    tramiteHistorial(t, t.status, 'Intento de captura del documento (' + intentos + '/' + CAPTURA_LIMITE + '): ' + tipo, 'sistema');
+  }
+  t.updatedAt = now();
+  save();
+  res.json({
+    intentos: intentos,
+    limite: CAPTURA_LIMITE,
+    restantes: Math.max(0, CAPTURA_LIMITE - intentos),
+    bloqueado: bloqueado,
+    hasta: u.lockUntil || 0,
+    restanteMin: bloqueado ? Math.round(CAPTURA_BLOQUEO_MS / 60000) : 0,
+  });
 });
 
 /* Vista previa: se ve en la app, pero NO se puede guardar */
@@ -1502,7 +1606,11 @@ app.get('/api/admin/tramites', auth, adminOnly, (req, res) => {
     .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
   const people = Object.values(db.users)
     .filter((u) => u.role !== 'admin')
-    .map((u) => ({ id: u.id, name: u.name || 'Persona', cedula: u.cedula || '', email: u.email || '', phone: u.phone || '', country: u.country || '' }))
+    .map((u) => ({
+      id: u.id, name: u.name || 'Persona', cedula: u.cedula || '', email: u.email || '',
+      phone: u.phone || '', country: u.country || '',
+      bloqueo: bloqueoView(u), intentos: intentosCaptura(u).length,
+    }))
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const porEstado = {};
   TRAMITE_ESTADOS.forEach((e) => { porEstado[e] = 0; });
@@ -1512,6 +1620,7 @@ app.get('/api/admin/tramites', auth, adminOnly, (req, res) => {
     people: people,
     porEstado: porEstado,
     pagoInfo: pagoInfo(),
+    captura: capturaConfig(),
   });
 });
 
@@ -1629,6 +1738,26 @@ app.post('/api/admin/tramites/:id/rechazar', auth, adminOnly, (req, res) => {
   const owner = db.users[t.userId];
   if (owner) sendToUser(owner.id, { type: 'tramite:updated', tramite: tramiteView(t, owner) });
   res.json({ tramite: tramiteView(t, req.user) });
+});
+
+/* El administrador quita el bloqueo de una persona */
+app.post('/api/admin/usuarios/:id/desbloquear', auth, adminOnly, (req, res) => {
+  const u = db.users[String((req.params && req.params.id) || '')];
+  if (!u) return res.status(404).json({ error: 'Persona no encontrada' });
+  u.lockUntil = 0;
+  u.lockReason = '';
+  u.captureAttempts = [];
+  save();
+  res.json({ ok: true, user: { id: u.id, name: u.name || 'Persona' } });
+});
+
+/* Ajuste: contar "salir de la app con el documento abierto" como intento */
+app.post('/api/admin/captura-config', auth, adminOnly, (req, res) => {
+  if (!db.settings || typeof db.settings !== 'object') db.settings = {};
+  const b = req.body || {};
+  db.settings.capturaSalirCuenta = !!b.salirCuenta;
+  save();
+  res.json({ captura: capturaConfig() });
 });
 
 app.delete('/api/admin/tramites/:id', auth, adminOnly, (req, res) => {

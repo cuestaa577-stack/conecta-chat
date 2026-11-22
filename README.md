@@ -202,6 +202,50 @@ tramites, su documento y su comprobante.
 > que ya esta viendo. Lo que nunca se entrega sin la confirmacion del pago es la
 > descarga del documento.
 
+## Como sube el administrador el documento
+
+El documento lo sube **el administrador** desde el panel, no la persona:
+
+1. Abre el panel (arriba a la derecha, *Personal autorizado*).
+2. En *Tramites y documentos* busca el tramite de la persona y pulsa **Subir documento**.
+   Tambien puedes abrir el tramite (**Abrir**) y usar el boton **Buscar el PDF o la foto**
+   que aparece arriba, en el recuadro azul.
+3. Se abre el explorador de archivos del telefono o del computador: elige el **PDF o la foto**
+   (hasta 25 MB).
+4. Al terminar, el tramite queda **Documento listo** y la persona ya lo ve en vista previa.
+
+## El documento se abre dentro de la app
+
+El PDF **no se abre en otra pestana ni se descarga** para verlo: la app lo dibuja pagina por
+pagina dentro de la misma pantalla, con la marca de agua de la persona encima (nombre, cedula,
+fecha y hora, *PROHIBIDA SU DIFUSION*). Para eso se usa la biblioteca PDF.js, incluida en
+`public/vendor/pdfjs/` (licencia Apache 2.0), asi que funciona sin internet y sin depender de
+un servicio externo. Las fotos tambien se dibujan en el mismo visor.
+
+## Capturas de pantalla e intentos
+
+Mientras el documento esta abierto, la app:
+
+- bloquea el menu del telefono, la pulsacion larga, el arrastre y las teclas de imprimir o
+  guardar (Ctrl+P, Ctrl+S, Impr Pant, Cmd+Mayus+3/4/5);
+- tapa el documento en ese instante, de modo que la captura sale en negro;
+- registra el intento en el historial del tramite.
+
+Al **tercer intento** la cuenta queda **bloqueada 3 horas**: no puede entrar ni usar la app
+(chat, tramites, perfil). El bloqueo se ve en el panel, y el administrador puede quitarlo con
+**Desbloquear**. Pasadas las 3 horas el contador vuelve a cero solo.
+
+En el panel hay un interruptor, **Seguridad del documento**, para decidir si "salir de la app
+con el documento abierto" tambien cuenta como intento. Viene **apagado**, porque si no, cambiar
+a WhatsApp contaria como intento.
+
+> **Limite honesto:** una pagina web (o PWA) no puede impedir que el sistema operativo del
+> telefono tome una captura. Lo que se puede hacer, y se hace aqui, es que la captura salga
+> tapada y marcada, que no haya boton de guardar ni de descargar, y que los intentos queden
+> contados. El bloqueo real de capturas y grabacion de pantalla solo lo da una app nativa de
+> Android con `FLAG_SECURE`; si algun dia se necesita, ese es el camino (por ejemplo con
+> Capacitor).
+
 ## Estructura
 
 ```
@@ -212,6 +256,7 @@ public/app.js        Lógica del cliente
 public/sw.js         Service worker (PWA)
 public/bg.jpg        Fondo del acceso
 public/icon-*.png    Escudo de la app
+public/vendor/pdfjs/ Visor de PDF dentro de la app (PDF.js, Apache 2.0)
 data/                Base de datos (incluye los tramites) y archivos subidos (se crea sola)
 ```
 
