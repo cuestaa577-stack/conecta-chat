@@ -8,13 +8,16 @@ const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 
 const PORT = process.env.PORT || 10000;
-const SECRET = process.env.SECRET || 'tramites-venezolanos-dev-secret';
+const SECRET = process.env.SECRET || crypto.randomBytes(32).toString('hex');
+if (!process.env.SECRET) {
+  console.warn('[aviso] Falta la variable SECRET. Se genero una clave temporal: las sesiones se cierran al reiniciar el servidor. Configura SECRET.');
+}
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
-const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'enelextranjerovenezolanos@gmail.com').trim().toLowerCase();
+const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
 const ADMIN_PHONE = String(process.env.ADMIN_PHONE || '').replace(/\D/g, '');
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Angelo18@';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || crypto.randomBytes(9).toString('base64url');
 const ADMIN_NAME = process.env.ADMIN_NAME || 'Servidor publico';
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -93,10 +96,18 @@ function publicUser(u) {
 function ensureAdmin() {
   const exists = Object.values(db.users).some((u) => u.role === 'admin');
   if (exists) return;
+  if (!ADMIN_EMAIL && !ADMIN_PHONE) {
+    console.warn('[aviso] Faltan ADMIN_EMAIL y ADMIN_PHONE: no se creo el servidor publico. Configuralos en el servidor.');
+    return;
+  }
   const admin = makeUser(ADMIN_NAME, ADMIN_PHONE, ADMIN_PASSWORD, { role: 'admin', country: 'Venezuela', email: ADMIN_EMAIL });
   db.users[admin.id] = admin;
   save();
-  console.log('Servidor publico creado con el correo ' + ADMIN_EMAIL);
+  console.log('Servidor publico creado para ' + (ADMIN_EMAIL || ADMIN_PHONE));
+  if (!process.env.ADMIN_PASSWORD) {
+    console.warn('[aviso] Falta ADMIN_PASSWORD. Clave inicial generada: ' + ADMIN_PASSWORD);
+    console.warn('[aviso] Entra con esa clave y cambiala, o define ADMIN_PASSWORD en el servidor.');
+  }
 }
 
 ensureAdmin();
@@ -148,7 +159,21 @@ const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '25mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
-app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '7d' }));
+/* archivos: solo con sesion valida (el cliente agrega ?token=) */
+app.get('/uploads/:file', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return res.status(401).json({ error: 'Sesion no valida' });
+  const name = String(req.params.file || '');
+  if (!/^[A-Za-z0-9_.-]+$/.test(name) || name.startsWith('.')) {
+    return res.status(400).json({ error: 'Archivo no valido' });
+  }
+  const file = path.join(UPLOAD_DIR, name);
+  if (!file.startsWith(UPLOAD_DIR + path.sep)) return res.status(400).json({ error: 'Archivo no valido' });
+  if (!fs.existsSync(file)) return res.status(404).json({ error: 'Archivo no encontrado' });
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'private, max-age=604800');
+  res.sendFile(file);
+});
 
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, users: Object.keys(db.users).length, version: '2.0.0' });
@@ -198,7 +223,7 @@ app.post('/api/register', (req, res) => {
   if (!phone && !email) return res.status(400).json({ error: 'Escribe tu telefono o tu correo' });
   if (phone && phone.length < 7) return res.status(400).json({ error: 'Numero de telefono no valido' });
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Correo no valido' });
-  if (password.length < 4) return res.status(400).json({ error: 'La contrasena debe tener al menos 4 caracteres' });
+  if (password.length < 8) return res.status(400).json({ error: 'La contrasena debe tener al menos 8 caracteres' });
   if (phone && Object.values(db.users).some((u) => u.phone === phone)) {
     return res.status(409).json({ error: 'Ese numero ya tiene una cuenta' });
   }

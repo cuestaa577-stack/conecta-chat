@@ -67,6 +67,14 @@ const App = (() => {
     }[c]));
   }
 
+  /* Los archivos solo se sirven con sesion: agregamos el token a la direccion */
+  function media(url) {
+    const u = String(url || '');
+    if (!u || u.indexOf('/uploads/') !== 0) return u;
+    if (!state.token) return u;
+    return u + (u.indexOf('?') === -1 ? '?' : '&') + 'token=' + encodeURIComponent(state.token);
+  }
+
   function initials(name) {
     return String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase();
   }
@@ -204,7 +212,7 @@ const App = (() => {
     $('#appScreen').classList.remove('hidden');
     const av = $('#myAvatarBtn');
     if (av) {
-      if (state.me.avatar) { av.style.backgroundImage = 'url(' + state.me.avatar + ')'; av.textContent = ''; }
+      if (state.me.avatar) { av.style.backgroundImage = 'url(' + media(state.me.avatar) + ')'; av.textContent = ''; }
       else { av.style.backgroundImage = ''; av.textContent = initials(state.me.name); }
     }
     const adminBtn = $('#adminBtn');
@@ -393,7 +401,7 @@ const App = (() => {
       const last = lm ? (lm.type === 'text' ? lm.text : '[' + lm.type + ']') : 'Sin mensajes';
       const tramite = c.tramite ? `${c.tramite.serviceLabel || ''}${c.tramite.subtypeLabel ? ' · ' + c.tramite.subtypeLabel : ''}` : '';
       return `<button class="chat-row" onclick="App.openChat('${c.id}')">
-        <div class="avatar" style="width:46px;height:46px;font-size:16px;${other && other.avatar ? `background-image:url(${esc(other.avatar)})` : ''}">${other && other.avatar ? '' : initials(name)}</div>
+        <div class="avatar" style="width:46px;height:46px;font-size:16px;${other && other.avatar ? `background-image:url(${esc(media(other.avatar))})` : ''}">${other && other.avatar ? '' : initials(name)}</div>
         <div class="grow">
           <div class="t">${esc(name)}</div>
           <div class="s">${esc(tramite || last)}</div>
@@ -450,11 +458,11 @@ const App = (() => {
     body.innerHTML = msgs.map((m) => {
       const mine = m.senderId === (state.me && state.me.id);
       let inner = '';
-      if (m.type === 'image') inner = `<img class="media" src="${esc(m.url)}" onclick="App.viewImage('${esc(m.url)}')" alt="" />`;
-      else if (m.type === 'video') inner = `<video class="media" src="${esc(m.url)}" controls playsinline></video>`;
-      else if (m.type === 'audio') inner = `<audio src="${esc(m.url)}" controls preload="metadata"></audio>`;
+      if (m.type === 'image') inner = `<img class="media" src="${esc(media(m.url))}" onclick="App.viewImage('${esc(media(m.url))}')" alt="" />`;
+      else if (m.type === 'video') inner = `<video class="media" src="${esc(media(m.url))}" controls playsinline></video>`;
+      else if (m.type === 'audio') inner = `<audio src="${esc(media(m.url))}" controls preload="metadata"></audio>`;
       else if (m.type === 'file' || m.type === 'pdf') {
-        inner = `<a class="file-link" href="${esc(m.url)}" target="_blank" rel="noopener">
+        inner = `<a class="file-link" href="${esc(media(m.url))}" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1 1 0 01-1 1H6a1 1 0 01-1-1V4.5a1 1 0 011-1z"/><path d="M14 3.6V8h4"/></svg>
           <span>${esc(m.text || 'Archivo')}</span></a>`;
       } else inner = esc(m.text || '');
@@ -567,7 +575,7 @@ const App = (() => {
     if (!state.me) return;
     showView('profile');
     const av = $('#profileAvatar');
-    if (state.me.avatar) { av.style.backgroundImage = 'url(' + state.me.avatar + ')'; av.textContent = ''; }
+    if (state.me.avatar) { av.style.backgroundImage = 'url(' + media(state.me.avatar) + ')'; av.textContent = ''; }
     else { av.style.backgroundImage = ''; av.textContent = initials(state.me.name); }
     $('#profileName').value = state.me.name || '';
     $('#profilePhone').value = state.me.phone || '';
@@ -593,10 +601,10 @@ const App = (() => {
         const data = await api('/api/profile', { method: 'POST', body: JSON.stringify({ avatar: up.url }) });
         state.me = data.user;
         const av = $('#profileAvatar');
-        av.style.backgroundImage = 'url(' + state.me.avatar + ')';
+        av.style.backgroundImage = 'url(' + media(state.me.avatar) + ')';
         av.textContent = '';
         const top = $('#myAvatarBtn');
-        top.style.backgroundImage = 'url(' + state.me.avatar + ')';
+        top.style.backgroundImage = 'url(' + media(state.me.avatar) + ')';
         top.textContent = '';
         toast('Foto actualizada');
       } catch (e) { toast(e.message); }

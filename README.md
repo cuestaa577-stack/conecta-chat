@@ -23,15 +23,17 @@ Web de mensajería y multimedia para asesoría de trámites venezolanos: cédula
 
 ## Acceso del administrador
 
-Se crea solo la primera vez. Se configura con variables de entorno:
+La cuenta del servidor público se crea sola la primera vez que arranca el servidor, a partir de variables de entorno. **Ninguna clave va escrita en el código ni en este repositorio.**
 
-| Variable | Por defecto |
-| --- | --- |
-| `ADMIN_PHONE` | 3000000000 |
-| `ADMIN_PASSWORD` | admin1234 |
-| `ADMIN_NAME` | Administrador |
+| Variable | Obligatoria | Para qué sirve |
+| --- | --- | --- |
+| `ADMIN_EMAIL` | sí (o `ADMIN_PHONE`) | Correo con el que entra el administrador |
+| `ADMIN_PHONE` | sí (o `ADMIN_EMAIL`) | Teléfono con el que entra el administrador |
+| `ADMIN_PASSWORD` | sí | Clave inicial del administrador |
+| `ADMIN_NAME` | no | Nombre visible del servidor público |
+| `SECRET` | sí | Firma las sesiones; sin ella se genera una temporal |
 
-Cámbialas antes de publicar. El administrador entra con su teléfono y contraseña como cualquier persona, y al entrar le aparece el botón del panel.
+Si falta `ADMIN_PASSWORD`, el servidor genera una clave al azar y la muestra en el registro (logs) del primer arranque: entra con esa clave y cámbiala, o define la variable antes de publicar. El administrador entra con su correo o teléfono y contraseña como cualquier persona, y al entrar le aparece el botón del panel.
 
 ## Estructura
 
@@ -69,15 +71,17 @@ Sin disco persistente, los chats y archivos se pierden cuando el servicio se rei
 
 - 25 MB por archivo.
 - Un número de celular = una cuenta.
+- Contraseña de 8 caracteres como mínimo.
+- Los archivos subidos solo se ven con sesión iniciada: no hay enlaces públicos a fotos, audios ni documentos.
 
 
 ## Acceso del servidor publico
 
-- Correo: `enelextranjerovenezolanos@gmail.com`
-- Clave inicial: `Angelo18@`
+El correo y la clave del servidor público **no se escriben en el repositorio**: se configuran solo en el servidor con las variables `ADMIN_EMAIL` y `ADMIN_PASSWORD` (ver la tabla de arriba).
 
-Cambiala en Render con las variables `ADMIN_EMAIL` y `ADMIN_PASSWORD` antes de publicar.
-Las personas se registran con telefono o correo y eligen su pais.
+Las personas se registran con teléfono o correo y eligen su país. La contraseña debe tener al menos 8 caracteres.
+
+> Si en algún momento hubo una clave escrita en este README, considérala expuesta: cámbiala en el servidor.
 
 ## Flujo de tramites
 
