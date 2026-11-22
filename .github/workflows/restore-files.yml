@@ -1,4 +1,6 @@
 name: restore-files
+# Restaura public/app.js y server/server.js desde el ultimo commit bueno
+# (b18376ed) y aplica los parches app.patch y server.patch.
 on:
   workflow_dispatch:
   push:
