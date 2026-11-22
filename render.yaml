@@ -16,7 +16,7 @@ services:
         sync: false
       - key: DATA_DIR
         value: /data
-      - key: CEDULA_API_APP_ID
+      - key: CEDULA_APP_ID
         sync: false
-      - key: CEDULA_API_TOKEN
+      - key: CEDULA_TOKEN
         sync: false
