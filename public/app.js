@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v2.4';
+  const APP_VERSION = 'v2.6';
 
   const SERVICES = {
     cedula: {
@@ -446,8 +446,11 @@ const App = (() => {
     if (adminBtn) adminBtn.style.display = state.me.role === 'admin' ? 'block' : 'none';
     showView('home', false);
     state.viewStack = [];
+    renderMyData();
     await loadChats();
     connectWS();
+    // Si la cuenta aun no tiene los datos reales, se consultan solos.
+    autoVerifyCedula();
   }
 
   function logout(silent) {
@@ -809,12 +812,7 @@ const App = (() => {
     $('#profilePhone').value = state.me.phone || '';
     $('#profileEmail').value = state.me.email || '';
     $('#profileCountry').value = state.me.country || '';
-    const cd = state.me.cedulaData;
-    if (cd) {
-      $('#cedulaNac').value = (cd.nacionalidad === 'E') ? 'E' : 'V';
-      $('#cedulaNum').value = cd.cedula || '';
-    }
-    renderCedulaData(cd || null);
+    renderCedulaData(state.me.cedulaData || null);
     $('#appVersion').textContent = 'Tramites Venezolanos en Linea ' + APP_VERSION;
     const adminBtn = $('#adminBtn');
     if (adminBtn) adminBtn.style.display = state.me.role === 'admin' ? 'block' : 'none';
@@ -867,6 +865,54 @@ const App = (() => {
   }
 
   /* ------------------------------ cedula (datos reales) ------------------------------ */
+  /* Pinta el bloque "Mis datos personales" de la pantalla principal. */
+  function renderMyData() {
+    if (!state.me) return;
+    const cd = state.me.cedulaData;
+    const nacEl = $('#cedulaNac');
+    const numEl = $('#cedulaNum');
+    const sub = $('#myDataSub');
+    if (cd) {
+      if (nacEl) nacEl.value = (cd.nacionalidad === 'E') ? 'E' : 'V';
+      if (numEl) numEl.value = cd.cedula || '';
+      if (sub) sub.textContent = 'Datos verificados con el registro oficial';
+    } else {
+      const c = String(state.me.cedula || '');
+      if (c) {
+        if (nacEl) nacEl.value = c.charAt(0).toUpperCase() === 'E' ? 'E' : 'V';
+        if (numEl) numEl.value = c.replace(/\D/g, '');
+      }
+      if (sub) sub.textContent = 'Consulta tus datos personales reales';
+    }
+    renderCedulaData(cd || null);
+  }
+
+  function toggleMyData() {
+    const body = $('#myDataBody');
+    if (!body) return;
+    body.classList.toggle('collapsed');
+  }
+
+  /* Al registrarse: consulta automatica con la cedula de la cuenta. */
+  async function autoVerifyCedula() {
+    if (!state.me || state.me.cedulaData) return;
+    const c = String(state.me.cedula || '');
+    const num = c.replace(/\D/g, '');
+    if (num.length < 6) return;
+    const nac = c.charAt(0).toUpperCase() === 'E' ? 'E' : 'V';
+    try {
+      const data = await api('/api/cedula/verify', {
+        method: 'POST',
+        body: JSON.stringify({ nacionalidad: nac, cedula: num }),
+      });
+      state.me = data.user;
+      renderMyData();
+    } catch (e) {
+      // Si la API no responde o no encuentra la cedula, no se bloquea el registro.
+      renderMyData();
+    }
+  }
+
   async function verifyCedula() {
     if (!state.me) return;
     const nac = String(($('#cedulaNac') || {}).value || 'V').toUpperCase() === 'E' ? 'E' : 'V';
@@ -881,6 +927,7 @@ const App = (() => {
       });
       state.me = data.user;
       renderCedulaData(state.me.cedulaData);
+      renderMyData();
       toast('Datos verificados');
     } catch (e) {
       const box = $('#cedulaResult');
@@ -1078,7 +1125,7 @@ const App = (() => {
     submitVerify, resendVerify, showAdminAuth, submitAdminLogin,
     back, pickService, pickOption, pickGrade, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
-    openProfile, pickAvatar, saveProfileChanges, verifyCedula, renderCedulaData, openEditData, closeEditData, savePersonalData, deleteChat,
+    openProfile, pickAvatar, saveProfileChanges, verifyCedula, renderCedulaData, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat,
     deleteAccount, openAdmin, openChatFromAdmin, openFirstChat,
     viewImage, closeViewer, logout,
   };
