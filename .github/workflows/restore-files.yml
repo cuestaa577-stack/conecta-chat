@@ -1,6 +1,5 @@
-name: restore-files
-# Restaura public/app.js y server/server.js desde el ultimo commit bueno
-# (b18376ed) y aplica los parches app.patch y server.patch.
+name: cleanup
+# Borra los parches temporales y este mismo workflow.
 on:
   workflow_dispatch:
   push:
@@ -9,29 +8,14 @@ on:
 permissions:
   contents: write
 jobs:
-  restore:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Traer los archivos buenos del commit b18376ed
+      - name: Borrar temporales
         run: |
-          git show b18376ed:public/app.js > public/app.js
-          git show b18376ed:server/server.js > server/server.js
-      - name: Aplicar los cambios
-        run: |
-          git apply --verbose app.patch
-          git apply --verbose server.patch
-      - name: Comprobar sintaxis
-        run: |
-          node --check public/app.js
-          node --check server/server.js
-          wc -c public/app.js server/server.js
-      - name: Commit
-        run: |
-          git config user.name "restore-bot"
+          git rm -f app.patch server.patch .github/workflows/restore-files.yml || true
+          git config user.name "cleanup-bot"
           git config user.email "bot@local"
-          git add public/app.js server/server.js
-          git commit -m "fix: restaurar app.js y server.js con los cambios aplicados"
+          git commit -m "chore: limpiar parches temporales" || true
           git push
