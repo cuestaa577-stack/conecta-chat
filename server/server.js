@@ -1066,6 +1066,9 @@ wss.on('connection', (ws, req) => {
       if (!chat || !chat.members.includes(userId)) return;
       const m = {
         id: uid('m_'),
+        // clientId: permite al cliente reemplazar el mensaje "optimista" en vez
+        // de agregarlo otra vez (esto causaba que se viera DUPLICADO).
+        clientId: String(msg.localId || ''),
         chatId: chat.id,
         senderId: userId,
         type: msg.kind || 'text',

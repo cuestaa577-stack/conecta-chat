@@ -1,5 +1,5 @@
 /* Conecta Chat - service worker (instalable + lo mas reciente primero) */
-const CACHE = 'tramites-ve-v7';
+const CACHE = 'tramites-ve-v8';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.json', './bg.jpg', './logos/saime.png', './logos/intt.png', './logos/justicia.png', './icon-192.png'];
 
 self.addEventListener('install', (e) => {

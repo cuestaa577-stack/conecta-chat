@@ -946,8 +946,12 @@ const App = (() => {
           if (!msg) return;
           if (!state.messages[msg.chatId]) state.messages[msg.chatId] = [];
           const list = state.messages[msg.chatId];
-          const idx = list.findIndex((x) => x.id === msg.clientId || x.id === msg.id);
-          if (idx >= 0) list[idx] = msg; else list.push(msg);
+          // Reemplaza el mensaje local (optimista) por el confirmado, sin duplicar.
+          let idx = -1;
+          if (msg.clientId) idx = list.findIndex((x) => x.id === msg.clientId);
+          if (idx < 0) idx = list.findIndex((x) => x.id === msg.id);
+          if (idx >= 0) list[idx] = msg;
+          else list.push(msg);
           if (msg.chatId === state.currentChatId) { renderMessages(); markRead(msg.chatId); }
           loadChats();
         } else if (m.type === 'chat:new' || m.type === 'chat:updated') {
