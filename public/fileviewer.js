@@ -69,14 +69,23 @@
     return porDefecto || 'archivo';
   }
 
-  /* Nombre de respaldo si el servidor no manda Content-Disposition:
-     se toma el titulo del tramite que se esta viendo. */
-  function nombreDeRespaldo() {
+  /* Nombre legible a partir del titulo del tramite + la extension real del
+     archivo. Se usa siempre en la descarga, porque el nombre que guarda el
+     servidor es un identificador interno (f_ab12cd.pdf) y no le dice nada a
+     la persona. */
+  function nombreLegible(blob) {
     var t = $('#tramiteTitle');
     var base = (t && t.textContent ? t.textContent : 'Documento').trim();
     base = base.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^A-Za-z0-9 ._-]+/g, ' ').replace(/\s+/g, ' ').trim();
-    return (base || 'Documento') + '.pdf';
+      .replace(/[^A-Za-z0-9 ._-]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Documento';
+    var tipo = String((blob && blob.type) || '');
+    var ext = /pdf/i.test(tipo) ? '.pdf'
+      : /jpeg|jpg/i.test(tipo) ? '.jpg'
+      : /png/i.test(tipo) ? '.png'
+      : /webp/i.test(tipo) ? '.webp'
+      : /gif/i.test(tipo) ? '.gif'
+      : '.pdf';
+    return base.replace(/\s+/g, '-') + ext;
   }
 
   function cargarPdf() {
@@ -190,14 +199,13 @@
       });
   }
 
-  /* Descarga con el nombre real del archivo (no "download"). */
+  /* Descarga con un nombre legible (no "download" ni un id interno). */
   function descargar(url) {
     toast('Preparando la descarga...');
     return fetch(url, { credentials: 'same-origin' })
       .then(function (res) {
         if (!res.ok) throw new Error('No se pudo descargar el documento');
-        var nombre = nombreDeCabecera(res, nombreDeRespaldo());
-        return res.blob().then(function (blob) { guardar(blob, nombre); });
+        return res.blob().then(function (blob) { guardar(blob, nombreLegible(blob)); });
       })
       .catch(function (e) { toast(e.message); });
   }
