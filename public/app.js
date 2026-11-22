@@ -463,6 +463,7 @@ const App = (() => {
   }
 
   function logout(silent) {
+    stopAdminLive();
     state.token = '';
     state.me = null;
     state.chats = [];
@@ -1024,6 +1025,41 @@ const App = (() => {
   }
 
   /* ------------------------------ panel ------------------------------ */
+  /* Panel: solo las 4 ultimas visitas, y se refresca solo mientras el panel este abierto */
+  let adminLiveTimer = null;
+
+  function adminStatsHtml(t) {
+    return `
+          <div class="stat"><div class="n">${t.people}</div><div class="l">Personas registradas</div></div>
+          <div class="stat"><div class="n">${t.conversations}</div><div class="l">Conversaciones</div></div>
+          <div class="stat"><div class="n">${t.messages}</div><div class="l">Mensajes</div></div>
+          <div class="stat"><div class="n">${t.visits}</div><div class="l">Visitas al enlace</div></div>
+          <div class="stat"><div class="n">${t.visitsToday}</div><div class="l">Visitas de hoy</div></div>`;
+  }
+
+  function adminVisitasHtml(visits) {
+    return (visits || []).slice(0, 4).map((v) => `<div class="panel-row">
+            <div class="who"><b>${esc(v.country || 'Sin pais')}</b><small>${new Date(v.ts).toLocaleString('es')}</small></div>
+            <span class="pill">Web</span>
+          </div>`).join('') || '<div class="panel-row"><span>Sin visitas</span></div>';
+  }
+
+  function stopAdminLive() {
+    if (adminLiveTimer) { clearInterval(adminLiveTimer); adminLiveTimer = null; }
+  }
+
+  async function refreshAdminLive() {
+    const vista = document.getElementById('adminView');
+    if (!vista || !vista.classList.contains('active')) { stopAdminLive(); return; }
+    try {
+      const d = await api('/api/admin/overview');
+      const stats = document.getElementById('adminStats');
+      if (stats && d.totals) stats.innerHTML = adminStatsHtml(d.totals);
+      const lista = document.getElementById('visitasList');
+      if (lista) lista.innerHTML = adminVisitasHtml(d.visits);
+    } catch (e) { /* si falla, se reintenta en el siguiente ciclo */ }
+  }
+
   async function openAdmin() {
     showView('admin');
     const box = $('#adminContent');
@@ -1032,13 +1068,7 @@ const App = (() => {
       const d = await api('/api/admin/overview');
       const countries = d.byCountry || [];
       box.innerHTML = `
-        <div class="stats">
-          <div class="stat"><div class="n">${d.totals.people}</div><div class="l">Personas registradas</div></div>
-          <div class="stat"><div class="n">${d.totals.conversations}</div><div class="l">Conversaciones</div></div>
-          <div class="stat"><div class="n">${d.totals.messages}</div><div class="l">Mensajes</div></div>
-          <div class="stat"><div class="n">${d.totals.visits}</div><div class="l">Visitas al enlace</div></div>
-          <div class="stat"><div class="n">${d.totals.visitsToday}</div><div class="l">Visitas de hoy</div></div>
-        </div>
+        <div class="stats" id="adminStats">${adminStatsHtml(d.totals)}</div>
         <div class="panel">
           <h3>Correo de la app</h3>
           <p class="muted" style="font-size:12px;margin:0 0 8px">Envia un codigo de prueba para confirmar que los registros llegan.</p>
@@ -1066,16 +1096,15 @@ const App = (() => {
         </div>
         <div class="panel">
           <h3>Ultimas visitas</h3>
-          ${(d.visits || []).slice(0, 12).map((v) => `<div class="panel-row">
-            <div class="who"><b>${esc(v.country || 'Sin pais')}</b><small>${new Date(v.ts).toLocaleString('es')}</small></div>
-            <span class="pill">Web</span>
-          </div>`).join('') || '<div class="panel-row"><span>Sin visitas</span></div>'}
+          <div id="visitasList">${adminVisitasHtml(d.visits)}</div>
         </div>`;
       const trBox = document.createElement('div');
       trBox.className = 'admin-tramites';
       trBox.id = 'adminTramites';
       box.appendChild(trBox);
       loadAdminTramites();
+      stopAdminLive();
+      adminLiveTimer = setInterval(refreshAdminLive, 30000);
     } catch (e) {
       box.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
     }
