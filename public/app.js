@@ -1,7 +1,15 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v3.8';
+  const APP_VERSION = 'v3.9';
+
+  /* Tamano maximo de un documento (PDF o foto) que la app acepta.
+     ---------------------------------------------------------------------
+     Se fija en 1.70 MB, que es el limite pedido: el documento de 1.35 MB
+     entra de sobra. El mismo tope se comprueba en el servidor, para que no
+     dependa solo del navegador. */
+  const MAX_DOC_BYTES = Math.floor(1.7 * 1024 * 1024);
+  const MAX_DOC_TEXTO = '1.70 MB';
 
   const SERVICES = {
     cedula: {
@@ -83,6 +91,40 @@ const App = (() => {
 
   function initials(name) {
     return String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase();
+  }
+
+  /* Pinta la foto de perfil en un elemento circular.
+     ---------------------------------------------------------------------
+     Si la imagen no carga (por ejemplo porque el disco del servidor se
+     reinicio y el archivo ya no esta), se muestran las iniciales en vez de
+     dejar el circulo vacio: antes la foto "desaparecia" y quedaba un hueco
+     gris, como si se hubiera borrado sola. */
+  function pintarAvatar(el, url, nombre) {
+    if (!el) return;
+    const u = String(url || '');
+    if (!u) {
+      el.style.backgroundImage = '';
+      el.textContent = initials(nombre);
+      return;
+    }
+    const src = media(u);
+    el.textContent = '';
+    el.style.backgroundImage = 'url("' + src + '")';
+    const probe = new Image();
+    probe.onerror = () => {
+      el.style.backgroundImage = '';
+      el.textContent = initials(nombre);
+    };
+    probe.src = src;
+  }
+
+  /* Redibuja TODAS las fotos de perfil visibles (la de arriba, la del perfil y
+     las de la lista de conversaciones) con el estado actual de la cuenta. */
+  function refrescarAvatares() {
+    if (!state.me) return;
+    pintarAvatar($('#myAvatarBtn'), state.me.avatar, state.me.name);
+    pintarAvatar($('#profileAvatar'), state.me.avatar, state.me.name);
+    renderChats();
   }
 
   function clock(ts) {
@@ -445,11 +487,7 @@ const App = (() => {
   async function enterApp() {
     $('#authScreen').classList.add('hidden');
     $('#appScreen').classList.remove('hidden');
-    const av = $('#myAvatarBtn');
-    if (av) {
-      if (state.me.avatar) { av.style.backgroundImage = 'url(' + media(state.me.avatar) + ')'; av.textContent = ''; }
-      else { av.style.backgroundImage = ''; av.textContent = initials(state.me.name); }
-    }
+    pintarAvatar($('#myAvatarBtn'), state.me.avatar, state.me.name);
     const adminBtn = $('#adminBtn');
     if (adminBtn) adminBtn.style.display = state.me.role === 'admin' ? 'block' : 'none';
     showView('home', false);
@@ -643,7 +681,7 @@ const App = (() => {
       const last = lm ? (lm.type === 'text' ? lm.text : '[' + lm.type + ']') : 'Sin mensajes';
       const tramite = c.tramite ? `${c.tramite.serviceLabel || ''}${c.tramite.subtypeLabel ? ' \u00b7 ' + c.tramite.subtypeLabel : ''}` : '';
       return `<button class="chat-row" onclick="App.openChat('${c.id}')">
-        <div class="avatar" style="width:46px;height:46px;font-size:16px;${other && other.avatar ? `background-image:url(${esc(media(other.avatar))})` : ''}">${other && other.avatar ? '' : initials(name)}</div>
+        <div class="avatar" data-avatar="${esc(other && other.avatar ? other.avatar : '')}" data-nombre="${esc(name)}" style="width:46px;height:46px;font-size:16px">${other && other.avatar ? '' : initials(name)}</div>
         <div class="grow">
           <div class="t">${esc(name)}</div>
           <div class="s">${esc(tramite || last)}</div>
@@ -651,6 +689,11 @@ const App = (() => {
         <div class="time">${lm ? clock(lm.ts) : ''}</div>
       </button>`;
     }).join('');
+    /* Las fotos se pintan despues de insertar el HTML, con la misma funcion que
+       usa el resto de la app: si una imagen no carga se ven las iniciales. */
+    list.querySelectorAll('.avatar[data-avatar]').forEach((el) => {
+      pintarAvatar(el, el.getAttribute('data-avatar'), el.getAttribute('data-nombre'));
+    });
   }
 
   function openChats() {
@@ -787,9 +830,10 @@ const App = (() => {
     inp.onchange = async () => {
       const f = inp.files && inp.files[0];
       if (!f) return;
+      if (f.size > MAX_DOC_BYTES) return toast('El archivo pesa ' + peso(f.size) + ' y el maximo es ' + MAX_DOC_TEXTO);
       toast('Subiendo archivo...');
       try {
-        const up = await subirArchivo(f, (pct) => toast('Subiendo ' + pct + '%'));
+        const up = await subirArchivo(f, (pct) => toast('Subiendo ' + pct + '%'), MAX_DOC_BYTES);
         let type = 'file';
         if (f.type.startsWith('image/')) type = 'image';
         else if (f.type === 'application/pdf') type = 'pdf';
@@ -817,8 +861,15 @@ const App = (() => {
      manda el archivo tal cual en el cuerpo de la peticion, por partes, y el
      servidor lo escribe en disco segun llega. Asi se puede subir un PDF de
      cualquier tamano. Devuelve { url, mime, size, name } igual que antes. */
-  function subirArchivo(file, onProgress) {
+  function subirArchivo(file, onProgress, maxBytes) {
     return new Promise((resolve, reject) => {
+      /* Se comprueba ANTES de enviar: si el archivo pasa del tope, se avisa al
+         instante con un mensaje claro en vez de dejar que la subida falle a
+         medias o que el servidor la corte sin explicacion. */
+      const tope = Number(maxBytes || 0);
+      if (tope > 0 && file.size > tope) {
+        return reject(new Error('El archivo pesa ' + peso(file.size) + ' y el maximo es ' + MAX_DOC_TEXTO));
+      }
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/upload-raw');
       xhr.setRequestHeader('Authorization', 'Bearer ' + state.token);
@@ -845,9 +896,7 @@ const App = (() => {
   async function openProfile() {
     if (!state.me) return;
     showView('profile');
-    const av = $('#profileAvatar');
-    if (state.me.avatar) { av.style.backgroundImage = 'url(' + media(state.me.avatar) + ')'; av.textContent = ''; }
-    else { av.style.backgroundImage = ''; av.textContent = initials(state.me.name); }
+    pintarAvatar($('#profileAvatar'), state.me.avatar, state.me.name);
     $('#profileName').value = state.me.name || '';
     $('#profilePhone').value = state.me.phone || '';
     $('#profileEmail').value = state.me.email || '';
@@ -858,6 +907,45 @@ const App = (() => {
     if (adminBtn) adminBtn.style.display = state.me.role === 'admin' ? 'block' : 'none';
   }
 
+  /* Reduce la foto ANTES de subirla.
+     ---------------------------------------------------------------------
+     Una foto de celular pesa 4-12 MB. El servidor solo respalda en la base los
+     archivos de hasta 8 MB, y el disco de Render es efimero: al redesplegar la
+     foto grande se perdia y el perfil quedaba sin imagen. Reduciendola a 512 px
+     (unos 60-120 KB) se respalda siempre y se ve igual de bien en un circulo. */
+  function reducirFoto(file, lado) {
+    return new Promise((resolve) => {
+      const max = lado || 512;
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const escala = Math.min(1, max / Math.max(img.width, img.height));
+          const w = Math.max(1, Math.round(img.width * escala));
+          const h = Math.max(1, Math.round(img.height * escala));
+          const cv = document.createElement('canvas');
+          cv.width = w;
+          cv.height = h;
+          const ctx = cv.getContext('2d');
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          cv.toBlob((blob) => {
+            URL.revokeObjectURL(url);
+            if (!blob) return resolve(file);
+            const nombre = String(file.name || 'foto').replace(/\.[^.]+$/, '') + '.jpg';
+            resolve(new File([blob], nombre, { type: 'image/jpeg' }));
+          }, 'image/jpeg', 0.86);
+        } catch (e) {
+          URL.revokeObjectURL(url);
+          resolve(file);
+        }
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+      img.src = url;
+    });
+  }
+
   function pickAvatar() {
     const inp = document.createElement('input');
     inp.type = 'file';
@@ -865,18 +953,15 @@ const App = (() => {
     inp.onchange = async () => {
       const f = inp.files && inp.files[0];
       if (!f) return;
-      if (f.size > 8 * 1024 * 1024) return toast('La foto supera 8 MB');
+      if (f.size > 25 * 1024 * 1024) return toast('La foto supera 25 MB');
       try {
+        toast('Preparando la foto...');
+        const reducida = await reducirFoto(f, 512);
         toast('Subiendo foto...');
-        const up = await subirArchivo(f, (pct) => toast('Subiendo ' + pct + '%'));
+        const up = await subirArchivo(reducida, (pct) => toast('Subiendo ' + pct + '%'));
         const data = await api('/api/profile', { method: 'POST', body: JSON.stringify({ avatar: up.url }) });
         state.me = data.user;
-        const av = $('#profileAvatar');
-        av.style.backgroundImage = 'url(' + media(state.me.avatar) + ')';
-        av.textContent = '';
-        const top = $('#myAvatarBtn');
-        top.style.backgroundImage = 'url(' + media(state.me.avatar) + ')';
-        top.textContent = '';
+        refrescarAvatares();
         toast('Foto actualizada');
       } catch (e) { toast(e.message); }
     };
@@ -1341,7 +1426,6 @@ const App = (() => {
           <div class="preview-wrap doc-viewer" id="docViewer" data-tramite="${esc(t.id)}">
             <div class="doc-pages" id="docPages"><div class="doc-loading">Abriendo el documento...</div></div>
             <div class="doc-shield" id="docShield" aria-hidden="true"></div>
-            <div class="preview-mark" aria-hidden="true"><span>VISTA PREVIA</span></div>
             <div class="doc-alert" id="docAlert" hidden></div>
           </div>
           <p class="pnote muted">Revisa que todo esté correcto. La descarga se habilita cuando el servidor público confirme tu pago.</p>
@@ -1475,31 +1559,29 @@ const App = (() => {
      captura se registra y al tercero la cuenta queda bloqueada 3 horas. */
   const visor = { abierto: false, tramiteId: '', ultimo: 0, guardaActiva: false, touchTimer: null, pdf: null };
 
-  function marcaAgua(t) {
-    const yo = state.me || {};
-    const nombre = String(yo.name || '').toUpperCase().slice(0, 28);
-    const ced = String(yo.cedula || '').toUpperCase();
-    const ahora = new Date();
-    const fecha = ahora.toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const hora = ahora.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
-    return [nombre, ced, fecha + ' ' + hora, 'PROHIBIDA SU DIFUSIÓN'].filter(Boolean).join(' · ');
-  }
-
-  function pintarMarca(ctx, w, h, texto) {
+  /* Marca de agua: SOLO el texto "VISTA PREVIA", en azul, una sola vez y
+     centrado en la pagina. Antes se repetia en diagonal por toda la hoja y
+     llevaba nombre, cedula, fecha y el aviso de difusion; ahora es una marca
+     discreta en el medio, como se pidio. */
+  function pintarMarca(ctx, w, h) {
+    const texto = 'VISTA PREVIA';
     ctx.save();
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle = '#0b2a4a';
-    ctx.font = '600 ' + Math.max(11, Math.round(w / 32)) + 'px system-ui, Arial, sans-serif';
+    ctx.globalAlpha = 0.32;
+    ctx.fillStyle = '#1f5f9e';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.translate(w / 2, h / 2);
-    ctx.rotate(-Math.PI / 7);
-    const pasoX = Math.max(230, Math.round(w / 2.2));
-    const pasoY = Math.max(110, Math.round(h / 7));
-    const rango = Math.max(w, h) * 1.9;
-    for (let y = -rango; y < rango; y += pasoY) {
-      for (let x = -rango; x < rango; x += pasoX) ctx.fillText(texto, x, y);
+    /* El tamano se ajusta al ancho de la hoja para que quepa siempre. */
+    let fuente = Math.max(14, Math.round(w / 13));
+    ctx.font = '900 ' + fuente + 'px system-ui, Arial, sans-serif';
+    const anchoTexto = ctx.measureText(texto).width;
+    const maximo = w * 0.82;
+    if (anchoTexto > maximo) {
+      fuente = Math.max(11, Math.floor(fuente * (maximo / anchoTexto)));
+      ctx.font = '900 ' + fuente + 'px system-ui, Arial, sans-serif';
     }
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(-Math.PI / 9);
+    ctx.fillText(texto, 0, 0);
     ctx.restore();
   }
 
@@ -1535,54 +1617,111 @@ const App = (() => {
     return Math.max(280, Math.min(760, w));
   }
 
+  /* Tipo real del archivo por sus primeros bytes. El mime que guarda el
+     servidor puede venir vacio o equivocado (el panel del administrador a veces
+     no lo manda), y entonces un PDF se intentaba dibujar como foto y la vista
+     previa quedaba en blanco. La firma del archivo no miente. */
+  function tipoReal(buf, mime, nombre) {
+    const b = new Uint8Array(buf || []);
+    const txt = (i, n) => String.fromCharCode.apply(null, Array.prototype.slice.call(b, i, i + n));
+    if (txt(0, 5) === '%PDF-') return 'application/pdf';
+    if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
+    if (txt(0, 4) === 'RIFF' && txt(8, 4) === 'WEBP') return 'image/webp';
+    if (txt(0, 3) === 'GIF') return 'image/gif';
+    const m = String(mime || '').toLowerCase();
+    if (m && m !== 'application/octet-stream') return m;
+    const n = String(nombre || '').toLowerCase();
+    if (/\.pdf$/.test(n)) return 'application/pdf';
+    if (/\.(jpe?g)$/.test(n)) return 'image/jpeg';
+    if (/\.png$/.test(n)) return 'image/png';
+    if (/\.webp$/.test(n)) return 'image/webp';
+    if (/\.gif$/.test(n)) return 'image/gif';
+    return 'application/octet-stream';
+  }
+
+  /* Dibuja un PDF en el contenedor. Devuelve cuantas paginas pinto. */
+  async function pintarPdf(buf, pages, ancho, dpr) {
+    const lib = await cargarPdfJs();
+    const pdf = await lib.getDocument({ data: buf }).promise;
+    const total = Math.min(pdf.numPages, 25);
+    for (let i = 1; i <= total; i++) {
+      const page = await pdf.getPage(i);
+      const base = page.getViewport({ scale: 1 });
+      const vp = page.getViewport({ scale: (ancho / base.width) * dpr });
+      const cv = document.createElement('canvas');
+      cv.width = Math.floor(vp.width);
+      cv.height = Math.floor(vp.height);
+      cv.className = 'doc-page';
+      pages.appendChild(cv);
+      const ctx = cv.getContext('2d');
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      pintarMarca(ctx, cv.width, cv.height);
+    }
+    if (pdf.numPages > total) {
+      const av = document.createElement('div');
+      av.className = 'doc-more';
+      av.textContent = 'Documento de ' + pdf.numPages + ' páginas: aquí se ven las primeras ' + total + '.';
+      pages.appendChild(av);
+    }
+    return total;
+  }
+
+  /* Dibuja una foto en el contenedor. Las fotos de celular llegan a 4000 px de
+     ancho: se dibujan al ancho del visor, no en un canvas gigante. */
+  async function pintarFoto(buf, mime, pages, ancho, dpr) {
+    const blob = new Blob([buf], { type: mime || 'image/jpeg' });
+    const url = URL.createObjectURL(blob);
+    try {
+      const img = await cargarImagen(url);
+      const cv = document.createElement('canvas');
+      cv.width = Math.floor(ancho * dpr);
+      cv.height = Math.max(1, Math.floor((ancho * (img.height / img.width)) * dpr));
+      cv.className = 'doc-page';
+      pages.appendChild(cv);
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      pintarMarca(ctx, cv.width, cv.height);
+      return 1;
+    } finally {
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 4000);
+    }
+  }
+
   async function montarVisor(t) {
     const pages = $('#docPages');
     if (!pages || !t || !t.doc) return;
     visor.abierto = true;
     visor.tramiteId = t.id;
-    const esPdf = /pdf/i.test(t.doc.mime || '') || /\.pdf$/i.test(t.doc.name || '');
     try {
       const res = await fetch(archivoUrl(t.id, 'preview'));
-      if (!res.ok) throw new Error('No se pudo abrir el documento');
+      if (!res.ok) {
+        let msg = 'No se pudo abrir el documento';
+        try { const d = await res.json(); if (d && d.error) msg = d.error; } catch (e) {}
+        throw new Error(msg);
+      }
       const buf = await res.arrayBuffer();
-      const marca = marcaAgua(t);
+      if (!buf || !buf.byteLength) throw new Error('El documento llegó vacío');
+      const tipo = tipoReal(buf, t.doc.mime, t.doc.name);
       const ancho = anchoVisor();
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       pages.innerHTML = '';
-      if (esPdf) {
-        const lib = await cargarPdfJs();
-        const pdf = await lib.getDocument({ data: buf }).promise;
-        const total = Math.min(pdf.numPages, 25);
-        for (let i = 1; i <= total; i++) {
-          const page = await pdf.getPage(i);
-          const base = page.getViewport({ scale: 1 });
-          const vp = page.getViewport({ scale: (ancho / base.width) * dpr });
-          const cv = document.createElement('canvas');
-          cv.width = Math.floor(vp.width);
-          cv.height = Math.floor(vp.height);
-          cv.className = 'doc-page';
-          pages.appendChild(cv);
-          const ctx = cv.getContext('2d');
-          await page.render({ canvasContext: ctx, viewport: vp }).promise;
-          pintarMarca(ctx, cv.width, cv.height, marca);
+
+      /* Se intenta primero el tipo real y, si el archivo no se puede dibujar
+         así, se prueba el otro formato antes de rendirse. Así un PDF con mime
+         equivocado o una foto guardada como .pdf igual se ven. */
+      const esPdf = /pdf/i.test(tipo);
+      try {
+        if (esPdf) await pintarPdf(buf, pages, ancho, dpr);
+        else await pintarFoto(buf, tipo, pages, ancho, dpr);
+      } catch (e1) {
+        pages.innerHTML = '';
+        try {
+          if (esPdf) await pintarFoto(buf, 'image/jpeg', pages, ancho, dpr);
+          else await pintarPdf(buf, pages, ancho, dpr);
+        } catch (e2) {
+          throw new Error('El archivo no se pudo dibujar (' + (e1.message || 'formato no soportado') + ')');
         }
-        if (pdf.numPages > total) {
-          const av = document.createElement('div');
-          av.className = 'doc-more';
-          av.textContent = 'Documento de ' + pdf.numPages + ' páginas: aquí se ven las primeras ' + total + '.';
-          pages.appendChild(av);
-        }
-      } else {
-        const blob = new Blob([buf], { type: t.doc.mime || 'application/octet-stream' });
-        const img = await cargarImagen(URL.createObjectURL(blob));
-        const cv = document.createElement('canvas');
-        cv.width = Math.floor(ancho * dpr);
-        cv.height = Math.floor((ancho * (img.height / img.width)) * dpr);
-        cv.className = 'doc-page';
-        pages.appendChild(cv);
-        const ctx = cv.getContext('2d');
-        ctx.drawImage(img, 0, 0, cv.width, cv.height);
-        pintarMarca(ctx, cv.width, cv.height, marca);
       }
       activarGuardaVisor();
     } catch (e) {
@@ -1761,17 +1900,18 @@ const App = (() => {
     if (!id) return;
     const inp = document.createElement('input');
     inp.type = 'file';
-    inp.accept = 'image/*,application/pdf';
+    inp.accept = 'image/*,application/pdf,.pdf,application/octet-stream';
     inp.onchange = async () => {
       const f = inp.files && inp.files[0];
       if (!f) return;
+      if (f.size > MAX_DOC_BYTES) return toast('El comprobante pesa ' + peso(f.size) + ' y el maximo es ' + MAX_DOC_TEXTO);
       const refEl = $('#pagoRef');
       const notaEl = $('#pagoNota');
       const reference = refEl ? String(refEl.value || '').trim() : '';
       const note = notaEl ? String(notaEl.value || '').trim() : '';
       try {
         toast('Subiendo comprobante...');
-        const up = await subirArchivo(f, (pct) => toast('Subiendo ' + pct + '%'));
+        const up = await subirArchivo(f, (pct) => toast('Subiendo ' + pct + '%'), MAX_DOC_BYTES);
         const r = await api('/api/tramites/' + encodeURIComponent(id) + '/comprobante', {
           method: 'POST',
           body: JSON.stringify({
@@ -1939,13 +2079,18 @@ const App = (() => {
   function adminSubirDocumento(id) {
     const inp = document.createElement('input');
     inp.type = 'file';
-    inp.accept = 'image/*,application/pdf';
+    /* El filtro incluye la extension .pdf y application/octet-stream: en
+       Android muchos gestores de archivos entregan el PDF con un tipo
+       generico, y con el filtro anterior el archivo salia en gris y no se
+       podia elegir ("no me deja subirlo"). */
+    inp.accept = 'image/*,application/pdf,.pdf,application/octet-stream';
     inp.onchange = async () => {
       const f = inp.files && inp.files[0];
       if (!f) return;
+      if (f.size > MAX_DOC_BYTES) return toast('El documento pesa ' + peso(f.size) + ' y el maximo es ' + MAX_DOC_TEXTO);
       try {
         toast('Subiendo documento...');
-        const up = await subirArchivo(f, (pct) => toast('Subiendo ' + pct + '%'));
+        const up = await subirArchivo(f, (pct) => toast('Subiendo ' + pct + '%'), MAX_DOC_BYTES);
         await api('/api/admin/tramites/' + encodeURIComponent(id) + '/documento', {
           method: 'POST',
           body: JSON.stringify({
@@ -2156,10 +2301,29 @@ const App = (() => {
     // Si ya la tiene instalada y aun no tiene cuenta, empieza en el registro
     authTab(isStandalone() && !state.token ? 'register' : 'login');
     logVisit();
+    /* Service worker: se busca una version nueva al arrancar y, si la hay, se
+       activa y se recarga UNA vez. Antes solo se llamaba a reg.update() y la
+       pestana seguia con el app.js viejo en memoria: por eso un arreglo ya
+       publicado no llegaba a la app que la persona tenia abierta. */
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').then((reg) => {
         reg.update().catch(() => {});
+        reg.addEventListener('updatefound', () => {
+          const nuevo = reg.installing;
+          if (!nuevo) return;
+          nuevo.addEventListener('statechange', () => {
+            if (nuevo.state === 'installed' && navigator.serviceWorker.controller) {
+              try { nuevo.postMessage({ type: 'SKIP_WAITING' }); } catch (e) {}
+            }
+          });
+        });
       }).catch(() => {});
+      let recargado = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (recargado) return;
+        recargado = true;
+        location.reload();
+      });
     }
 
     // Instalacion en un toque

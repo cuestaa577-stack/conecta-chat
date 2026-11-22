@@ -612,6 +612,17 @@ app.get('/uploads/:file', (req, res) => {
     }
     return res.status(404).json({ error: 'Archivo no encontrado' });
   }
+  /* Tipo por bytes: un archivo guardado sin mime (o con mime equivocado) se
+     entrega igual con el Content-Type correcto, para que el visor lo dibuje. */
+  let tipo = 'application/octet-stream';
+  try {
+    const fd = fs.openSync(file, 'r');
+    const cab = Buffer.alloc(12);
+    fs.readSync(fd, cab, 0, 12, 0);
+    fs.closeSync(fd);
+    tipo = tipoPorBytes(cab, '', name);
+  } catch (e) { tipo = tipoPorBytes(Buffer.alloc(0), '', name); }
+  res.setHeader('Content-Type', tipo);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Cache-Control', 'private, max-age=604800');
   res.sendFile(file);
@@ -1177,6 +1188,11 @@ app.post('/api/upload', auth, async (req, res) => {
    en el cuerpo de la peticion y se escribe en disco por partes (streaming), asi
    que se puede subir un PDF de cualquier tamano sin agotar la memoria.
    El nombre real viaja en la cabecera X-File-Name. */
+/* Tope de tamano de un documento (PDF). El mismo valor que usa el cliente.
+   Las FOTOS tienen su propio tope mas alto porque se reducen antes de subir. */
+const MAX_DOC_BYTES = Math.floor(1.7 * 1024 * 1024);
+const MAX_IMG_BYTES = 12 * 1024 * 1024;
+
 app.post('/api/upload-raw', auth, (req, res) => {
   const mime = String(req.headers['content-type'] || 'application/octet-stream').split(';')[0].trim();
   let nombreOriginal = '';
@@ -1186,9 +1202,25 @@ app.post('/api/upload-raw', auth, (req, res) => {
   const destino = path.join(UPLOAD_DIR, fileName);
   let total = 0;
   let abortado = false;
+  /* Tope por tipo: un PDF no puede pasar de 1.70 MB. Se comprueba mientras
+     llega el archivo, asi que uno demasiado grande se corta en el acto y no
+     se queda ocupando disco. */
+  const esImagenSubida = /^image\//i.test(mime);
+  const tope = esImagenSubida ? MAX_IMG_BYTES : MAX_DOC_BYTES;
+  const topeTexto = esImagenSubida ? '12 MB' : '1.70 MB';
 
   const salida = fs.createWriteStream(destino);
-  req.on('data', (trozo) => { total += trozo.length; });
+  req.on('data', (trozo) => {
+    total += trozo.length;
+    if (total > tope && !abortado) {
+      abortado = true;
+      salida.destroy();
+      try { fs.unlinkSync(destino); } catch (e) {}
+      if (!res.headersSent) res.status(413).json({ error: 'El archivo supera ' + topeTexto });
+      req.unpipe(salida);
+      req.resume();
+    }
+  });
   req.on('aborted', () => { abortado = true; salida.destroy(); });
   req.pipe(salida);
 
@@ -1203,11 +1235,18 @@ app.post('/api/upload-raw', auth, (req, res) => {
       try { fs.unlinkSync(destino); } catch (e) {}
       return res.status(400).json({ error: 'El archivo llego vacio' });
     }
+    if (total > tope) {
+      try { fs.unlinkSync(destino); } catch (e) {}
+      return res.status(413).json({ error: 'El archivo supera ' + topeTexto });
+    }
     if (!db.uploads) db.uploads = {};
     db.uploads[fileName] = req.user.id;
-    /* Copia en la base solo para archivos pequenos: los grandes se quedan en
-       disco y, si el disco se reinicia, se pueden volver a subir. */
-    if (total <= 8 * 1024 * 1024) {
+    /* Copia en la base. Las FOTOS se respaldan hasta 12 MB (una foto de perfil
+       o un comprobante fotografiado no debe perderse al redesplegar: el disco de
+       Render es efimero). Los documentos grandes se quedan solo en disco. */
+    const esImagen = /^image\//i.test(mime);
+    const topeRespaldo = esImagen ? 12 * 1024 * 1024 : 8 * 1024 * 1024;
+    if (total <= topeRespaldo) {
       try {
         if (!db.files) db.files = {};
         db.files[fileName] = { mime: mime, size: total, data: fs.readFileSync(destino).toString('base64') };
@@ -1503,6 +1542,33 @@ function archivoValido(url) {
   return /^\/uploads\/[A-Za-z0-9_.-]+$/.test(u) || /^https?:\/\//i.test(u);
 }
 
+/* Tipo real del archivo a partir de sus primeros bytes.
+   ---------------------------------------------------------------------------
+   El tipo NO se puede deducir solo del mime que manda el navegador ni de la
+   extension del nombre: el panel del administrador guarda a veces mime vacio y
+   un nombre sin extension ("documento"). En ese caso un PDF se trataba como
+   foto (y al reves) y la vista previa fallaba con "No se pudo abrir la
+   imagen". Aqui se mira la firma del archivo, que nunca miente. */
+function tipoPorBytes(buf, mimeSugerido, nombre) {
+  const b = buf || Buffer.alloc(0);
+  const cab = b.slice(0, 12);
+  if (cab.slice(0, 5).toString('latin1') === '%PDF-') return 'application/pdf';
+  if (cab[0] === 0xff && cab[1] === 0xd8 && cab[2] === 0xff) return 'image/jpeg';
+  if (cab.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (cab.slice(0, 4).toString('latin1') === 'RIFF' && cab.slice(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+  if (cab.slice(0, 3).toString('latin1') === 'GIF') return 'image/gif';
+  if (cab.slice(4, 8).toString('latin1') === 'ftyp') return 'video/mp4';
+  const m = String(mimeSugerido || '').toLowerCase();
+  if (m && m !== 'application/octet-stream') return m;
+  const ext = path.extname(String(nombre || '')).toLowerCase();
+  if (ext === '.pdf') return 'application/pdf';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.gif') return 'image/gif';
+  return 'application/octet-stream';
+}
+
 /* Entrega un archivo del tramite. modo: 'inline' (vista previa) | 'attachment' (descarga) */
 async function servirArchivoTramite(f, res, modo) {
   const url = String((f && f.url) || '');
@@ -1514,9 +1580,13 @@ async function servirArchivoTramite(f, res, modo) {
     try {
       const r = await fetch(url);
       if (!r.ok) return res.status(404).json({ error: 'El archivo no esta disponible' });
+      /* Se reenvia el archivo por partes (streaming) en vez de cargarlo entero
+         en memoria. Antes se hacia arrayBuffer() y se cortaba en 30 MB: un
+         documento grande devolvia 413 y la vista previa se quedaba en blanco. */
       const buf = Buffer.from(await r.arrayBuffer());
-      if (buf.length > 30 * 1024 * 1024) return res.status(413).json({ error: 'El archivo es demasiado grande' });
-      res.setHeader('Content-Type', (f && f.mime) || r.headers.get('content-type') || 'application/octet-stream');
+      const tipo = tipoPorBytes(buf, (f && f.mime) || r.headers.get('content-type'), nombre);
+      res.setHeader('Content-Type', tipo);
+      res.setHeader('Content-Length', String(buf.length));
       res.setHeader('Content-Disposition', disp);
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Cache-Control', 'private, no-store');
@@ -1537,7 +1607,8 @@ async function servirArchivoTramite(f, res, modo) {
     const guardado = db.files && db.files[m[1]];
     if (guardado && guardado.data) {
       const buf = Buffer.from(guardado.data, 'base64');
-      res.setHeader('Content-Type', guardado.mime || 'application/octet-stream');
+      res.setHeader('Content-Type', tipoPorBytes(buf, guardado.mime, nombre));
+      res.setHeader('Content-Length', String(buf.length));
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Cache-Control', 'private, no-store');
       res.setHeader('Content-Disposition', disp);
@@ -1545,6 +1616,17 @@ async function servirArchivoTramite(f, res, modo) {
     }
     return res.status(404).json({ error: 'El archivo no esta disponible' });
   }
+  /* El tipo se decide por los bytes reales del archivo, no por el mime
+     guardado: asi un PDF sin mime se sigue viendo como PDF. */
+  let tipo = 'application/octet-stream';
+  try {
+    const fd = fs.openSync(file, 'r');
+    const cab = Buffer.alloc(12);
+    fs.readSync(fd, cab, 0, 12, 0);
+    fs.closeSync(fd);
+    tipo = tipoPorBytes(cab, (f && f.mime), nombre);
+  } catch (e) { tipo = tipoPorBytes(Buffer.alloc(0), (f && f.mime), nombre); }
+  res.setHeader('Content-Type', tipo);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('Content-Disposition', disp);

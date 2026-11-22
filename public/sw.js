@@ -1,5 +1,5 @@
 /* Conecta Chat - service worker (instalable + lo mas reciente primero) */
-const CACHE = 'tramites-ve-v33';
+const CACHE = 'tramites-ve-v34';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './fileviewer.js', './manifest.json', './bg.jpg', './logos/saime.png', './galeria/01-caminantes.jpg', './galeria/02-joven-bandera.jpg', './galeria/03-comunidad.jpg', './logos/intt.png', './logos/justicia.png', './icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -12,6 +12,12 @@ self.addEventListener('activate', (e) => {
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
+});
+
+/* La pagina pide activar la version nueva en cuanto la detecta, para que el
+   arreglo llegue sin que la persona tenga que borrar la cache a mano. */
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('fetch', (e) => {
