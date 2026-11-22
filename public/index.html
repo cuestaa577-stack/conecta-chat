@@ -7,8 +7,8 @@
   <meta name="description" content="Tramites Venezolanos en Linea: cedula, licencia y antecedentes penales. Asesoria y acompanamiento." />
   <title>Tramites Venezolanos en Linea</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="icon" href="favicon-32.png?v=18" sizes="32x32" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=18" />
+  <link rel="icon" href="favicon-32.png?v=19" sizes="32x32" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=19" />
   <link rel="stylesheet" href="styles.css" />
   <style>
     .auth-card{position:relative}
@@ -468,6 +468,19 @@
       <div class="ios-step"><b>3.</b> Toca <b>Agregar</b> y listo: queda el icono en tu pantalla.</div>
     </div>
     <button class="btn ghost" onclick="App.closeIosSheet()">Entendido</button>
+  </div>
+</div>
+
+<!-- Visor de archivos dentro de la app (comprobantes, adjuntos, documentos) -->
+<div class="sheet hidden" id="fileViewer">
+  <div class="sheet-card fv-card">
+    <div class="sheet-head">
+      <span id="fileViewerTitle">Archivo</span>
+      <button class="iconbtn" onclick="App.cerrarArchivo()" title="Cerrar">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M7 7l10 10M17 7L7 17"/></svg>
+      </button>
+    </div>
+    <div class="fv-body" id="fileViewerBody"></div>
   </div>
 </div>
 
