@@ -50,19 +50,32 @@ Las cuentas antiguas creadas con teléfono o correo siguen entrando igual que an
 
 ## Correo saliente (códigos de 6 dígitos)
 
-Los códigos salen por SMTP. Se configura en el servidor:
+**Importante:** el plan free de Render bloquea los puertos de correo (25, 465 y 587), así que Gmail por SMTP **no funciona** ahí. Por eso la aplicación envía los códigos por **HTTPS (puerto 443)**, que sí funciona en el plan free.
+
+### Opción recomendada: Brevo (gratis, 300 correos al día)
 
 | Variable | Ejemplo | Para qué sirve |
 | --- | --- | --- |
-| `SMTP_HOST` | `smtp.gmail.com` | Servidor de correo |
-| `SMTP_PORT` | `587` | Puerto (465 si es SSL) |
-| `SMTP_USER` | `enelextranjerovenezolanos@gmail.com` | Cuenta que envía |
-| `SMTP_PASS` | clave de aplicación | Clave del correo, no la normal |
-| `MAIL_FROM` | `Tramites <correo@gmail.com>` | Remitente que ve la persona |
+| `MAIL_PROVIDER` | `brevo` | Servicio de correo (`brevo`, `resend` o `sendgrid`) |
+| `MAIL_API_KEY` | `xkeysib-...` | **La clave** que da el servicio |
+| `MAIL_FROM` | `Tramites <enelextranjerovenezolanos@gmail.com>` | Correo remitente, debe estar verificado en el servicio |
+| `MAIL_FROM_NAME` | `Tramites Venezolanos` | Nombre que ve la persona (opcional) |
 
-Con Gmail hay que crear una **clave de aplicación** (Cuenta de Google → Seguridad → Verificación en dos pasos → Contraseñas de aplicaciones) y usar esa en `SMTP_PASS`.
+Pasos: crear cuenta gratis en brevo.com, verificar el correo remitente (Senders, Domains & IPs → Add a sender) y crear la clave en SMTP & API → API Keys.
 
-Si el correo no está configurado, la aplicación sigue funcionando: los códigos aparecen solo en el registro (logs) del servidor y "olvidé mi contraseña" avisa que no pudo enviar el correo.
+### Alternativa: SMTP (solo en planes pagos de Render)
+
+| Variable | Ejemplo |
+| --- | --- |
+| `SMTP_HOST` | `smtp.gmail.com` |
+| `SMTP_PORT` | `587` (465 si es SSL) |
+| `SMTP_USER` | `enelextranjerovenezolanos@gmail.com` |
+| `SMTP_PASS` | clave de aplicación de Gmail |
+| `MAIL_FROM` | `Tramites <correo@gmail.com>` |
+
+Con Gmail hay que crear una **clave de aplicación** (Cuenta de Google → Seguridad → Verificación en dos pasos → Contraseñas de aplicaciones), no sirve la contraseña normal.
+
+Si no se configura nada, la aplicación sigue funcionando: los códigos aparecen solo en el registro (logs) del servidor y "olvidé mi contraseña" avisa que no pudo enviar el correo.
 
 ## Estructura
 

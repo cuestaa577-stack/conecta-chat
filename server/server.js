@@ -30,6 +30,75 @@ const SMTP_USER = String(process.env.SMTP_USER || '').trim();
 const SMTP_PASS = String(process.env.SMTP_PASS || '');
 const MAIL_FROM = String(process.env.MAIL_FROM || (SMTP_USER ? 'Tramites Venezolanos <' + SMTP_USER + '>' : '')).trim();
 
+/* correo por HTTPS (sirve en el plan free de Render, que bloquea SMTP) */
+const MAIL_PROVIDER = String(process.env.MAIL_PROVIDER || '').trim().toLowerCase();
+const MAIL_API_KEY = String(process.env.MAIL_API_KEY || '').trim();
+const MAIL_FROM_NAME = String(process.env.MAIL_FROM_NAME || 'Tramites Venezolanos').trim();
+
+function detectProvider() {
+  if (MAIL_PROVIDER) return MAIL_PROVIDER;
+  if (MAIL_API_KEY.startsWith('xkeysib-')) return 'brevo';
+  if (MAIL_API_KEY.startsWith('re_')) return 'resend';
+  if (MAIL_API_KEY.startsWith('SG.')) return 'sendgrid';
+  return '';
+}
+
+function parseFrom() {
+  const raw = String(MAIL_FROM || SMTP_USER || '').trim();
+  const m = /^(.*)<([^>]+)>$/.exec(raw);
+  if (m) return { name: m[1].trim() || MAIL_FROM_NAME, email: m[2].trim() };
+  return { name: MAIL_FROM_NAME, email: raw };
+}
+
+async function sendViaApi(to, subject, text) {
+  const provider = detectProvider();
+  if (!MAIL_API_KEY || !provider) return null;
+  const from = parseFrom();
+  if (!from.email) {
+    console.error('[correo] Falta MAIL_FROM con el correo remitente');
+    return false;
+  }
+  try {
+    let res;
+    if (provider === 'brevo') {
+      res = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: { 'api-key': MAIL_API_KEY, 'Content-Type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ sender: from, to: [{ email: to }], subject, textContent: text })
+      });
+    } else if (provider === 'resend') {
+      res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + MAIL_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: from.name + ' <' + from.email + '>', to: [to], subject, text })
+      });
+    } else if (provider === 'sendgrid') {
+      res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + MAIL_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: to }] }],
+          from,
+          subject,
+          content: [{ type: 'text/plain', value: text }]
+        })
+      });
+    } else {
+      console.error('[correo] MAIL_PROVIDER no reconocido: ' + provider);
+      return false;
+    }
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      console.error('[correo] ' + provider + ' respondio ' + res.status + ': ' + String(detail).slice(0, 300));
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('[correo] Fallo el envio por ' + provider + ': ' + e.message);
+    return false;
+  }
+}
+
 let mailer = null;
 if (nodemailer && SMTP_HOST && SMTP_USER && SMTP_PASS) {
   mailer = nodemailer.createTransport({
@@ -38,8 +107,8 @@ if (nodemailer && SMTP_HOST && SMTP_USER && SMTP_PASS) {
     secure: SMTP_PORT === 465,
     auth: { user: SMTP_USER, pass: SMTP_PASS }
   });
-} else {
-  console.warn('[aviso] Correo no configurado (SMTP_HOST, SMTP_USER, SMTP_PASS). Los codigos se mostraran solo en este registro.');
+} else if (!MAIL_API_KEY) {
+  console.warn('[aviso] Correo no configurado. Usa MAIL_API_KEY + MAIL_FROM (sirve en el plan free) o SMTP_HOST + SMTP_USER + SMTP_PASS. Los codigos se mostraran solo en este registro.');
 }
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -190,8 +259,10 @@ async function sendCodeEmail(to, code, purpose) {
     : 'Codigo para confirmar tu correo';
   const text = 'Tu codigo de 6 digitos es ' + code + '.\n\nVence en 10 minutos.\n\n' +
     'Tramites Venezolanos en Linea\nSi no lo pediste, ignora este mensaje.';
+  const viaApi = await sendViaApi(to, subject, text);
+  if (viaApi !== null) return viaApi;
   if (!mailer) {
-    console.warn('[correo] Sin SMTP configurado. Codigo para ' + to + ': ' + code);
+    console.warn('[correo] Sin correo configurado. Codigo para ' + to + ': ' + code);
     return false;
   }
   try {
