@@ -892,6 +892,8 @@ const App = (() => {
 
   /* Al registrarse: consulta automatica con la cedula de la cuenta. */
   async function autoVerifyCedula() {
+    // La consulta automatica se retiro: no se llama al servicio de cedulas.
+    return;
     if (!state.me || state.me.cedulaData) return;
     const c = String(state.me.cedula || '');
     const num = c.replace(/\D/g, '');
