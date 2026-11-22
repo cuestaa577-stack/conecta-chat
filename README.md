@@ -77,6 +77,36 @@ Con Gmail hay que crear una **clave de aplicación** (Cuenta de Google → Segur
 
 Si no se configura nada, la aplicación sigue funcionando: los códigos aparecen solo en el registro (logs) del servidor y "olvidé mi contraseña" avisa que no pudo enviar el correo.
 
+## Verificación de cédula con datos reales (api.cedula.com.ve)
+
+En **Mi perfil** hay un bloque **"Verificar cédula (datos reales)"**: la persona elige la nacionalidad (V/E), escribe el número y pulsa **"Consultar datos reales"**. Si la consulta sale bien, se guardan y se muestran en el perfil: nacionalidad, cédula, RIF, primer y segundo apellido, primer y segundo nombre, y los datos del CNE (estado, municipio, parroquia y centro electoral).
+
+**La consulta la hace el servidor, nunca el navegador.** Las credenciales (`APP-ID` y token) se leen de variables de entorno y no se envían al cliente: el frontend solo llama a `POST /api/cedula/verify` con la cédula, y el backend consulta `api.cedula.com.ve` y devuelve los datos ya limpios.
+
+| Variable | Obligatoria | Para qué sirve |
+| --- | --- | --- |
+| `CEDULA_API_APP_ID` | sí | El **APP-ID** que da api.cedula.com.ve |
+| `CEDULA_API_TOKEN` | sí | El **token** que da api.cedula.com.ve |
+| `CEDULA_API_URL` | no | Dirección del API (por defecto `https://api.cedula.com.ve/api/v1`) |
+
+### Configurar en Render
+
+1. Entra al servicio en Render → **Environment**.
+2. Añade `CEDULA_API_APP_ID` con tu APP-ID y `CEDULA_API_TOKEN` con tu token (tipo *Secret*).
+3. Guarda: Render reinicia solo con las nuevas variables.
+
+Hasta que no se configuren, el bloque sigue visible pero al consultar avisa **"La verificación de cédula no está configurada en el servidor"**; no se rompe nada.
+
+### Mensajes de error que maneja
+
+| Caso | Mensaje al usuario |
+| --- | --- |
+| Cédula no encontrada | "No se encontró esa cédula en el registro. Verifica la nacionalidad y el número." |
+| Error del API / sin conexión | "No se pudo conectar con el servicio de cédulas…" |
+| Credenciales inválidas | "Las credenciales del servicio de cédulas no son válidas. Avisa al administrador." |
+| Sin saldo / límite | "El servicio de cédulas no tiene saldo disponible. Avisa al administrador." |
+| Sin configurar | "La verificación de cédula no está configurada en el servidor." |
+
 ## Estructura
 
 ```
