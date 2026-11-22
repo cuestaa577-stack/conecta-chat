@@ -123,6 +123,91 @@
     }
   }
 
+  /* Repara la geometria del PDF antes de dibujarlo. Misma funcion que usa el
+     servidor (public/pdf-normalize.js). Si no esta o falla, se devuelve el
+     archivo tal cual. */
+  function normalizarPdf(buf) {
+    try {
+      if (!window.PdfNormalize || !window.PDFLib) return Promise.resolve(buf);
+      return window.PdfNormalize.normalizePdf(new Uint8Array(buf), window.PDFLib)
+        .then(function (r) {
+          if (r && r.bytes && r.bytes.length) {
+            return r.bytes.buffer.slice(r.bytes.byteOffset, r.bytes.byteOffset + r.bytes.byteLength);
+          }
+          return buf;
+        })
+        .catch(function () { return buf; });
+    } catch (e) { return Promise.resolve(buf); }
+  }
+
+  /* Viewport a prueba de geometria rara: si la pagina no declara un tamano
+     valido se usa Carta, para que el canvas nunca nazca con 0 px. */
+  function viewportSeguro(page, ancho, dpr) {
+    var base = null;
+    try { base = page.getViewport({ scale: 1 }); } catch (e) { base = null; }
+    var w = base && isFinite(base.width) && base.width > 1 ? base.width : 612;
+    var h = base && isFinite(base.height) && base.height > 1 ? base.height : 792;
+    var escala = (ancho / w) * dpr;
+    try {
+      var vp = page.getViewport({ scale: escala });
+      if (vp && isFinite(vp.width) && isFinite(vp.height) && vp.width > 1 && vp.height > 1) return vp;
+    } catch (e) { /* se arma a mano */ }
+    return { width: Math.max(1, Math.floor(w * escala)), height: Math.max(1, Math.floor(h * escala)) };
+  }
+
+  /* Dibuja el PDF. Una pagina rota se salta; si ninguna se puede dibujar, se
+     intenta la primera pagina como imagen y, si tampoco, se muestra una
+     tarjeta con el nombre del archivo (nunca un error en blanco). */
+  function dibujarPdf(lib, buf, body, nombre) {
+    return normalizarPdf(buf).then(function (datos) {
+      return lib.getDocument({ data: new Uint8Array(datos), isEvalSupported: false }).promise;
+    }).then(function (pdf) {
+      body.innerHTML = '<div class="fv-pages" id="fvPages"></div>';
+      var pages = body.querySelector('#fvPages');
+      var ancho = Math.max(280, Math.min(760, (body.clientWidth || 340) - 16));
+      var dpr = Math.min(2, window.devicePixelRatio || 1);
+      var total = Math.min(pdf.numPages, 30);
+      var pintadas = 0;
+      var cadena = Promise.resolve();
+      for (var i = 1; i <= total; i++) {
+        (function (n) {
+          cadena = cadena.then(function () {
+            return pdf.getPage(n).then(function (page) {
+              var vp = viewportSeguro(page, ancho, dpr);
+              var cv = document.createElement('canvas');
+              cv.width = Math.max(1, Math.floor(vp.width));
+              cv.height = Math.max(1, Math.floor(vp.height));
+              cv.className = 'fv-page';
+              pages.appendChild(cv);
+              return page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise
+                .then(function () { pintadas++; })
+                .catch(function (e) {
+                  console.warn('Pagina ' + n + ' no se pudo dibujar:', e && e.message);
+                  if (cv.parentNode) cv.parentNode.removeChild(cv);
+                });
+            });
+          });
+        })(i);
+      }
+      return cadena.then(function () {
+        if (!pintadas) throw new Error('ninguna pagina se pudo dibujar');
+        if (pdf.numPages > total) {
+          var av = document.createElement('div');
+          av.className = 'doc-more';
+          av.textContent = 'Documento de ' + pdf.numPages + ' paginas: aqui se ven las primeras ' + total + '.';
+          pages.appendChild(av);
+        }
+      });
+    }).catch(function (e) {
+      console.warn('Vista previa no disponible:', e && e.message);
+      body.innerHTML = '<div class="doc-fallback">'
+        + '<div class="doc-fallback-icon" aria-hidden="true">PDF</div>'
+        + '<p class="doc-fallback-title">' + esc(nombre || 'Documento') + '</p>'
+        + '<p class="doc-fallback-note">Este archivo no se puede mostrar aqui, pero puedes guardarlo en tu telefono.</p>'
+        + '</div>';
+    });
+  }
+
   function pintar(blob, nombre, titulo) {
     var body = abrirCapa(titulo || nombre);
     if (!body) return Promise.resolve();
@@ -140,41 +225,15 @@
     if (esPdf) {
       return cargarPdf().then(function (lib) {
         return blob.arrayBuffer().then(function (buf) {
-          return lib.getDocument({ data: buf }).promise;
-        }).then(function (pdf) {
-          body.innerHTML = '<div class="fv-pages" id="fvPages"></div>';
-          var pages = body.querySelector('#fvPages');
-          var ancho = Math.max(280, Math.min(760, (body.clientWidth || 340) - 16));
-          var dpr = Math.min(2, window.devicePixelRatio || 1);
-          var total = Math.min(pdf.numPages, 30);
-          var cadena = Promise.resolve();
-          for (var i = 1; i <= total; i++) {
-            (function (n) {
-              cadena = cadena.then(function () {
-                return pdf.getPage(n).then(function (page) {
-                  var base = page.getViewport({ scale: 1 });
-                  var vp = page.getViewport({ scale: (ancho / base.width) * dpr });
-                  var cv = document.createElement('canvas');
-                  cv.width = Math.floor(vp.width);
-                  cv.height = Math.floor(vp.height);
-                  cv.className = 'fv-page';
-                  pages.appendChild(cv);
-                  return page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
-                });
-              });
-            })(i);
-          }
-          return cadena.then(function () {
-            if (pdf.numPages > total) {
-              var av = document.createElement('div');
-              av.className = 'doc-more';
-              av.textContent = 'Documento de ' + pdf.numPages + ' paginas: aqui se ven las primeras ' + total + '.';
-              pages.appendChild(av);
-            }
-          });
+          return dibujarPdf(lib, buf, body, nombre);
         });
       }).catch(function (e) {
-        body.innerHTML = '<div class="doc-loading">No se pudo abrir el archivo. ' + esc(e.message) + '</div>';
+        body.innerHTML = '<div class="doc-fallback">'
+          + '<div class="doc-fallback-icon" aria-hidden="true">PDF</div>'
+          + '<p class="doc-fallback-title">' + esc(nombre || 'Documento') + '</p>'
+          + '<p class="doc-fallback-note">Este archivo no se puede mostrar aqui, pero puedes guardarlo en tu telefono.</p>'
+          + '</div>';
+        console.warn('Vista previa no disponible:', e && e.message);
       });
     }
 

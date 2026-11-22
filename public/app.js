@@ -1640,31 +1640,68 @@ const App = (() => {
     return 'application/octet-stream';
   }
 
+  /* Repara la geometria del PDF antes de dibujarlo (paginas sin MediaBox,
+     CropBox fuera de la hoja, formularios sin BBox). Es la misma funcion que
+     usa el servidor, en public/pdf-normalize.js. Si no esta disponible o falla,
+     se devuelve el archivo tal cual: el visor intenta dibujarlo igual. */
+  async function normalizarPdf(buf) {
+    try {
+      if (!window.PdfNormalize || !window.PDFLib) return buf;
+      const r = await window.PdfNormalize.normalizePdf(new Uint8Array(buf), window.PDFLib);
+      if (r && r.bytes && r.bytes.length) return r.bytes.buffer.slice(r.bytes.byteOffset, r.bytes.byteOffset + r.bytes.byteLength);
+    } catch (e) { /* se intenta dibujar el original */ }
+    return buf;
+  }
+
+  /* Viewport a prueba de geometria rara: si la pagina no declara un tamano
+     valido, se usa Carta. Antes un ancho 0 o NaN hacia que el canvas naciera
+     con 0 px y el dibujo fallaba sin explicacion. */
+  function viewportSeguro(page, ancho, dpr) {
+    let base;
+    try { base = page.getViewport({ scale: 1 }); } catch (e) { base = null; }
+    let w = base && isFinite(base.width) && base.width > 1 ? base.width : 612;
+    let h = base && isFinite(base.height) && base.height > 1 ? base.height : 792;
+    const escala = (ancho / w) * dpr;
+    try {
+      const vp = page.getViewport({ scale: escala });
+      if (vp && isFinite(vp.width) && isFinite(vp.height) && vp.width > 1 && vp.height > 1) return vp;
+    } catch (e) { /* se arma a mano */ }
+    return { width: Math.max(1, Math.floor(w * escala)), height: Math.max(1, Math.floor(h * escala)) };
+  }
+
   /* Dibuja un PDF en el contenedor. Devuelve cuantas paginas pinto. */
   async function pintarPdf(buf, pages, ancho, dpr) {
     const lib = await cargarPdfJs();
-    const pdf = await lib.getDocument({ data: buf }).promise;
+    const datos = await normalizarPdf(buf);
+    const pdf = await lib.getDocument({ data: new Uint8Array(datos), isEvalSupported: false }).promise;
     const total = Math.min(pdf.numPages, 25);
+    let pintadas = 0;
     for (let i = 1; i <= total; i++) {
-      const page = await pdf.getPage(i);
-      const base = page.getViewport({ scale: 1 });
-      const vp = page.getViewport({ scale: (ancho / base.width) * dpr });
-      const cv = document.createElement('canvas');
-      cv.width = Math.floor(vp.width);
-      cv.height = Math.floor(vp.height);
-      cv.className = 'doc-page';
-      pages.appendChild(cv);
-      const ctx = cv.getContext('2d');
-      await page.render({ canvasContext: ctx, viewport: vp }).promise;
-      pintarMarca(ctx, cv.width, cv.height);
+      /* Una pagina rota no debe tumbar el documento entero: se salta y sigue. */
+      try {
+        const page = await pdf.getPage(i);
+        const vp = viewportSeguro(page, ancho, dpr);
+        const cv = document.createElement('canvas');
+        cv.width = Math.max(1, Math.floor(vp.width));
+        cv.height = Math.max(1, Math.floor(vp.height));
+        cv.className = 'doc-page';
+        pages.appendChild(cv);
+        const ctx = cv.getContext('2d');
+        await page.render({ canvasContext: ctx, viewport: vp }).promise;
+        pintarMarca(ctx, cv.width, cv.height);
+        pintadas++;
+      } catch (e) {
+        console.warn('Pagina ' + i + ' no se pudo dibujar:', e && e.message);
+      }
     }
+    if (!pintadas) throw new Error('ninguna pagina se pudo dibujar');
     if (pdf.numPages > total) {
       const av = document.createElement('div');
       av.className = 'doc-more';
       av.textContent = 'Documento de ' + pdf.numPages + ' páginas: aquí se ven las primeras ' + total + '.';
       pages.appendChild(av);
     }
-    return total;
+    return pintadas;
   }
 
   /* Dibuja una foto en el contenedor. Las fotos de celular llegan a 4000 px de
@@ -1720,13 +1757,73 @@ const App = (() => {
           if (esPdf) await pintarFoto(buf, 'image/jpeg', pages, ancho, dpr);
           else await pintarPdf(buf, pages, ancho, dpr);
         } catch (e2) {
-          throw new Error('El archivo no se pudo dibujar (' + (e1.message || 'formato no soportado') + ')');
+          /* Último recurso: convertir la primera página a imagen con un lector
+             más tolerante. Si tampoco se puede, NO se bloquea el trámite: se
+             muestra una tarjeta con el nombre del documento y el aviso de que
+             está listo, para que la persona pueda seguir. */
+          pages.innerHTML = '';
+          const ok = esPdf ? await vistaPreviaImagen(buf, pages, ancho, dpr) : false;
+          if (!ok) vistaPreviaRespaldo(pages, t, e1);
         }
       }
       activarGuardaVisor();
     } catch (e) {
-      pages.innerHTML = '<div class="doc-loading">No se pudo abrir el documento. ' + esc(e.message) + '</div>';
+      /* Ni siquiera se pudo descargar el archivo: se muestra la tarjeta de
+         respaldo en vez de un error que deja la pantalla en blanco. */
+      pages.innerHTML = '';
+      vistaPreviaRespaldo(pages, t, e);
     }
+  }
+
+  /* Convierte la primera página del PDF a una imagen y la pinta. Usa un lector
+     nuevo con opciones relajadas (sin fuentes del sistema, sin eval) porque el
+     fallo típico viene de un formulario con geometría incompleta. */
+  async function vistaPreviaImagen(buf, pages, ancho, dpr) {
+    try {
+      const lib = await cargarPdfJs();
+      const datos = await normalizarPdf(buf);
+      const pdf = await lib.getDocument({
+        data: new Uint8Array(datos),
+        isEvalSupported: false,
+        useSystemFonts: false,
+        disableFontFace: true,
+        stopAtErrors: false
+      }).promise;
+      const page = await pdf.getPage(1);
+      const vp = viewportSeguro(page, ancho, dpr);
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.floor(vp.width));
+      cv.height = Math.max(1, Math.floor(vp.height));
+      cv.className = 'doc-page';
+      pages.appendChild(cv);
+      const ctx = cv.getContext('2d');
+      await page.render({ canvasContext: ctx, viewport: vp, intent: 'print' }).promise;
+      pintarMarca(ctx, cv.width, cv.height);
+      if (pdf.numPages > 1) {
+        const av = document.createElement('div');
+        av.className = 'doc-more';
+        av.textContent = 'Vista previa de la primera página. El documento completo tiene ' + pdf.numPages + ' páginas.';
+        pages.appendChild(av);
+      }
+      return true;
+    } catch (e) {
+      console.warn('Vista previa en imagen no disponible:', e && e.message);
+      return false;
+    }
+  }
+
+  /* Tarjeta de respaldo: el documento está listo aunque el visor no lo dibuje.
+     Nunca se muestra un error que impida continuar con el trámite. */
+  function vistaPreviaRespaldo(pages, t, err) {
+    const nombre = (t && t.doc && t.doc.name) || 'Documento';
+    pages.innerHTML =
+      '<div class="doc-fallback">' +
+        '<div class="doc-fallback-icon" aria-hidden="true">PDF</div>' +
+        '<p class="doc-fallback-title">' + esc(nombre) + '</p>' +
+        '<p class="doc-fallback-note">Tu documento está listo. Este archivo no se puede mostrar aquí, ' +
+          'pero puedes descargarlo cuando el pago esté confirmado.</p>' +
+      '</div>';
+    if (err) console.warn('Vista previa no disponible:', err && err.message);
   }
 
   function enVisor(el) {

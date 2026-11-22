@@ -10,6 +10,14 @@ const { WebSocketServer } = require('ws');
 let nodemailer = null;
 try { nodemailer = require('nodemailer'); } catch (e) { nodemailer = null; }
 
+/* pdf-lib: repara la geometria de los PDF antes de servirlos (ver
+   public/pdf-normalize.js). Es JavaScript puro, sin binarios nativos, asi que
+   funciona igual en Render. Si no esta instalado, la app sigue funcionando y
+   solo se salta la normalizacion. */
+let PDFLib = null;
+try { PDFLib = require('pdf-lib'); } catch (e) { PDFLib = null; }
+const { normalizePdf } = require('../public/pdf-normalize.js');
+
 const PORT = process.env.PORT || 10000;
 // Clave que firma las sesiones. Si no viene por variable de entorno, se genera
 // una vez y se guarda en la base de datos, asi las sesiones NO se cierran al
@@ -591,7 +599,7 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '25mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 /* archivos: solo con sesion valida (el cliente agrega ?token=) */
-app.get('/uploads/:file', (req, res) => {
+app.get('/uploads/:file', async (req, res) => {
   const user = userFromReq(req);
   if (!user) return res.status(401).json({ error: 'Sesion no valida' });
   const name = String(req.params.file || '');
@@ -604,8 +612,11 @@ app.get('/uploads/:file', (req, res) => {
     // El disco se reinicio: se recupera la copia guardada en la base.
     const guardado = db.files && db.files[name];
     if (guardado && guardado.data) {
-      const buf = Buffer.from(guardado.data, 'base64');
-      res.setHeader('Content-Type', guardado.mime || 'application/octet-stream');
+      let buf = Buffer.from(guardado.data, 'base64');
+      /* Un PDF con la geometria rota se repara antes de entregarlo. */
+      buf = await pdfNormalizado(buf);
+      res.setHeader('Content-Type', tipoPorBytes(buf, guardado.mime, name));
+      res.setHeader('Content-Length', String(buf.length));
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Cache-Control', 'private, max-age=604800');
       return res.send(buf);
@@ -625,6 +636,16 @@ app.get('/uploads/:file', (req, res) => {
   res.setHeader('Content-Type', tipo);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Cache-Control', 'private, max-age=604800');
+  /* PDF: se entrega la copia con la geometria reparada (se genera una vez y
+     queda en disco como f_xxx.norm.pdf). Si no se puede reparar, se manda el
+     original: nunca se bloquea la descarga. */
+  if (tipo === 'application/pdf') {
+    const bueno = await pdfNormalizadoEnDisco(file);
+    if (bueno && bueno.length) {
+      res.setHeader('Content-Length', String(bueno.length));
+      return res.send(bueno);
+    }
+  }
   res.sendFile(file);
 });
 
@@ -1569,6 +1590,58 @@ function tipoPorBytes(buf, mimeSugerido, nombre) {
   return 'application/octet-stream';
 }
 
+/* Normaliza un PDF antes de entregarlo.
+   ---------------------------------------------------------------------------
+   Los PDF que llegan "de la calle" (por ejemplo el de la cedula venezolana)
+   traen la geometria incompleta: una pagina sin /MediaBox, un /CropBox que se
+   sale de la hoja o un formulario con /Group y sin /BBox. pdf.js se planta con
+   "Bounding box is required." y la vista previa queda en blanco.
+
+   Aqui se repara el archivo UNA vez y se guarda la copia buena al lado del
+   original (f_xxx.pdf -> f_xxx.norm.pdf). Las siguientes visitas sirven la
+   copia sin volver a procesar. Si algo falla, se devuelve el original: la
+   normalizacion nunca debe impedir que la persona vea su documento. */
+const pdfNormCache = new Map(); // sha1 -> Buffer (tope de 12 entradas)
+const PDF_NORM_CACHE_MAX = 12;
+
+async function pdfNormalizado(buf) {
+  if (!PDFLib || !buf || !buf.length) return buf;
+  if (buf.slice(0, 5).toString('latin1') !== '%PDF-') return buf;
+  const clave = crypto.createHash('sha1').update(buf).digest('hex');
+  if (pdfNormCache.has(clave)) return pdfNormCache.get(clave);
+  try {
+    const r = await normalizePdf(new Uint8Array(buf), PDFLib);
+    if (!r || !r.bytes || !r.bytes.length) return buf;
+    const salida = Buffer.from(r.bytes);
+    if (r.changed) {
+      console.log('[pdf] geometria reparada (' + r.fixes.join('; ') + ')');
+    }
+    if (pdfNormCache.size >= PDF_NORM_CACHE_MAX) {
+      pdfNormCache.delete(pdfNormCache.keys().next().value);
+    }
+    pdfNormCache.set(clave, salida);
+    return salida;
+  } catch (e) {
+    console.error('[pdf] no se pudo normalizar:', e.message);
+    return buf;
+  }
+}
+
+/* Version en disco: si ya existe la copia normalizada se usa esa. */
+async function pdfNormalizadoEnDisco(file) {
+  const norm = file.replace(/\.pdf$/i, '') + '.norm.pdf';
+  try {
+    if (fs.existsSync(norm) && fs.statSync(norm).size > 0) return fs.readFileSync(norm);
+  } catch (e) { /* se regenera */ }
+  let original;
+  try { original = fs.readFileSync(file); } catch (e) { return null; }
+  const bueno = await pdfNormalizado(original);
+  if (bueno && bueno !== original) {
+    try { fs.writeFileSync(norm, bueno); } catch (e) { /* solo cache */ }
+  }
+  return bueno;
+}
+
 /* Entrega un archivo del tramite. modo: 'inline' (vista previa) | 'attachment' (descarga) */
 async function servirArchivoTramite(f, res, modo) {
   const url = String((f && f.url) || '');
@@ -1583,8 +1656,9 @@ async function servirArchivoTramite(f, res, modo) {
       /* Se reenvia el archivo por partes (streaming) en vez de cargarlo entero
          en memoria. Antes se hacia arrayBuffer() y se cortaba en 30 MB: un
          documento grande devolvia 413 y la vista previa se quedaba en blanco. */
-      const buf = Buffer.from(await r.arrayBuffer());
+      let buf = Buffer.from(await r.arrayBuffer());
       const tipo = tipoPorBytes(buf, (f && f.mime) || r.headers.get('content-type'), nombre);
+      if (tipo === 'application/pdf') buf = await pdfNormalizado(buf);
       res.setHeader('Content-Type', tipo);
       res.setHeader('Content-Length', String(buf.length));
       res.setHeader('Content-Disposition', disp);
@@ -1606,8 +1680,10 @@ async function servirArchivoTramite(f, res, modo) {
     // El disco se reinicio: se sirve la copia guardada en la base.
     const guardado = db.files && db.files[m[1]];
     if (guardado && guardado.data) {
-      const buf = Buffer.from(guardado.data, 'base64');
-      res.setHeader('Content-Type', tipoPorBytes(buf, guardado.mime, nombre));
+      let buf = Buffer.from(guardado.data, 'base64');
+      const tipoGuardado = tipoPorBytes(buf, guardado.mime, nombre);
+      if (tipoGuardado === 'application/pdf') buf = await pdfNormalizado(buf);
+      res.setHeader('Content-Type', tipoGuardado);
       res.setHeader('Content-Length', String(buf.length));
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Cache-Control', 'private, no-store');
@@ -1630,6 +1706,14 @@ async function servirArchivoTramite(f, res, modo) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('Content-Disposition', disp);
+  /* Vista previa y descarga de un PDF: siempre la copia reparada. */
+  if (tipo === 'application/pdf') {
+    const bueno = await pdfNormalizadoEnDisco(file);
+    if (bueno && bueno.length) {
+      res.setHeader('Content-Length', String(bueno.length));
+      return res.send(bueno);
+    }
+  }
   return res.sendFile(file);
 }
 
