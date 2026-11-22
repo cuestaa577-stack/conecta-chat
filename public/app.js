@@ -1,11 +1,11 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v2.6';
+  const APP_VERSION = 'v2.7';
 
   const SERVICES = {
     cedula: {
-      title: 'Cedula',
+      title: 'Cedula de identidad',
       sub: 'Elige el tipo de tramite',
       options: [
         { key: 'renovacion', label: 'Renovacion' },
@@ -15,7 +15,7 @@ const App = (() => {
       ],
     },
     licencia: {
-      title: 'Licencia',
+      title: 'Licencia de conducir',
       sub: 'Elige el tipo de tramite',
       options: [
         { key: 'primera', label: 'Licencia por primera vez', grades: true },
@@ -865,24 +865,21 @@ const App = (() => {
   }
 
   /* ------------------------------ verificacion de cedula ------------------------------ */
-  /* Pinta el bloque "Mis datos personales" de la pantalla principal. */
+  /* Pinta el bloque de verificacion de cedula de la pantalla principal. */
   function renderMyData() {
     if (!state.me) return;
     const cd = state.me.cedulaData;
     const nacEl = $('#cedulaNac');
     const numEl = $('#cedulaNum');
-    const sub = $('#myDataSub');
     if (cd) {
       if (nacEl) nacEl.value = (cd.nacionalidad === 'E') ? 'E' : 'V';
       if (numEl) numEl.value = cd.cedula || '';
-      if (sub) sub.textContent = 'Datos verificados con el registro oficial';
     } else {
       const c = String(state.me.cedula || '');
       if (c) {
         if (nacEl) nacEl.value = c.charAt(0).toUpperCase() === 'E' ? 'E' : 'V';
         if (numEl) numEl.value = c.replace(/\D/g, '');
       }
-      if (sub) sub.textContent = 'Verifica tu cedula con el registro oficial';
     }
     renderCedulaData(cd || null);
   }
@@ -917,7 +914,7 @@ const App = (() => {
     if (!state.me) return;
     const nac = String(($('#cedulaNac') || {}).value || 'V').toUpperCase() === 'E' ? 'E' : 'V';
     const num = String(($('#cedulaNum') || {}).value || '').replace(/\D/g, '');
-    if (num.length < 6) return toast('Escribe el numero de cedula');
+    if (num.length < 6) return toast('Escribe el numero de cedula de identidad');
     const btn = $('#cedulaBtn');
     if (btn) { btn.disabled = true; btn.textContent = 'Verificando...'; }
     try {
@@ -928,7 +925,7 @@ const App = (() => {
       state.me = data.user;
       renderCedulaData(state.me.cedulaData);
       renderMyData();
-      toast('Cedula verificada');
+      toast('Cedula de identidad verificada');
     } catch (e) {
       const box = $('#cedulaResult');
       if (box) { box.classList.remove('hidden'); box.innerHTML = '<div class="cedula-error">' + esc(e.message) + '</div>'; }
