@@ -141,6 +141,7 @@
       <div class="top-actions">
         <button class="iconbtn" onclick="App.openChats()" title="Conversaciones" id="chatsBtn">
           <svg viewBox="0 0 24 24" class="ico"><path d="M21 12a8 8 0 01-8 8H7l-4 3v-5.6A8 8 0 1121 12z"/></svg>
+          <span class="badge" id="chatsBadge" hidden></span>
         </button>
         <button class="iconbtn avatar-btn" onclick="App.openProfile()" title="Mi perfil" id="myAvatarBtn">A</button>
       </div>
@@ -161,6 +162,7 @@
             <span class="service-title">Mis trámites</span>
             <span class="service-sub" id="tramitesCardSub">Mira tu documento y descárgalo cuando esté aprobado</span>
           </span>
+          <span class="badge" id="tramitesBadge" hidden></span>
           <span class="chev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
         </button>
 

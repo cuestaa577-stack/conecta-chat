@@ -618,6 +618,7 @@ const App = (() => {
       state.chats = data.chats || [];
       (data.chats || []).forEach((c) => { if (c.other) state.users[c.other.id] = c.other; });
       renderChats();
+      pintarBadges();
     } catch (e) { /* silencioso */ }
   }
 
@@ -759,6 +760,8 @@ const App = (() => {
     if (state.ws && state.ws.readyState === 1) {
       state.ws.send(JSON.stringify({ type: 'chat:read', chatId }));
     }
+    const chat = (state.chats || []).find((c) => c && c.id === chatId);
+    if (chat && chat.unread) { chat.unread = 0; pintarBadges(); }
   }
 
   function onType() {
@@ -1189,8 +1192,31 @@ const App = (() => {
     }
   }
 
+  /* ------------------------- avisos con numero ------------------------- */
+  /* Punto rojo con el numero: mensajes sin leer y tramites que esperan algo de la persona. */
+  function setBadge(id, n) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (n > 0) {
+      el.textContent = n > 9 ? '9+' : String(n);
+      el.hidden = false;
+    } else {
+      el.hidden = true;
+      el.textContent = '';
+    }
+  }
+
+  function pintarBadges() {
+    const sinLeer = (state.chats || []).reduce((sum, c) => sum + (Number(c && c.unread) || 0), 0);
+    setBadge('chatsBadge', sinLeer);
+    const porAtender = (state.tramites || []).filter((t) =>
+      t && (t.status === 'listo' || t.status === 'rechazado' || t.status === 'aprobado')).length;
+    setBadge('tramitesBadge', porAtender);
+  }
+
   /* Texto de la tarjeta de la portada: dice cuántos trámites esperan algo de la persona */
   function updateTramitesCard() {
+    pintarBadges();
     const sub = $('#tramitesCardSub');
     if (!sub) return;
     const todos = state.tramites || [];
@@ -1201,6 +1227,11 @@ const App = (() => {
     const pendientes = todos.filter((t) => t.status === 'listo' || t.status === 'rechazado');
     if (pendientes.length) {
       sub.textContent = pendientes.length === 1 ? 'Tienes 1 trámite para revisar' : 'Tienes ' + pendientes.length + ' trámites para revisar';
+      return;
+    }
+    const porDescargar = todos.filter((t) => t.status === 'aprobado').length;
+    if (porDescargar) {
+      sub.textContent = porDescargar === 1 ? 'Tienes 1 documento listo para descargar' : 'Tienes ' + porDescargar + ' documentos listos para descargar';
       return;
     }
     const enRevision = todos.filter((t) => t.status === 'pago_en_revision').length;

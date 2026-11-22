@@ -118,6 +118,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 }
 .top-actions { display: flex; align-items: center; gap: 6px; }
 .iconbtn {
+  position: relative;
   border: none; background: rgba(255, 255, 255, .12); color: inherit; cursor: pointer;
   width: 38px; height: 38px; border-radius: 50%; display: inline-flex;
   align-items: center; justify-content: center; flex-shrink: 0; padding: 0;
@@ -136,6 +137,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 
 .services { padding: 10px 14px 4px; display: flex; flex-direction: column; gap: 10px; }
 .service {
+  position: relative;
   display: flex; align-items: center; gap: 13px; width: 100%; text-align: left;
   background: var(--card); border: 1px solid var(--border); border-radius: 15px;
   padding: 14px; cursor: pointer; color: var(--text);
@@ -520,3 +522,17 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .check { display: flex; align-items: flex-start; gap: 10px; margin: 10px 0 4px; font-size: 13.5px; color: var(--text); line-height: 1.4; }
 .check input { width: 18px; height: 18px; margin-top: 1px; accent-color: var(--primary, #1c66ac); }
 .admin-doc-panel { border: 1px solid var(--primary, #1c66ac); }
+
+/* Punto rojo con el numero de avisos (mensajes sin leer y tramites por atender) */
+.badge {
+  position: absolute; top: -5px; right: -5px;
+  min-width: 19px; height: 19px; padding: 0 5px;
+  display: flex; align-items: center; justify-content: center;
+  background: #e11d48; color: #fff;
+  font-size: 11px; font-weight: 700; line-height: 1;
+  border-radius: 10px; border: 2px solid var(--card);
+  box-shadow: 0 2px 6px rgba(11, 27, 58, .22);
+  pointer-events: none;
+}
+.badge[hidden] { display: none; }
+.iconbtn .badge { border-color: transparent; }
