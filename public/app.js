@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v3.6';
+  const APP_VERSION = 'v3.7';
 
   const SERVICES = {
     cedula: {
@@ -38,6 +38,9 @@ const App = (() => {
     token: localStorage.getItem('tve_token') || '',
     me: null,
     chats: [],
+    tramites: [],
+    currentTramiteId: null,
+    pagoInfo: '',
     messages: {},
     currentChatId: null,
     users: {},
@@ -450,6 +453,7 @@ const App = (() => {
     state.viewStack = [];
     renderMyData();
     await loadChats();
+    await loadTramites();
     connectWS();
     // Si la cuenta aun no tiene la cedula verificada, se verifica sola.
     autoVerifyCedula();
@@ -1064,6 +1068,11 @@ const App = (() => {
             <span class="pill">Web</span>
           </div>`).join('') || '<div class="panel-row"><span>Sin visitas</span></div>'}
         </div>`;
+      const trBox = document.createElement('div');
+      trBox.className = 'admin-tramites';
+      trBox.id = 'adminTramites';
+      box.appendChild(trBox);
+      loadAdminTramites();
     } catch (e) {
       box.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
     }
@@ -1094,6 +1103,493 @@ const App = (() => {
     await openChat(chatId);
   }
 
+  /* ------------------------------ mis tramites ------------------------------ */
+  /* Flujo: recibido -> en_proceso -> listo (vista previa) -> pago_en_revision
+     -> aprobado (descarga habilitada) / rechazado (reenviar comprobante). */
+  const TRAMITE_ESTADOS = {
+    recibido: { txt: 'Recibido', cls: 'st-recibido', hint: 'Recibimos tu solicitud. Estamos revisando los requisitos.' },
+    en_proceso: { txt: 'En proceso', cls: 'st-proceso', hint: 'Estamos gestionando tu trámite ante el organismo.' },
+    listo: { txt: 'Documento listo', cls: 'st-listo', hint: 'Tu documento está listo: revísalo en vista previa y envía tu comprobante de pago para poder descargarlo.' },
+    pago_en_revision: { txt: 'Pago en revisión', cls: 'st-revision', hint: 'Recibimos tu comprobante. El servidor público lo está verificando y te confirma aquí mismo.' },
+    aprobado: { txt: 'Aprobado', cls: 'st-aprobado', hint: 'Pago confirmado. Tu documento ya se puede descargar.' },
+    rechazado: { txt: 'Comprobante rechazado', cls: 'st-rechazado', hint: 'El comprobante no se pudo validar. Lee la nota y envíalo otra vez.' },
+  };
+
+  function estadoDe(t) {
+    return TRAMITE_ESTADOS[(t && t.status) || ''] || { txt: (t && t.status) || '', cls: '', hint: '' };
+  }
+
+  function archivoUrl(id, kind) {
+    return '/api/tramites/' + encodeURIComponent(id) + '/' + kind + '?token=' + encodeURIComponent(state.token);
+  }
+
+  function peso(bytes) {
+    const n = Number(bytes || 0);
+    if (!n) return '';
+    if (n < 1024 * 1024) return Math.max(1, Math.round(n / 1024)) + ' KB';
+    return (n / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  function fechaCorta(ts) {
+    if (!ts) return '';
+    return new Date(ts).toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  async function openTramites() {
+    showView('tramites');
+    const list = $('#tramitesList');
+    if (list) list.innerHTML = '<div class="empty">Cargando tus trámites...</div>';
+    await loadTramites();
+  }
+
+  async function loadTramites() {
+    try {
+      const data = await api('/api/tramites');
+      state.tramites = data.tramites || [];
+      state.pagoInfo = data.pagoInfo || '';
+      renderTramites();
+      updateTramitesCard();
+    } catch (e) {
+      const list = $('#tramitesList');
+      if (list) list.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+    }
+  }
+
+  /* Texto de la tarjeta de la portada: dice cuántos trámites esperan algo de la persona */
+  function updateTramitesCard() {
+    const sub = $('#tramitesCardSub');
+    if (!sub) return;
+    const todos = state.tramites || [];
+    if (!todos.length) {
+      sub.textContent = 'Mira tu documento y descárgalo cuando esté aprobado';
+      return;
+    }
+    const pendientes = todos.filter((t) => t.status === 'listo' || t.status === 'rechazado');
+    if (pendientes.length) {
+      sub.textContent = pendientes.length === 1 ? 'Tienes 1 trámite para revisar' : 'Tienes ' + pendientes.length + ' trámites para revisar';
+      return;
+    }
+    const enRevision = todos.filter((t) => t.status === 'pago_en_revision').length;
+    if (enRevision) { sub.textContent = enRevision === 1 ? '1 pago en revisión' : enRevision + ' pagos en revisión'; return; }
+    sub.textContent = todos.length === 1 ? '1 trámite en tu cuenta' : todos.length + ' trámites en tu cuenta';
+  }
+
+  function renderTramites() {
+    const list = $('#tramitesList');
+    if (!list) return;
+    const items = state.tramites || [];
+    if (!items.length) {
+      list.innerHTML = '<div class="empty">Todavía no tienes trámites.<br>Elige uno en la portada y se abre el chat con el servidor público.<br><br>Cuando tu documento esté listo lo verás aquí en vista previa, y podrás descargarlo en cuanto se confirme tu pago.</div>';
+      return;
+    }
+    list.innerHTML = items.map((t) => {
+      const st = estadoDe(t);
+      return `<button class="tramite-card" onclick="App.openTramite('${t.id}')">
+        <div class="tc-top">
+          <span class="tc-title">${esc(t.title)}</span>
+          <span class="chip ${st.cls}">${esc(st.txt)}</span>
+        </div>
+        <div class="tc-sub">${esc([t.serviceLabel, t.subtypeLabel, t.grade].filter(Boolean).join(' \u00b7 ') || 'Trámite')}</div>
+        <div class="tc-meta">
+          <span class="tc-doc${t.doc ? '' : ' off'}">${t.doc ? 'Documento cargado' : 'Documento en preparación'}</span>
+          ${t.canDownload ? '<span class="tc-doc ok">Descarga habilitada</span>' : ''}
+          <span class="tc-date">${esc(fechaCorta(t.updatedAt || t.createdAt))}</span>
+        </div>
+      </button>`;
+    }).join('');
+  }
+
+  async function openTramite(id, remember = true) {
+    state.currentTramiteId = id;
+    if (remember) showView('tramite');
+    else {
+      $$('.view').forEach((v) => v.classList.remove('active'));
+      const el = $('#tramiteView');
+      if (el) el.classList.add('active');
+    }
+    const box = $('#tramiteDetail');
+    if (box) box.innerHTML = '<div class="empty">Cargando...</div>';
+    try {
+      const data = await api('/api/tramites/' + encodeURIComponent(id));
+      state.pagoInfo = data.pagoInfo || state.pagoInfo || '';
+      renderTramiteDetail(data.tramite);
+    } catch (e) {
+      if (box) box.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+    }
+  }
+
+  function renderTramiteDetail(t) {
+    if (!t) return;
+    const box = $('#tramiteDetail');
+    if (!box) return;
+    const st = estadoDe(t);
+    const titleEl = $('#tramiteTitle');
+    const subEl = $('#tramiteSub');
+    if (titleEl) titleEl.textContent = t.title || 'Trámite';
+    if (subEl) subEl.textContent = st.txt;
+
+    const pasos = ['Solicitud', 'Documento listo', 'Pago en revisión', 'Descarga'];
+    const orden = { recibido: 1, en_proceso: 1, listo: 2, pago_en_revision: 3, rechazado: 3, aprobado: 4 };
+    const actual = orden[t.status] || 1;
+    const pasosHtml = pasos.map((txt, i) => {
+      const n = i + 1;
+      return `<div class="step${actual > n ? ' done' : ''}${actual === n ? ' now' : ''}">
+        <span class="dot">${actual > n ? '\u2713' : n}</span><span class="stxt">${esc(txt)}</span>
+      </div>`;
+    }).join('');
+
+    let previewHtml;
+    if (t.canPreview && t.doc) {
+      const url = archivoUrl(t.id, 'preview');
+      const esImagen = /^image\//i.test(t.doc.mime || '') || /\.(png|jpe?g|webp|gif)$/i.test(t.doc.name || '');
+      const esPdf = /pdf/i.test(t.doc.mime || '') || /\.pdf$/i.test(t.doc.name || '');
+      let marco;
+      if (esImagen) marco = `<img class="preview-img" src="${esc(url)}" alt="Vista previa de ${esc(t.doc.name)}" />`;
+      else if (esPdf) marco = `<iframe class="preview-pdf" src="${esc(url)}#toolbar=0&navpanes=0&view=FitH" title="Vista previa"></iframe>`;
+      else marco = `<div class="preview-none">Este tipo de archivo no se puede ver aquí.<a class="linkbtn" href="${esc(url)}" target="_blank" rel="noopener">Abrir vista previa</a></div>`;
+      previewHtml = `
+        <div class="panel preview-panel">
+          <h3>Vista previa de tu documento</h3>
+          <p class="pnote muted">${esc(t.doc.name)}${peso(t.doc.size) ? ' \u00b7 ' + peso(t.doc.size) : ''}</p>
+          <div class="preview-wrap">
+            ${marco}
+            <div class="preview-mark" aria-hidden="true"><span>VISTA PREVIA</span></div>
+          </div>
+          <p class="pnote muted">Revisa que todo esté correcto. La descarga se habilita cuando el servidor público confirme tu pago.</p>
+        </div>`;
+    } else {
+      previewHtml = `
+        <div class="panel preview-panel locked">
+          <h3>Documento</h3>
+          <p class="pnote muted">${t.doc
+            ? 'Tu documento todavía no se puede ver. Espera a que quede listo.'
+            : 'Estamos preparando tu documento. Aquí mismo lo verás en vista previa en cuanto esté listo.'}</p>
+        </div>`;
+    }
+
+    let descargaHtml;
+    if (t.canDownload) {
+      descargaHtml = `
+        <div class="panel ok-panel">
+          <h3>Pago confirmado</h3>
+          <p class="pnote muted">${t.approvedAt ? 'Confirmado el ' + esc(fechaCorta(t.approvedAt)) + '. ' : ''}Ya puedes descargar tu documento.</p>
+          <a class="btn primary" href="${esc(archivoUrl(t.id, 'download'))}" download>Descargar mi documento</a>
+          ${t.downloadCount ? '<p class="pnote muted">Descargas realizadas: ' + t.downloadCount + '</p>' : ''}
+        </div>`;
+    } else {
+      const motivo = t.status === 'pago_en_revision'
+        ? 'Tu comprobante está en revisión. La descarga se habilita cuando el servidor público confirme tu pago.'
+        : ((t.status === 'listo' || t.status === 'rechazado')
+          ? 'Envía tu comprobante de pago aquí abajo. Cuando el servidor público lo confirme, se habilita la descarga.'
+          : 'La descarga se habilita cuando tu documento esté listo y tu pago esté confirmado.');
+      descargaHtml = `
+        <div class="panel">
+          <h3>Descarga</h3>
+          <p class="pnote muted">${esc(motivo)}</p>
+          <button class="btn ghost locked-btn" onclick="App.avisoDescarga()">
+            <svg viewBox="0 0 24 24" class="lock-ic"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 017 0v2.5"/></svg>
+            Descarga bloqueada
+          </button>
+        </div>`;
+    }
+
+    let pagoHtml = '';
+    if (t.canUploadProof) {
+      const info = state.pagoInfo
+        ? esc(state.pagoInfo).replace(/\n/g, '<br>')
+        : 'El servidor público te indica por el chat los datos para el pago.';
+      pagoHtml = `
+        <div class="panel pay-panel">
+          <h3>Cómo pagar</h3>
+          <p class="pnote">${info}</p>
+          <label class="field"><span>Referencia o últimos dígitos del pago</span><input id="pagoRef" type="text" inputmode="numeric" placeholder="Ej: 458921" /></label>
+          <label class="field"><span>Nota (opcional)</span><input id="pagoNota" type="text" placeholder="Ej: pagué por Pago Móvil" /></label>
+          <button class="btn primary" onclick="App.subirComprobante()">Enviar mi comprobante de pago</button>
+          <p class="pnote muted">Adjunta una foto o un PDF del comprobante. El servidor público lo revisa y te confirma la descarga.</p>
+        </div>`;
+    } else if (t.payment) {
+      const etiqueta = t.status === 'rechazado' ? 'Rechazado' : (t.status === 'aprobado' ? 'Aprobado' : 'En revisión');
+      pagoHtml = `
+        <div class="panel">
+          <h3>Tu comprobante de pago</h3>
+          <div class="panel-row"><span>Estado del comprobante</span><span class="pill">${esc(etiqueta)}</span></div>
+          <div class="panel-row"><span>Enviado</span><span>${esc(fechaCorta(t.payment.uploadedAt))}</span></div>
+          ${t.payment.reference ? '<div class="panel-row"><span>Referencia</span><span>' + esc(t.payment.reference) + '</span></div>' : ''}
+          ${t.payment.note ? '<div class="panel-row"><span>Nota</span><span>' + esc(t.payment.note) + '</span></div>' : ''}
+          <a class="btn ghost" href="${esc(archivoUrl(t.id, 'comprobante'))}" target="_blank" rel="noopener">Ver mi comprobante</a>
+          ${t.status === 'rechazado' && t.note ? '<p class="rechazo-nota">' + esc(t.note) + '</p>' : ''}
+          ${t.status === 'rechazado' ? '<button class="btn primary" onclick="App.subirComprobante()">Enviar otro comprobante</button>' : ''}
+        </div>`;
+    }
+
+    const historial = (t.history || []).slice().reverse().map((h) => {
+      const et = TRAMITE_ESTADOS[h.estado] || {};
+      return `<div class="panel-row"><div class="who"><b>${esc(et.txt || h.estado)}</b><small>${esc(h.nota || '')}</small></div><span class="pill">${esc(fechaCorta(h.ts))}</span></div>`;
+    }).join('') || '<div class="panel-row"><span>Sin movimientos todavía</span></div>';
+
+    box.innerHTML = `
+      <div class="tramite-head">
+        <span class="chip ${st.cls}">${esc(st.txt)}</span>
+        <p>${esc(st.hint)}</p>
+        ${t.status === 'rechazado' && t.note ? '<p class="rechazo-nota">' + esc(t.note) + '</p>' : ''}
+      </div>
+      <div class="steps">${pasosHtml}</div>
+      ${previewHtml}
+      ${descargaHtml}
+      ${pagoHtml}
+      <div class="panel">
+        <h3>Historial</h3>
+        ${historial}
+      </div>
+      ${t.chatId ? '<button class="btn ghost" onclick="App.openTramiteChat()">Escribir al servidor público</button>' : ''}`;
+  }
+
+  function avisoDescarga() {
+    const t = (state.tramites || []).find((x) => x.id === state.currentTramiteId);
+    toast(t && t.status === 'pago_en_revision'
+      ? 'Tu comprobante está en revisión. Te habilitamos la descarga en cuanto se confirme tu pago.'
+      : 'La descarga se habilita cuando tu pago esté confirmado. Envía tu comprobante en esta misma pantalla.');
+  }
+
+  function subirComprobante() {
+    const id = state.currentTramiteId;
+    if (!id) return;
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = 'image/*,application/pdf';
+    inp.onchange = async () => {
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      if (f.size > 25 * 1024 * 1024) return toast('El archivo supera 25 MB');
+      const refEl = $('#pagoRef');
+      const notaEl = $('#pagoNota');
+      const reference = refEl ? String(refEl.value || '').trim() : '';
+      const note = notaEl ? String(notaEl.value || '').trim() : '';
+      try {
+        toast('Subiendo comprobante...');
+        const dataUrl = await readFile(f);
+        const up = await api('/api/upload', { method: 'POST', body: JSON.stringify({ dataUrl, name: f.name }) });
+        const r = await api('/api/tramites/' + encodeURIComponent(id) + '/comprobante', {
+          method: 'POST',
+          body: JSON.stringify({
+            url: up.url,
+            name: up.name || f.name,
+            mime: up.mime || f.type || '',
+            size: up.size || f.size || 0,
+            reference,
+            note,
+          }),
+        });
+        renderTramiteDetail(r.tramite);
+        toast('Comprobante enviado. El servidor público lo revisa y te confirma.');
+        loadTramites();
+      } catch (e) { toast(e.message); }
+    };
+    inp.click();
+  }
+
+  async function openTramiteChat() {
+    const t = (state.tramites || []).find((x) => x.id === state.currentTramiteId);
+    if (t && t.chatId) {
+      await loadChats();
+      openChat(t.chatId);
+      return;
+    }
+    toast('Escribe al servidor público desde la portada: abre el trámite y el chat se abre solo.');
+  }
+
+  /* ------------------------------ panel: tramites ------------------------------ */
+  let adminTramitesData = null;
+
+  async function loadAdminTramites() {
+    const box = $('#adminTramites');
+    if (!box) return;
+    try {
+      adminTramitesData = await api('/api/admin/tramites');
+      renderAdminTramites();
+    } catch (e) {
+      box.innerHTML = '<div class="panel"><h3>Trámites</h3><p class="pnote muted">' + esc(e.message) + '</p></div>';
+    }
+  }
+
+  function renderAdminTramites() {
+    const box = $('#adminTramites');
+    const d = adminTramitesData;
+    if (!box || !d) return;
+    const people = d.people || [];
+    const lista = d.tramites || [];
+    const conteo = d.porEstado || {};
+    const opcionesPersona = people.length
+      ? people.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}${p.cedula ? ' \u00b7 ' + esc(p.cedula) : ''}</option>`).join('')
+      : '<option value="">Sin personas registradas</option>';
+    const filas = lista.map((t) => {
+      const st = estadoDe(t);
+      return `<div class="admin-tramite">
+        <div class="at-top">
+          <div class="who">
+            <b>${esc(t.owner.name)}</b>
+            <small>${esc(t.title)}</small>
+            <small>${esc(t.owner.cedula || t.owner.phone || t.owner.email || '')}</small>
+          </div>
+          <span class="chip ${st.cls}">${esc(st.txt)}</span>
+        </div>
+        ${t.payment ? `<div class="at-pay">Comprobante: ${esc(t.payment.name)} \u00b7 ${esc(fechaCorta(t.payment.uploadedAt))}${t.payment.reference ? ' \u00b7 Ref. ' + esc(t.payment.reference) : ''}
+          <a href="${esc(archivoUrl(t.id, 'comprobante'))}" target="_blank" rel="noopener">Ver comprobante</a></div>` : ''}
+        ${t.note ? `<div class="at-note">${esc(t.note)}</div>` : ''}
+        <div class="row-actions">
+          <button class="mini" onclick="App.openTramite('${t.id}')">Abrir</button>
+          <button class="mini" onclick="App.adminSubirDocumento('${t.id}')">${t.doc ? 'Cambiar documento' : 'Subir documento'}</button>
+          ${t.doc ? `<a class="mini" href="${esc(archivoUrl(t.id, 'preview'))}" target="_blank" rel="noopener">Ver documento</a>` : ''}
+          ${t.status === 'pago_en_revision' ? `<button class="mini ok" onclick="App.adminAprobar('${t.id}')">Confirmar pago</button>` : ''}
+          ${t.status === 'pago_en_revision' ? `<button class="mini bad" onclick="App.adminRechazar('${t.id}')">Rechazar</button>` : ''}
+          <button class="mini bad" onclick="App.adminBorrarTramite('${t.id}')">Borrar</button>
+        </div>
+      </div>`;
+    }).join('') || '<div class="panel-row"><span>Todavía no hay trámites</span></div>';
+
+    box.innerHTML = `
+      <div class="panel">
+        <h3>Trámites y documentos</h3>
+        <div class="pills-row">
+          <span class="chip st-listo">${conteo.listo || 0} listos</span>
+          <span class="chip st-revision">${conteo.pago_en_revision || 0} por confirmar</span>
+          <span class="chip st-aprobado">${conteo.aprobado || 0} aprobados</span>
+        </div>
+        <label class="field"><span>Datos para el pago (los ve la persona en su trámite)</span>
+          <textarea id="pagoInfoInput" rows="3" placeholder="Banco, cuenta, Pago Móvil, monto...">${esc(d.pagoInfo || '')}</textarea>
+        </label>
+        <button class="btn ghost" onclick="App.guardarPagoInfo()">Guardar datos de pago</button>
+      </div>
+      <div class="panel">
+        <h3>Nuevo trámite para una persona</h3>
+        <label class="field"><span>Persona</span><select id="newTramiteUser">${opcionesPersona}</select></label>
+        <label class="field"><span>Servicio</span>
+          <select id="newTramiteService" onchange="App.adminFillSubtypes()">
+            ${Object.keys(SERVICES).map((k) => `<option value="${k}">${esc(SERVICES[k].title)}</option>`).join('')}
+          </select>
+        </label>
+        <label class="field"><span>Tipo</span><select id="newTramiteSubtype" onchange="App.adminFillSubtypes()"></select></label>
+        <label class="field" id="newTramiteGradeWrap" style="display:none"><span>Grado</span>
+          <select id="newTramiteGrade">${GRADES.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>
+        </label>
+        <button class="btn primary" onclick="App.crearTramite()">Crear trámite</button>
+        ${people.length ? '' : '<p class="pnote muted">Todavía no hay personas registradas.</p>'}
+      </div>
+      <div class="panel">
+        <h3>Todos los trámites</h3>
+        ${filas}
+      </div>`;
+    adminFillSubtypes();
+  }
+
+  function adminFillSubtypes() {
+    const svcEl = $('#newTramiteService');
+    const subEl = $('#newTramiteSubtype');
+    const gradeWrap = $('#newTramiteGradeWrap');
+    if (!svcEl || !subEl) return;
+    const def = SERVICES[svcEl.value] || SERVICES.cedula;
+    subEl.innerHTML = def.options.map((o) => `<option value="${esc(o.key)}">${esc(o.label)}</option>`).join('');
+    const primero = def.options[0] || {};
+    if (gradeWrap) gradeWrap.style.display = primero.grades ? 'block' : 'none';
+  }
+
+  async function crearTramite() {
+    const userEl = $('#newTramiteUser');
+    const svcEl = $('#newTramiteService');
+    const subEl = $('#newTramiteSubtype');
+    const gradeEl = $('#newTramiteGrade');
+    const userId = userEl ? userEl.value : '';
+    if (!userId) return toast('Registra primero una persona');
+    const service = svcEl ? svcEl.value : 'cedula';
+    const subtype = subEl ? subEl.value : '';
+    const def = SERVICES[service] || SERVICES.cedula;
+    const opt = def.options.find((o) => o.key === subtype) || {};
+    const grade = (opt.grades && gradeEl) ? gradeEl.value : '';
+    try {
+      await api('/api/admin/tramites', {
+        method: 'POST',
+        body: JSON.stringify({
+          userId,
+          service,
+          serviceLabel: def.title,
+          subtype,
+          subtypeLabel: opt.label || '',
+          grade,
+        }),
+      });
+      toast('Trámite creado');
+      loadAdminTramites();
+    } catch (e) { toast(e.message); }
+  }
+
+  function adminSubirDocumento(id) {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = 'image/*,application/pdf';
+    inp.onchange = async () => {
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      if (f.size > 25 * 1024 * 1024) return toast('El archivo supera 25 MB');
+      try {
+        toast('Subiendo documento...');
+        const dataUrl = await readFile(f);
+        const up = await api('/api/upload', { method: 'POST', body: JSON.stringify({ dataUrl, name: f.name }) });
+        await api('/api/admin/tramites/' + encodeURIComponent(id) + '/documento', {
+          method: 'POST',
+          body: JSON.stringify({
+            url: up.url,
+            name: up.name || f.name,
+            mime: up.mime || f.type || '',
+            size: up.size || f.size || 0,
+          }),
+        });
+        toast('Documento listo: la persona ya lo puede ver en vista previa');
+        loadAdminTramites();
+      } catch (e) { toast(e.message); }
+    };
+    inp.click();
+  }
+
+  async function adminAprobar(id) {
+    const ok = confirm('¿Confirmas el pago de este trámite? La persona podrá descargar su documento.');
+    if (!ok) return;
+    try {
+      await api('/api/admin/tramites/' + encodeURIComponent(id) + '/aprobar', { method: 'POST', body: JSON.stringify({}) });
+      toast('Pago confirmado: descarga habilitada');
+      loadAdminTramites();
+    } catch (e) { toast(e.message); }
+  }
+
+  async function adminRechazar(id) {
+    const nota = prompt('Motivo del rechazo (la persona lo verá):');
+    if (nota === null) return;
+    if (String(nota).trim().length < 3) return toast('Escribe el motivo del rechazo');
+    try {
+      await api('/api/admin/tramites/' + encodeURIComponent(id) + '/rechazar', { method: 'POST', body: JSON.stringify({ note: nota }) });
+      toast('Comprobante rechazado: la persona puede enviar otro');
+      loadAdminTramites();
+    } catch (e) { toast(e.message); }
+  }
+
+  async function adminBorrarTramite(id) {
+    if (!confirm('¿Borrar este trámite? No se puede deshacer.')) return;
+    try {
+      await api('/api/admin/tramites/' + encodeURIComponent(id), { method: 'DELETE' });
+      toast('Trámite borrado');
+      loadAdminTramites();
+    } catch (e) { toast(e.message); }
+  }
+
+  async function guardarPagoInfo() {
+    const el = $('#pagoInfoInput');
+    if (!el) return;
+    try {
+      const r = await api('/api/admin/pago-info', { method: 'POST', body: JSON.stringify({ pagoInfo: el.value }) });
+      state.pagoInfo = r.pagoInfo || el.value;
+      toast('Datos de pago guardados');
+    } catch (e) { toast(e.message); }
+  }
+
   /* ------------------------------ WebSocket ------------------------------ */
   function connectWS() {
     if (!state.token) return;
@@ -1119,6 +1615,18 @@ const App = (() => {
           loadChats();
         } else if (m.type === 'chat:new' || m.type === 'chat:updated') {
           loadChats();
+        } else if (m.type === 'tramite:new' || m.type === 'tramite:updated') {
+          const st = (TRAMITE_ESTADOS[(m.tramite && m.tramite.status) || ''] || {}).txt || '';
+          if (state.me && state.me.role === 'admin') {
+            if ($('#adminTramites')) loadAdminTramites();
+            toast(m.type === 'tramite:new' ? 'Nuevo tramite creado' : 'Tramite actualizado: ' + st);
+          } else if (m.type === 'tramite:updated') {
+            toast('Tu tramite se actualizo: ' + st);
+          }
+          loadTramites();
+          if (state.currentTramiteId && $('#tramiteView') && $('#tramiteView').classList.contains('active')) {
+            openTramite(state.currentTramiteId, false);
+          }
         }
       };
       ws.onclose = () => {
@@ -1246,6 +1754,9 @@ const App = (() => {
     deleteAccount, openAdmin, openChatFromAdmin, openFirstChat,
     viewImage, closeViewer, logout,
     installApp, dismissInstall, closeIosSheet, testMail,
+    openTramites, loadTramites, openTramite, openTramiteChat, subirComprobante, avisoDescarga,
+    adminFillSubtypes, crearTramite, adminSubirDocumento, adminAprobar, adminRechazar,
+    adminBorrarTramite, guardarPagoInfo,
   };
 })();
 window.App = App;

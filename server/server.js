@@ -927,6 +927,15 @@ app.delete('/api/account', auth, (req, res) => {
       if (db.uploads[nombre] === me.id) { archivos.push('/uploads/' + nombre); delete db.uploads[nombre]; }
     });
   }
+  // 3b) Tramites de la persona: se borran con su documento y su comprobante
+  const trs = tramitesDb();
+  Object.keys(trs).forEach((tid) => {
+    const t = trs[tid];
+    if (!t || t.userId !== me.id) return;
+    [t.doc, t.payment].forEach((f) => { if (f && f.url) archivos.push(f.url); });
+    delete trs[tid];
+  });
+
   archivos.forEach((u) => {
     try {
       const nombre = path.basename(String(u));
@@ -1007,6 +1016,36 @@ app.post('/api/chats/start', auth, (req, res) => {
     chat.updatedAt = now();
   }
   save();
+
+  // El tramite que se abre por el chat aparece tambien en "Mis tramites"
+  if (tramite && req.user.role !== 'admin') {
+    const igual = (x, y) => String(x || '') === String(y || '');
+    const yaExiste = Object.values(tramitesDb()).some((t) => t.userId === req.user.id
+      && igual(t.service, tramite.service) && igual(t.subtype, tramite.subtype)
+      && igual(t.grade, tramite.grade) && t.status !== 'aprobado');
+    if (!yaExiste) {
+      const nuevo = {
+        id: uid('t_'),
+        userId: req.user.id,
+        chatId: chat.id,
+        service: String(tramite.service || '').slice(0, 40),
+        serviceLabel: String(tramite.serviceLabel || '').slice(0, 80),
+        subtype: String(tramite.subtype || '').slice(0, 40),
+        subtypeLabel: String(tramite.subtypeLabel || '').slice(0, 80),
+        grade: String(tramite.grade || '').slice(0, 20),
+        title: tramiteTitulo(tramite.serviceLabel, tramite.subtypeLabel, tramite.grade),
+        status: 'recibido',
+        doc: null,
+        payment: null,
+        note: '',
+        createdAt: now(),
+        updatedAt: now(),
+        history: [],
+      };
+      tramiteHistorial(nuevo, 'recibido', 'La persona abrio el tramite por el chat', req.user.id);
+      tramitesDb()[nuevo.id] = nuevo;
+    }
+  }
 
   sendToUser(admin.id, { type: 'chat:new', chat: chatView(chat, admin.id) });
   res.json({ chat: chatView(chat, req.user.id) });
@@ -1189,6 +1228,404 @@ app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
     users,
     visits: visits.slice(-60).reverse()
   });
+});
+
+/* =====================================================================
+   TRAMITES: documento listo, vista previa, comprobante de pago y descarga
+   ---------------------------------------------------------------------
+   Estados:
+     recibido         -> la persona pidio el tramite (o el admin lo creo)
+     en_proceso       -> el servidor publico esta gestionando el tramite
+     listo            -> el documento esta cargado: la persona VE LA VISTA PREVIA
+     pago_en_revision -> la persona envio su comprobante de pago
+     aprobado         -> el admin confirmo el pago: DESCARGA HABILITADA
+     rechazado        -> el admin rechazo el comprobante (con una nota)
+
+   La vista previa NUNCA entrega el archivo como descarga y la descarga
+   solo se sirve cuando el estado es "aprobado". El documento y el
+   comprobante se suben con /api/upload (la misma tuberia del chat) y aqui
+   solo se guarda la referencia.
+   ===================================================================== */
+const TRAMITE_ESTADOS = ['recibido', 'en_proceso', 'listo', 'pago_en_revision', 'aprobado', 'rechazado'];
+const TRAMITE_ESTADO_TXT = {
+  recibido: 'Recibido',
+  en_proceso: 'En proceso',
+  listo: 'Documento listo',
+  pago_en_revision: 'Pago en revision',
+  aprobado: 'Aprobado',
+  rechazado: 'Comprobante rechazado',
+};
+
+function tramitesDb() {
+  if (!db.tramites || typeof db.tramites !== 'object' || Array.isArray(db.tramites)) db.tramites = {};
+  return db.tramites;
+}
+
+/* Datos para pagar que ve la persona (los escribe el administrador). */
+function pagoInfo() {
+  if (!db.settings || typeof db.settings !== 'object') db.settings = {};
+  if (typeof db.settings.pagoInfo !== 'string') {
+    db.settings.pagoInfo = String(process.env.PAGO_INFO || '').trim();
+  }
+  return db.settings.pagoInfo;
+}
+
+function tramitePuedeVerPreview(t) {
+  if (!t || !t.doc || !t.doc.url) return false;
+  return ['listo', 'pago_en_revision', 'aprobado', 'rechazado'].indexOf(t.status) >= 0;
+}
+
+function tramitePuedeDescargar(t) {
+  return !!(t && t.status === 'aprobado' && t.doc && t.doc.url);
+}
+
+function tramiteHistorial(t, estado, nota, por) {
+  if (!Array.isArray(t.history)) t.history = [];
+  t.history.push({ estado: estado, nota: String(nota || '').slice(0, 400), por: por || '', ts: now() });
+  if (t.history.length > 60) t.history = t.history.slice(-60);
+}
+
+function archivoResumen(f) {
+  if (!f || !f.url) return null;
+  return {
+    url: f.url,
+    name: String(f.name || 'documento').slice(0, 140),
+    mime: String(f.mime || ''),
+    size: Number(f.size || 0),
+    uploadedAt: Number(f.uploadedAt || 0),
+    reference: String(f.reference || ''),
+    note: String(f.note || ''),
+  };
+}
+
+/* Lo que se manda al navegador: sin direcciones internas de archivos. */
+function tramiteView(t, forUser) {
+  const owner = db.users[t.userId] || {};
+  const esAdmin = !!(forUser && forUser.role === 'admin');
+  const esDueno = !!(forUser && forUser.id === t.userId);
+  const doc = t.doc && t.doc.url ? archivoResumen(t.doc) : null;
+  const pago = t.payment && t.payment.url ? archivoResumen(t.payment) : null;
+  return {
+    id: t.id,
+    userId: t.userId,
+    owner: {
+      id: owner.id || '',
+      name: owner.name || 'Persona',
+      cedula: owner.cedula || '',
+      phone: owner.phone || '',
+      email: owner.email || '',
+      country: owner.country || '',
+    },
+    title: t.title || 'Tramite',
+    service: t.service || '',
+    serviceLabel: t.serviceLabel || '',
+    subtype: t.subtype || '',
+    subtypeLabel: t.subtypeLabel || '',
+    grade: t.grade || '',
+    status: t.status,
+    statusLabel: TRAMITE_ESTADO_TXT[t.status] || t.status,
+    chatId: t.chatId || '',
+    doc: doc ? { name: doc.name, mime: doc.mime, size: doc.size, uploadedAt: doc.uploadedAt } : null,
+    payment: pago ? {
+      name: pago.name, mime: pago.mime, size: pago.size, uploadedAt: pago.uploadedAt,
+      reference: pago.reference, note: pago.note,
+    } : null,
+    note: t.note || '',
+    createdAt: t.createdAt || 0,
+    updatedAt: t.updatedAt || 0,
+    readyAt: t.readyAt || 0,
+    approvedAt: t.approvedAt || 0,
+    rejectedAt: t.rejectedAt || 0,
+    downloadCount: Number(t.downloadCount || 0),
+    lastDownloadAt: Number(t.lastDownloadAt || 0),
+    canPreview: (esAdmin || esDueno) && tramitePuedeVerPreview(t),
+    canDownload: (esAdmin || esDueno) && tramitePuedeDescargar(t),
+    canUploadProof: esDueno && (t.status === 'listo' || t.status === 'rechazado'),
+    history: (t.history || []).slice(-20),
+  };
+}
+
+/* Busca el tramite del :id y comprueba que sea suyo (o que sea el admin). */
+function tramiteDe(req) {
+  const t = tramitesDb()[String((req.params && req.params.id) || '')];
+  if (!t) return null;
+  const esAdmin = !!(req.user && req.user.role === 'admin');
+  if (!esAdmin && (!req.user || t.userId !== req.user.id)) return null;
+  return t;
+}
+
+function tramiteTitulo(serviceLabel, subtypeLabel, grade) {
+  return [serviceLabel || 'Tramite', subtypeLabel, grade].filter(Boolean).join(' \u00b7 ');
+}
+
+function archivoValido(url) {
+  const u = String(url || '');
+  return /^\/uploads\/[A-Za-z0-9_.-]+$/.test(u) || /^https?:\/\//i.test(u);
+}
+
+/* Entrega un archivo del tramite. modo: 'inline' (vista previa) | 'attachment' (descarga) */
+async function servirArchivoTramite(f, res, modo) {
+  const url = String((f && f.url) || '');
+  const nombre = (String((f && f.name) || 'documento').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 120) || 'documento');
+  const ascii = nombre.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');
+  const disp = (modo === 'attachment' ? 'attachment' : 'inline') + '; filename="' + ascii + '"; filename*=UTF-8\'\'' + encodeURIComponent(nombre);
+
+  if (/^https?:\/\//i.test(url)) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) return res.status(404).json({ error: 'El archivo no esta disponible' });
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > 30 * 1024 * 1024) return res.status(413).json({ error: 'El archivo es demasiado grande' });
+      res.setHeader('Content-Type', (f && f.mime) || r.headers.get('content-type') || 'application/octet-stream');
+      res.setHeader('Content-Disposition', disp);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'private, no-store');
+      return res.end(buf);
+    } catch (e) {
+      return res.status(502).json({ error: 'No se pudo abrir el archivo' });
+    }
+  }
+
+  const m = /^\/uploads\/([A-Za-z0-9_.-]+)$/.exec(url);
+  if (!m) return res.status(404).json({ error: 'El archivo no esta disponible' });
+  const file = path.join(UPLOAD_DIR, m[1]);
+  if (!file.startsWith(UPLOAD_DIR + path.sep) || !fs.existsSync(file)) {
+    return res.status(404).json({ error: 'El archivo no esta disponible' });
+  }
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('Content-Disposition', disp);
+  return res.sendFile(file);
+}
+
+/* --- la persona: mis tramites --- */
+app.get('/api/tramites', auth, (req, res) => {
+  const esAdmin = req.user.role === 'admin';
+  const lista = Object.values(tramitesDb())
+    .filter((t) => esAdmin || t.userId === req.user.id)
+    .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+  res.json({ tramites: lista.map((t) => tramiteView(t, req.user)), pagoInfo: pagoInfo() });
+});
+
+app.get('/api/tramites/:id', auth, (req, res) => {
+  const t = tramiteDe(req);
+  if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
+  res.json({ tramite: tramiteView(t, req.user), pagoInfo: pagoInfo() });
+});
+
+/* Vista previa: se ve en la app, pero NO se puede guardar */
+app.get('/api/tramites/:id/preview', auth, async (req, res) => {
+  const t = tramiteDe(req);
+  if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
+  if (!tramitePuedeVerPreview(t)) {
+    return res.status(403).json({ error: 'El documento todavia no esta listo. Te avisamos aqui mismo cuando lo este.' });
+  }
+  await servirArchivoTramite(t.doc, res, 'inline');
+});
+
+/* Descarga: SOLO con el pago confirmado por el administrador */
+app.get('/api/tramites/:id/download', auth, async (req, res) => {
+  const t = tramiteDe(req);
+  if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
+  if (!tramitePuedeDescargar(t)) {
+    return res.status(403).json({ error: 'La descarga se habilita cuando el administrador confirma tu pago.' });
+  }
+  t.downloadCount = Number(t.downloadCount || 0) + 1;
+  t.lastDownloadAt = now();
+  t.updatedAt = now();
+  tramiteHistorial(t, 'aprobado', 'Documento descargado', req.user.id);
+  save();
+  await servirArchivoTramite(t.doc, res, 'attachment');
+});
+
+/* La persona revisa el comprobante que mando */
+app.get('/api/tramites/:id/comprobante', auth, async (req, res) => {
+  const t = tramiteDe(req);
+  if (!t || !t.payment || !t.payment.url) return res.status(404).json({ error: 'Este tramite no tiene comprobante' });
+  await servirArchivoTramite(t.payment, res, 'inline');
+});
+
+/* La persona envia su comprobante de pago */
+app.post('/api/tramites/:id/comprobante', auth, (req, res) => {
+  const t = tramiteDe(req);
+  if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
+  if (t.userId !== req.user.id) return res.status(403).json({ error: 'Solo la persona duena del tramite puede enviar el comprobante' });
+  if (t.status !== 'listo' && t.status !== 'rechazado') {
+    return res.status(400).json({ error: 'Todavia no puedes enviar el comprobante de este tramite.' });
+  }
+  const body = req.body || {};
+  if (!archivoValido(body.url)) {
+    return res.status(400).json({ error: 'Adjunta la foto o el PDF de tu comprobante de pago' });
+  }
+  t.payment = {
+    url: String(body.url),
+    name: String(body.name || 'Comprobante de pago').slice(0, 140),
+    mime: String(body.mime || ''),
+    size: Number(body.size || 0),
+    reference: String(body.reference || '').slice(0, 60),
+    note: String(body.note || '').slice(0, 400),
+    uploadedAt: now(),
+  };
+  t.status = 'pago_en_revision';
+  t.note = '';
+  t.updatedAt = now();
+  tramiteHistorial(t, 'pago_en_revision', 'La persona envio el comprobante de pago', req.user.id);
+  save();
+  const admin = Object.values(db.users).find((u) => u.role === 'admin');
+  if (admin) sendToUser(admin.id, { type: 'tramite:updated', tramite: tramiteView(t, admin) });
+  res.json({ tramite: tramiteView(t, req.user) });
+});
+
+/* --- administrador: gestion de tramites --- */
+app.get('/api/admin/tramites', auth, adminOnly, (req, res) => {
+  const lista = Object.values(tramitesDb())
+    .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+  const people = Object.values(db.users)
+    .filter((u) => u.role !== 'admin')
+    .map((u) => ({ id: u.id, name: u.name || 'Persona', cedula: u.cedula || '', email: u.email || '', phone: u.phone || '', country: u.country || '' }))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const porEstado = {};
+  TRAMITE_ESTADOS.forEach((e) => { porEstado[e] = 0; });
+  lista.forEach((t) => { porEstado[t.status] = (porEstado[t.status] || 0) + 1; });
+  res.json({
+    tramites: lista.map((t) => tramiteView(t, req.user)),
+    people: people,
+    porEstado: porEstado,
+    pagoInfo: pagoInfo(),
+  });
+});
+
+app.post('/api/admin/tramites', auth, adminOnly, (req, res) => {
+  const b = req.body || {};
+  const user = db.users[String(b.userId || '')];
+  if (!user) return res.status(404).json({ error: 'Elige la persona del tramite' });
+  if (user.role === 'admin') return res.status(400).json({ error: 'Elige una persona, no el administrador' });
+  const t = {
+    id: uid('t_'),
+    userId: user.id,
+    service: String(b.service || '').slice(0, 40),
+    serviceLabel: String(b.serviceLabel || '').slice(0, 80),
+    subtype: String(b.subtype || '').slice(0, 40),
+    subtypeLabel: String(b.subtypeLabel || '').slice(0, 80),
+    grade: String(b.grade || '').slice(0, 20),
+    title: String(b.title || '').slice(0, 120) || tramiteTitulo(b.serviceLabel, b.subtypeLabel, b.grade),
+    status: 'recibido',
+    doc: null,
+    payment: null,
+    note: String(b.note || '').slice(0, 400),
+    createdAt: now(),
+    updatedAt: now(),
+    history: [],
+  };
+  tramiteHistorial(t, 'recibido', 'Tramite creado por el servidor publico', req.user.id);
+  tramitesDb()[t.id] = t;
+  save();
+  sendToUser(user.id, { type: 'tramite:new', tramite: tramiteView(t, user) });
+  res.json({ tramite: tramiteView(t, req.user) });
+});
+
+/* El administrador sube el documento: queda LISTO para vista previa */
+app.post('/api/admin/tramites/:id/documento', auth, adminOnly, (req, res) => {
+  const t = tramiteDe(req);
+  if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
+  const b = req.body || {};
+  if (!archivoValido(b.url)) {
+    return res.status(400).json({ error: 'Sube el documento del tramite (imagen o PDF)' });
+  }
+  t.doc = {
+    url: String(b.url),
+    name: String(b.name || 'Documento').slice(0, 140),
+    mime: String(b.mime || ''),
+    size: Number(b.size || 0),
+    uploadedAt: now(),
+  };
+  if (b.title) t.title = String(b.title).slice(0, 120);
+  t.status = 'listo';
+  t.readyAt = now();
+  t.updatedAt = now();
+  t.note = '';
+  tramiteHistorial(t, 'listo', 'Documento cargado: la persona ya puede verlo en vista previa', req.user.id);
+  save();
+  const owner = db.users[t.userId];
+  if (owner) sendToUser(owner.id, { type: 'tramite:updated', tramite: tramiteView(t, owner) });
+  res.json({ tramite: tramiteView(t, req.user) });
+});
+
+app.post('/api/admin/tramites/:id/estado', auth, adminOnly, (req, res) => {
+  const t = tramiteDe(req);
+  if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
+  const b = req.body || {};
+  const estado = String(b.status || '');
+  if (TRAMITE_ESTADOS.indexOf(estado) < 0) return res.status(400).json({ error: 'Estado no valido' });
+  if (estado === 'aprobado' || estado === 'rechazado') {
+    return res.status(400).json({ error: 'Usa los botones de confirmar o rechazar el pago' });
+  }
+  if (estado === 'pago_en_revision') {
+    return res.status(400).json({ error: 'Ese estado lo pone la persona al enviar su comprobante' });
+  }
+  if (estado === 'listo' && !(t.doc && t.doc.url)) {
+    return res.status(400).json({ error: 'Primero sube el documento del tramite' });
+  }
+  t.status = estado;
+  t.updatedAt = now();
+  if (b.note) t.note = String(b.note).slice(0, 400);
+  tramiteHistorial(t, estado, b.note || 'Estado actualizado por el servidor publico', req.user.id);
+  save();
+  const owner = db.users[t.userId];
+  if (owner) sendToUser(owner.id, { type: 'tramite:updated', tramite: tramiteView(t, owner) });
+  res.json({ tramite: tramiteView(t, req.user) });
+});
+
+/* CONFIRMAR EL PAGO: aqui se habilita la descarga */
+app.post('/api/admin/tramites/:id/aprobar', auth, adminOnly, (req, res) => {
+  const t = tramiteDe(req);
+  if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
+  if (!(t.doc && t.doc.url)) return res.status(400).json({ error: 'El tramite no tiene documento cargado' });
+  t.status = 'aprobado';
+  t.approvedAt = now();
+  t.approvedBy = req.user.id;
+  t.updatedAt = now();
+  t.note = String((req.body && req.body.note) || '').slice(0, 400);
+  tramiteHistorial(t, 'aprobado', 'Pago confirmado: la descarga quedo habilitada', req.user.id);
+  save();
+  const owner = db.users[t.userId];
+  if (owner) sendToUser(owner.id, { type: 'tramite:updated', tramite: tramiteView(t, owner) });
+  res.json({ tramite: tramiteView(t, req.user) });
+});
+
+app.post('/api/admin/tramites/:id/rechazar', auth, adminOnly, (req, res) => {
+  const t = tramiteDe(req);
+  if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
+  const nota = String((req.body && req.body.note) || '').trim();
+  if (nota.length < 3) {
+    return res.status(400).json({ error: 'Escribe el motivo del rechazo para que la persona sepa que corregir' });
+  }
+  t.status = 'rechazado';
+  t.rejectedAt = now();
+  t.updatedAt = now();
+  t.note = nota.slice(0, 400);
+  tramiteHistorial(t, 'rechazado', nota, req.user.id);
+  save();
+  const owner = db.users[t.userId];
+  if (owner) sendToUser(owner.id, { type: 'tramite:updated', tramite: tramiteView(t, owner) });
+  res.json({ tramite: tramiteView(t, req.user) });
+});
+
+app.delete('/api/admin/tramites/:id', auth, adminOnly, (req, res) => {
+  const t = tramiteDe(req);
+  if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
+  delete tramitesDb()[t.id];
+  save();
+  res.json({ ok: true });
+});
+
+/* Datos para pagar que ve la persona */
+app.post('/api/admin/pago-info', auth, adminOnly, (req, res) => {
+  pagoInfo();
+  const texto = String((req.body && req.body.pagoInfo) || '').slice(0, 1200);
+  db.settings.pagoInfo = texto;
+  save();
+  res.json({ ok: true, pagoInfo: texto });
 });
 
 /* --- servidor + websocket --- */

@@ -140,6 +140,68 @@ Hasta que no se configuren, el bloque sigue visible pero al pulsar **Verificar**
 | Sin saldo / límite | "El servicio de cédulas no tiene saldo disponible. Avisa al administrador." |
 | Sin configurar | "La verificación de cédula no está disponible en este momento. Intenta más tarde." |
 
+## Mis tramites: vista previa, comprobante y descarga aprobada
+
+Cada tramite tiene su ficha con el documento, el pago y la descarga. La persona lo
+abre desde **Mis tramites** (portada o perfil) y ve el estado en todo momento.
+
+**Estados del tramite**
+
+| Estado | Quien lo pone | Que ve la persona |
+| --- | --- | --- |
+| `recibido` | automatico al abrir el tramite por el chat, o el administrador | Solicitud recibida |
+| `en_proceso` | administrador | Estamos gestionando el tramite |
+| `listo` | administrador al subir el documento | **Vista previa del documento** + datos para pagar |
+| `pago_en_revision` | automatico cuando la persona envia su comprobante | Comprobante en revision |
+| `aprobado` | administrador al confirmar el pago | **Descarga habilitada** |
+| `rechazado` | administrador con una nota | El motivo y el boton para enviar otro comprobante |
+
+**Como funciona, paso a paso**
+
+1. La persona abre el tramite por el chat y le aparece en **Mis tramites**.
+2. El administrador sube el documento (imagen o PDF) desde el panel: el tramite queda `listo`.
+3. La persona ve el documento en **vista previa dentro de la app**, con marca de agua y sin boton de descarga.
+4. La persona paga, escribe la referencia y envia la foto o el PDF de su comprobante.
+5. El administrador revisa el comprobante en el panel y pulsa **Confirmar pago**.
+6. Recien entonces se habilita **Descargar mi documento**. Si el comprobante no sirve, se **Rechaza** con una nota y la persona puede enviar otro.
+
+La vista previa y la descarga son rutas distintas: la vista previa siempre se sirve
+como `inline`, y la descarga (`attachment`) solo responde cuando el estado es
+`aprobado`. Cada descarga queda contada y anotada en el historial del tramite.
+
+**Datos para pagar.** El administrador los escribe una vez en el panel
+(*Tramites y documentos → Datos para el pago*) y la persona los ve en su tramite.
+Tambien se pueden dejar en la variable de entorno `PAGO_INFO` (texto con saltos de
+linea) para el primer arranque.
+
+**Rutas nuevas**
+
+| Ruta | Quien | Para que |
+| --- | --- | --- |
+| `GET /api/tramites` | persona | sus tramites y los datos de pago |
+| `GET /api/tramites/:id` | persona | detalle del tramite |
+| `GET /api/tramites/:id/preview` | persona | vista previa del documento (`inline`) |
+| `GET /api/tramites/:id/download` | persona | descarga, solo con el pago confirmado |
+| `POST /api/tramites/:id/comprobante` | persona | envia el comprobante de pago |
+| `GET /api/tramites/:id/comprobante` | persona / admin | ver el comprobante enviado |
+| `GET /api/admin/tramites` | admin | todos los tramites, personas y contadores |
+| `POST /api/admin/tramites` | admin | crea un tramite para una persona |
+| `POST /api/admin/tramites/:id/documento` | admin | sube el documento y lo deja `listo` |
+| `POST /api/admin/tramites/:id/estado` | admin | cambia entre `recibido`, `en_proceso` y `listo` |
+| `POST /api/admin/tramites/:id/aprobar` | admin | confirma el pago y habilita la descarga |
+| `POST /api/admin/tramites/:id/rechazar` | admin | rechaza el comprobante con una nota |
+| `DELETE /api/admin/tramites/:id` | admin | borra el tramite |
+| `POST /api/admin/pago-info` | admin | guarda los datos para pagar |
+
+Los archivos siguen subiendose con `POST /api/upload`, igual que los del chat: el
+tramite solo guarda la referencia. Al eliminar su cuenta, la persona se lleva sus
+tramites, su documento y su comprobante.
+
+> La vista previa es una barrera visual y de permisos, no un candado sobre el
+> archivo: quien sepa usar las herramientas del navegador podria guardar la imagen
+> que ya esta viendo. Lo que nunca se entrega sin la confirmacion del pago es la
+> descarga del documento.
+
 ## Estructura
 
 ```
@@ -150,7 +212,7 @@ public/app.js        Lógica del cliente
 public/sw.js         Service worker (PWA)
 public/bg.jpg        Fondo del acceso
 public/icon-*.png    Escudo de la app
-data/                Base de datos y archivos subidos (se crea sola)
+data/                Base de datos (incluye los tramites) y archivos subidos (se crea sola)
 ```
 
 ## Ejecutar en local

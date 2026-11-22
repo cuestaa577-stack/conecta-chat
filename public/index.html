@@ -153,6 +153,17 @@
       </div>
 
       <div class="services">
+        <button class="service" onclick="App.openTramites()">
+          <span class="service-ic">
+            <svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1 1 0 01-1 1H6a1 1 0 01-1-1V4.5a1 1 0 011-1z"/><path d="M14 3.6V8h4"/><path d="M8.4 13.6l1.6 1.6 3.2-3.4"/></svg>
+          </span>
+          <span class="service-txt">
+            <span class="service-title">Mis trámites</span>
+            <span class="service-sub" id="tramitesCardSub">Mira tu documento y descárgalo cuando esté aprobado</span>
+          </span>
+          <span class="chev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
+        </button>
+
         <button class="service" onclick="App.pickService('cedula')">
           <span class="service-ic">
             <svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.4"/><circle cx="8.6" cy="11" r="2.2"/><path d="M5.2 16.4c.6-1.5 1.9-2.3 3.4-2.3s2.8.8 3.4 2.3"/><path d="M14.6 9.6h4.2M14.6 12.6h4.2M14.6 15.6h2.8"/></svg>
@@ -291,6 +302,37 @@
     </div>
   </section>
 
+  <!-- Mis tramites (documento, vista previa y descarga) -->
+  <section class="view" id="tramitesView">
+    <header class="topbar">
+      <button class="iconbtn back" onclick="App.back()" title="Atras">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M15 6l-6 6 6 6"/></svg>
+      </button>
+      <div class="brand-block">
+        <div class="brand">Mis tramites</div>
+        <div class="brand-sub">Estado, vista previa y descarga</div>
+      </div>
+      <button class="iconbtn" onclick="App.loadTramites()" title="Actualizar">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M20 11.5a8 8 0 10-2.6 6M20 5.5v6h-6"/></svg>
+      </button>
+    </header>
+    <div class="scroll" id="tramitesList"></div>
+  </section>
+
+  <!-- Detalle del tramite -->
+  <section class="view" id="tramiteView">
+    <header class="topbar">
+      <button class="iconbtn back" onclick="App.back()" title="Atras">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M15 6l-6 6 6 6"/></svg>
+      </button>
+      <div class="brand-block">
+        <div class="brand" id="tramiteTitle">Tramite</div>
+        <div class="brand-sub" id="tramiteSub">Detalle</div>
+      </div>
+    </header>
+    <div class="scroll" id="tramiteDetail"></div>
+  </section>
+
   <!-- Perfil -->
   <section class="view" id="profileView">
     <header class="topbar">
@@ -316,6 +358,7 @@
         <label class="field"><span>Pais</span><input id="profileCountry" placeholder="Venezuela" /></label>
         <button class="btn primary" onclick="App.saveProfileChanges()">Guardar cambios</button>
         <button class="btn ghost" onclick="App.openEditData()">Editar datos personales</button>
+        <button class="btn ghost" onclick="App.openTramites()">Mis trámites y documentos</button>
         <button class="btn ghost" onclick="App.openAdmin()" id="adminBtn" style="display:none">Panel del servidor publico</button>
         <button class="btn ghost" onclick="App.installApp()">Instalar la app en mi celular</button>
         <button class="btn ghost" onclick="App.logout()">Cerrar sesion</button>
