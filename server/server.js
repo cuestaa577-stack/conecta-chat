@@ -18,9 +18,9 @@ if (!process.env.SECRET) {
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
-const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'enelextranjerovenezolanos@gmail.com').trim().toLowerCase();
 const ADMIN_PHONE = String(process.env.ADMIN_PHONE || '').replace(/\D/g, '');
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || crypto.randomBytes(9).toString('base64url');
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Angelo18@';
 const ADMIN_NAME = process.env.ADMIN_NAME || 'Servidor publico';
 
 /* correo saliente (codigos de 6 digitos) */
@@ -227,6 +227,14 @@ function hashCode(code, salt) {
 function issueCode(user, purpose) {
   const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
   const salt = crypto.randomBytes(8).toString('hex');
+  // Guarda hasta 3 codigos recientes: si se pidio otro codigo (o el correo con el
+  // anterior llego despues), el codigo anterior SIGUE SIRVIENDO. Esto evitaba el
+  // error "Codigo incorrecto o vencido" cuando llegaban dos correos.
+  if (user.codeHash && user.codeExp && user.codeExp > now()) {
+    if (!Array.isArray(user.codeHistory)) user.codeHistory = [];
+    user.codeHistory.push({ hash: user.codeHash, salt: user.codeSalt, exp: user.codeExp, purpose: user.codePurpose });
+    if (user.codeHistory.length > 3) user.codeHistory = user.codeHistory.slice(-3);
+  }
   user.codeSalt = salt;
   user.codeHash = hashCode(code, salt);
   user.codePurpose = purpose;
@@ -238,16 +246,30 @@ function issueCode(user, purpose) {
 }
 
 function checkCode(user, code, purpose) {
-  if (!user || !user.codeHash || user.codePurpose !== purpose) return false;
-  if (!user.codeExp || user.codeExp < now()) return false;
-  if ((user.codeTries || 0) >= 6) return false;
+  if (!user) return false;
+  if ((user.codeTries || 0) >= 10) return false;
   user.codeTries = (user.codeTries || 0) + 1;
-  const given = Buffer.from(hashCode(String(code).trim(), user.codeSalt), 'hex');
-  const saved = Buffer.from(user.codeHash, 'hex');
-  const ok = given.length === saved.length && crypto.timingSafeEqual(given, saved);
+
+  const given = String(code || '').trim();
+  const matches = (hash, salt, exp, pur) => {
+    if (!hash || !salt || pur !== purpose) return false;
+    if (!exp || exp < now()) return false;
+    try {
+      const a = Buffer.from(hashCode(given, salt), 'hex');
+      const b = Buffer.from(hash, 'hex');
+      return a.length === b.length && crypto.timingSafeEqual(a, b);
+    } catch (e) { return false; }
+  };
+
+  // Vale el codigo actual y tambien los ultimos codigos enviados (aun vigentes).
+  let ok = matches(user.codeHash, user.codeSalt, user.codeExp, user.codePurpose);
+  if (!ok && Array.isArray(user.codeHistory)) {
+    ok = user.codeHistory.some((h) => matches(h.hash, h.salt, h.exp, h.purpose));
+  }
+
   if (ok) {
     delete user.codeHash; delete user.codeSalt; delete user.codeExp;
-    delete user.codePurpose; delete user.codeTries;
+    delete user.codePurpose; delete user.codeTries; delete user.codeHistory;
   }
   save();
   return ok;
@@ -276,20 +298,26 @@ async function sendCodeEmail(to, code, purpose) {
 
 /* Administrador inicial */
 function ensureAdmin() {
-  const exists = Object.values(db.users).some((u) => u.role === 'admin');
-  if (exists) return;
-  if (!ADMIN_EMAIL && !ADMIN_PHONE) {
-    console.warn('[aviso] Faltan ADMIN_EMAIL y ADMIN_PHONE: no se creo el servidor publico. Configuralos en el servidor.');
+  const admin = Object.values(db.users).find((u) => u.role === 'admin');
+  if (admin) {
+    // Mantiene las credenciales del administrador alineadas con la configuracion
+    // (por defecto: enelextranjerovenezolanos@gmail.com / Angelo18@)
+    let changed = false;
+    if (ADMIN_EMAIL && (admin.email || '').toLowerCase() !== ADMIN_EMAIL) { admin.email = ADMIN_EMAIL; changed = true; }
+    if (ADMIN_PASSWORD && admin.passHash !== hashPassword(ADMIN_PASSWORD, admin.salt)) {
+      admin.passHash = hashPassword(ADMIN_PASSWORD, admin.salt);
+      changed = true;
+    }
+    if (admin.emailVerified !== true) { admin.emailVerified = true; changed = true; }
+    if (admin.role !== 'admin') { admin.role = 'admin'; changed = true; }
+    if (changed) save();
     return;
   }
-  const admin = makeUser(ADMIN_NAME, ADMIN_PHONE, ADMIN_PASSWORD, { role: 'admin', country: 'Venezuela', email: ADMIN_EMAIL });
-  db.users[admin.id] = admin;
+  const nuevo = makeUser(ADMIN_NAME, ADMIN_PHONE, ADMIN_PASSWORD, { role: 'admin', country: 'Venezuela', email: ADMIN_EMAIL });
+  nuevo.emailVerified = true;
+  db.users[nuevo.id] = nuevo;
   save();
-  console.log('Servidor publico creado para ' + (ADMIN_EMAIL || ADMIN_PHONE));
-  if (!process.env.ADMIN_PASSWORD) {
-    console.warn('[aviso] Falta ADMIN_PASSWORD. Clave inicial generada: ' + ADMIN_PASSWORD);
-    console.warn('[aviso] Entra con esa clave y cambiala, o define ADMIN_PASSWORD en el servidor.');
-  }
+  console.log('Administrador creado: ' + (ADMIN_EMAIL || ADMIN_PHONE));
 }
 
 ensureAdmin();
@@ -507,6 +535,23 @@ app.post('/api/resend-code', async (req, res) => {
   res.json({ ok: true, codeSent: sent, email: maskEmail(user.email) });
 });
 
+/* Acceso exclusivo del personal autorizado (administrador) */
+app.post('/api/admin/login', (req, res) => {
+  const body = req.body || {};
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  if (!email || !password) return res.status(400).json({ error: 'Escribe el correo y la clave' });
+  const admin = Object.values(db.users).find(
+    (u) => u.role === 'admin' && String(u.email || '').toLowerCase() === email
+  );
+  if (!admin || admin.passHash !== hashPassword(password, admin.salt)) {
+    return res.status(401).json({ error: 'Correo o clave del personal autorizado incorrectos' });
+  }
+  admin.lastSeen = now();
+  save();
+  res.json({ token: tokenFor(admin), user: publicUser(admin) });
+});
+
 /* Entrar con cedula y contrasena */
 app.post('/api/login', async (req, res) => {
   const body = req.body || {};
@@ -603,13 +648,45 @@ app.post('/api/profile', auth, (req, res) => {
 /* --- eliminar cuenta --- */
 app.delete('/api/account', auth, (req, res) => {
   const me = req.user;
-  if (me.role === 'admin') return res.status(400).json({ error: 'La cuenta del servidor publico no se puede eliminar' });
+  if (me.role === 'admin') return res.status(400).json({ error: 'La cuenta del administrador no se puede eliminar' });
+
+  const archivos = [];
+
+  // 1) Conversaciones donde participa: se borran completas (chat + mensajes)
   Object.keys(db.chats).forEach((cid) => {
-    if (db.chats[cid].members.includes(me.id)) { delete db.chats[cid]; delete db.messages[cid]; }
+    const chat = db.chats[cid];
+    if (!chat || !Array.isArray(chat.members)) return;
+    const msgs = db.messages[cid] || [];
+    if (chat.members.includes(me.id)) {
+      msgs.forEach((m) => { if (m.url) archivos.push(m.url); if (m.file && m.file.url) archivos.push(m.file.url); });
+      delete db.chats[cid];
+      delete db.messages[cid];
+    } else {
+      // 2) En conversaciones de otras personas: se borran solo sus mensajes
+      db.messages[cid] = msgs.filter((m) => m.senderId !== me.id);
+    }
   });
+
+  // 3) Archivos subidos por esa persona (enviados o no) + los referenciados en sus mensajes
+  if (db.uploads) {
+    Object.keys(db.uploads).forEach((nombre) => {
+      if (db.uploads[nombre] === me.id) { archivos.push('/uploads/' + nombre); delete db.uploads[nombre]; }
+    });
+  }
+  archivos.forEach((u) => {
+    try {
+      const nombre = path.basename(String(u));
+      if (nombre) fs.unlinkSync(path.join(UPLOAD_DIR, nombre));
+    } catch (e) {}
+  });
+
+  // 4) Registros de visitas
+  if (Array.isArray(db.visits)) db.visits = db.visits.filter((v) => v && v.userId !== me.id);
+
+  // 5) La cuenta
   delete db.users[me.id];
   save();
-  res.json({ ok: true });
+  res.json({ ok: true, eliminado: true });
 });
 
 /* --- chats --- */
@@ -709,6 +786,10 @@ app.post('/api/upload', auth, (req, res) => {
   const ext = MIME_EXT[mime] || path.extname(String(name || '')).slice(0, 8) || '.bin';
   const fileName = uid('f_') + ext;
   fs.writeFileSync(path.join(UPLOAD_DIR, fileName), buffer);
+  // Se guarda el dueño del archivo para poder borrarlo si elimina su cuenta
+  if (!db.uploads) db.uploads = {};
+  db.uploads[fileName] = req.user.id;
+  save();
   res.json({ url: '/uploads/' + fileName, mime, size: buffer.length, name: String(name || '').slice(0, 120) });
 });
 

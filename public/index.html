@@ -10,6 +10,10 @@
   <link rel="icon" href="favicon-32.png" sizes="32x32" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="stylesheet" href="styles.css" />
+  <style>
+    .auth-card{position:relative}
+    .admin-corner{position:absolute;top:10px;right:10px;background:transparent;border:0;color:#64748b;font-size:11.5px;text-decoration:underline;padding:4px 6px;cursor:pointer;font-family:inherit}
+  </style>
 </head>
 <body>
 
@@ -17,6 +21,7 @@
 <section class="auth" id="authScreen">
   <div class="tricolor"></div>
   <div class="auth-card">
+    <button class="admin-corner" type="button" onclick="App.showAdminAuth()">Personal autorizado</button>
     <img class="auth-logo" src="icon-192.png" alt="Tramites Venezolanos en Linea" />
     <h1>Tramites Venezolanos en Linea</h1>
     <p class="muted">Cedula, licencia y antecedentes penales. Te acompanamos en todo el tramite.</p>
@@ -75,6 +80,14 @@
     </div>
 
     <!-- Confirmar correo con codigo -->
+    <div id="adminAuthPanel" class="hidden">
+      <p class="muted">Acceso exclusivo del personal autorizado.</p>
+      <label class="field"><span>Correo del administrador</span><input id="adminEmail" type="email" placeholder="correo@ejemplo.com" autocomplete="username" /></label>
+      <label class="field"><span>Clave</span><input id="adminPassword" type="password" placeholder="Tu clave" autocomplete="current-password" /></label>
+      <button class="btn primary" onclick="App.submitAdminLogin()">Entrar como personal autorizado</button>
+      <button class="linkbtn" type="button" onclick="App.authTab('login')">Volver</button>
+    </div>
+
     <div id="verifyPanel" class="hidden">
       <p class="muted" id="verifyHint">Enviamos un codigo de 6 digitos a tu correo. Escribelo para entrar.</p>
       <label class="field"><span>Codigo del correo</span><input id="verifyCode" type="text" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" /></label>
@@ -249,7 +262,9 @@
         <label class="field"><span>Pais</span><input id="profileCountry" disabled /></label>
         <button class="btn primary" onclick="App.saveProfile()">Guardar cambios</button>
         <button class="btn ghost" onclick="App.openAdmin()" id="adminBtn" style="display:none">Panel del servidor publico</button>
+        <button class="btn ghost" onclick="App.logout()">Cerrar sesion</button>
         <button class="btn danger" onclick="App.deleteAccount()">Eliminar mi cuenta</button>
+        <p class="muted center" style="font-size:12px;margin-top:6px">Eliminar mi cuenta borra todo: tus datos, tus conversaciones y tus archivos.</p>
         <p class="version-line muted" id="appVersion"></p>
       </div>
     </div>

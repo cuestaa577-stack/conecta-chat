@@ -156,7 +156,7 @@ const App = (() => {
   });
 
   /* ------------------------------ acceso ------------------------------ */
-  const AUTH_PANELS = ['login', 'register', 'forgot', 'reset', 'code', 'verify'];
+  const AUTH_PANELS = ['login', 'register', 'forgot', 'reset', 'code', 'verify', 'adminAuth'];
   let authPending = { cedula: '' };
 
   function showAuthPanel(name) {
@@ -252,7 +252,9 @@ const App = (() => {
   }
 
   /* Crear cuenta: cedula + fecha de nacimiento + correo */
+  let enviandoRegistro = false;
   async function submitRegister() {
+    if (enviandoRegistro) return;
     const name = ($('#regName').value || '').trim();
     const cedula = cedulaText($('#regCedula').value);
     const birthDate = $('#regBirth').value || '';
@@ -266,6 +268,7 @@ const App = (() => {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return toast('Escribe un correo valido');
     if (password.length < 8) return toast('La contrasena debe tener al menos 8 caracteres');
 
+    enviandoRegistro = true;
     try {
       const data = await api('/api/register', {
         method: 'POST',
@@ -274,6 +277,7 @@ const App = (() => {
       // La cuenta queda SIN verificar: primero debe escribir el código del correo.
       showVerifyPanel(data.cedula || cedula, data.email, data.codeSent);
     } catch (e) { toast(e.message); }
+    finally { enviandoRegistro = false; }
   }
 
   /* Olvide mi contrasena: pide el codigo al correo */
@@ -325,6 +329,28 @@ const App = (() => {
     } catch (e) { toast(e.message); }
   }
 
+  /* Acceso del personal autorizado (administrador) */
+  function showAdminAuth() {
+    const e = $('#adminEmail'); if (e) e.value = '';
+    const c = $('#adminPassword'); if (c) c.value = '';
+    showAuthPanel('adminAuth');
+    setTimeout(() => { const i = $('#adminEmail'); if (i) i.focus(); }, 250);
+  }
+
+  async function submitAdminLogin() {
+    const email = ($('#adminEmail').value || '').trim();
+    const password = ($('#adminPassword').value || '');
+    if (!email || !password) return toast('Escribe el correo y la clave del administrador');
+    try {
+      const data = await api('/api/admin/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      });
+      await finishAuth(data, false);
+      toast('Bienvenido, personal autorizado');
+    } catch (e) { toast(e.message); }
+  }
+
   /* Pantalla obligatoria de verificación (antes de entrar a la app) */
   function showVerifyPanel(cedula, email, codeSent) {
     authPending = { cedula: cedula || '', email: email || '' };
@@ -341,10 +367,13 @@ const App = (() => {
     setTimeout(() => { const i = $('#verifyCode'); if (i) i.focus(); }, 250);
   }
 
+  let verificando = false;
   async function submitVerify() {
+    if (verificando) return;
     const code = ($('#verifyCode').value || '').replace(/\D/g, '');
     if (!/^\d{6}$/.test(code)) return toast('Escribe el codigo de 6 digitos');
     if (!authPending.cedula) return authTab('login');
+    verificando = true;
     try {
       const data = await api('/api/verify-email', {
         method: 'POST',
@@ -354,6 +383,7 @@ const App = (() => {
       await finishAuth(data, true);
       toast('Correo confirmado. Bienvenido');
     } catch (e) { toast(e.message); }
+    finally { verificando = false; }
   }
 
   async function resendVerify() {
@@ -807,7 +837,7 @@ const App = (() => {
   }
 
   async function deleteAccount() {
-    const ok = confirm('Se eliminara tu cuenta y tus conversaciones. Esta accion no se puede deshacer. Continuar?');
+    const ok = confirm('Se eliminara tu cuenta POR COMPLETO: tus datos, tus conversaciones, tus mensajes y tus archivos. No se puede deshacer. Continuar?');
     if (!ok) return;
     try {
       await api('/api/account', { method: 'DELETE' });
@@ -917,7 +947,7 @@ const App = (() => {
 
   return {
     authTab, submitLogin, submitRegister, sendForgot, submitReset, submitCode, resendReset,
-    submitVerify, resendVerify,
+    submitVerify, resendVerify, showAdminAuth, submitAdminLogin,
     back, pickService, pickOption, pickGrade, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
     openProfile, pickAvatar, saveProfile, deleteAccount, openAdmin, openChatFromAdmin, openFirstChat,
