@@ -1,6 +1,6 @@
 /* Conecta Chat - service worker (instalable + lo mas reciente primero) */
-const CACHE = 'tramites-ve-v18';
-const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.json', './bg.jpg', './logos/saime.png', './logos/intt.png', './logos/justicia.png', './icon-192.png'];
+const CACHE = 'tramites-ve-v19';
+const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.json', './bg.jpg', './logos/saime.png', './galeria/01-caminantes.jpg', './galeria/02-joven-bandera.jpg', './galeria/03-comunidad.jpg', './logos/intt.png', './logos/justicia.png', './icon-192.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
