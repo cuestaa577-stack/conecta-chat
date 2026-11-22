@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v2.3';
+  const APP_VERSION = 'v2.4';
 
   const SERVICES = {
     cedula: {
@@ -809,6 +809,12 @@ const App = (() => {
     $('#profilePhone').value = state.me.phone || '';
     $('#profileEmail').value = state.me.email || '';
     $('#profileCountry').value = state.me.country || '';
+    const cd = state.me.cedulaData;
+    if (cd) {
+      $('#cedulaNac').value = (cd.nacionalidad === 'E') ? 'E' : 'V';
+      $('#cedulaNum').value = cd.cedula || '';
+    }
+    renderCedulaData(cd || null);
     $('#appVersion').textContent = 'Tramites Venezolanos en Linea ' + APP_VERSION;
     const adminBtn = $('#adminBtn');
     if (adminBtn) adminBtn.style.display = state.me.role === 'admin' ? 'block' : 'none';
@@ -858,6 +864,56 @@ const App = (() => {
       $('#profileCountry').value = state.me.country || '';
       toast('Cambios guardados');
     } catch (e) { toast(e.message); }
+  }
+
+  /* ------------------------------ cedula (datos reales) ------------------------------ */
+  async function verifyCedula() {
+    if (!state.me) return;
+    const nac = String(($('#cedulaNac') || {}).value || 'V').toUpperCase() === 'E' ? 'E' : 'V';
+    const num = String(($('#cedulaNum') || {}).value || '').replace(/\D/g, '');
+    if (num.length < 6) return toast('Escribe el numero de cedula');
+    const btn = $('#cedulaBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Consultando...'; }
+    try {
+      const data = await api('/api/cedula/verify', {
+        method: 'POST',
+        body: JSON.stringify({ nacionalidad: nac, cedula: num }),
+      });
+      state.me = data.user;
+      renderCedulaData(state.me.cedulaData);
+      toast('Datos verificados');
+    } catch (e) {
+      const box = $('#cedulaResult');
+      if (box) { box.classList.remove('hidden'); box.innerHTML = '<div class="cedula-error">' + esc(e.message) + '</div>'; }
+      toast(e.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Consultar datos reales'; }
+    }
+  }
+
+  function renderCedulaData(d) {
+    const box = $('#cedulaResult');
+    if (!box) return;
+    if (!d) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+    const cne = d.cne || {};
+    const nombreCompleto = [d.primer_nombre, d.segundo_nombre, d.primer_apellido, d.segundo_apellido].filter(Boolean).join(' ');
+    const row = (k, v) => (v ? '<div class="row"><span>' + esc(k) + '</span><b>' + esc(v) + '</b></div>' : '');
+    box.innerHTML =
+      '<h4>Datos verificados</h4>' +
+      row('Nombre completo', nombreCompleto) +
+      row('Primer nombre', d.primer_nombre) +
+      row('Segundo nombre', d.segundo_nombre) +
+      row('Primer apellido', d.primer_apellido) +
+      row('Segundo apellido', d.segundo_apellido) +
+      row('Cedula', (d.nacionalidad || '') + '-' + (d.cedula || '')) +
+      row('RIF', d.rif) +
+      '<div class="cne">' +
+        row('Estado', cne.estado) +
+        row('Municipio', cne.municipio) +
+        row('Parroquia', cne.parroquia) +
+        row('Centro electoral', cne.centro_electoral) +
+      '</div>';
+    box.classList.remove('hidden');
   }
 
   function openEditData() {
@@ -1022,7 +1078,7 @@ const App = (() => {
     submitVerify, resendVerify, showAdminAuth, submitAdminLogin,
     back, pickService, pickOption, pickGrade, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
-    openProfile, pickAvatar, saveProfileChanges, openEditData, closeEditData, savePersonalData, deleteChat,
+    openProfile, pickAvatar, saveProfileChanges, verifyCedula, renderCedulaData, openEditData, closeEditData, savePersonalData, deleteChat,
     deleteAccount, openAdmin, openChatFromAdmin, openFirstChat,
     viewImage, closeViewer, logout,
   };
