@@ -79,20 +79,22 @@ Si no se configura nada, la aplicación sigue funcionando: los códigos aparecen
 
 ## Verificación de cédula con datos reales (api.cedula.com.ve)
 
-En **Mi perfil** hay un bloque **"Verificar cédula (datos reales)"**: la persona elige la nacionalidad (V/E), escribe el número y pulsa **"Consultar datos reales"**. Si la consulta sale bien, se guardan y se muestran en el perfil: nacionalidad, cédula, RIF, primer y segundo apellido, primer y segundo nombre, y los datos del CNE (estado, municipio, parroquia y centro electoral).
+**Automático al registrarse.** Cuando la persona crea su cuenta y escribe su cédula, el servidor consulta `api.cedula.com.ve` en ese momento y **guarda de una vez en su perfil** los datos reales que devuelve la API: nacionalidad, cédula, RIF, primer y segundo apellido, primer y segundo nombre, y los datos del CNE (estado, municipio, parroquia y centro electoral). La persona **no los escribe a mano**: la API es la fuente. Al entrar a la app esos datos ya aparecen en la pantalla principal (bloque **"Consultar cédula Venezolana"**) y en su perfil. Si la API no responde o no encuentra la cédula, la cuenta se crea igual (no se bloquea) y se reintenta al confirmar el correo.
+
+**Consulta manual.** Además, en la pantalla principal hay un bloque **"Consultar cédula Venezolana"**: la persona elige la nacionalidad (V/E), escribe el número y pulsa **"Consultar datos reales"** para refrescar o completar sus datos.
 
 **La consulta la hace el servidor, nunca el navegador.** Las credenciales (`APP-ID` y token) se leen de variables de entorno y no se envían al cliente: el frontend solo llama a `POST /api/cedula/verify` con la cédula, y el backend consulta `api.cedula.com.ve` y devuelve los datos ya limpios.
 
 | Variable | Obligatoria | Para qué sirve |
 | --- | --- | --- |
-| `CEDULA_API_APP_ID` | sí | El **APP-ID** que da api.cedula.com.ve |
-| `CEDULA_API_TOKEN` | sí | El **token** que da api.cedula.com.ve |
+| `CEDULA_APP_ID` | sí | El **APP-ID** que da api.cedula.com.ve |
+| `CEDULA_TOKEN` | sí | El **token** que da api.cedula.com.ve |
 | `CEDULA_API_URL` | no | Dirección del API (por defecto `https://api.cedula.com.ve/api/v1`) |
 
 ### Configurar en Render
 
 1. Entra al servicio en Render → **Environment**.
-2. Añade `CEDULA_API_APP_ID` con tu APP-ID y `CEDULA_API_TOKEN` con tu token (tipo *Secret*).
+2. Añade `CEDULA_APP_ID` con tu APP-ID y `CEDULA_TOKEN` con tu token (tipo *Secret*).
 3. Guarda: Render reinicia solo con las nuevas variables.
 
 Hasta que no se configuren, el bloque sigue visible pero al consultar avisa **"La verificación de cédula no está configurada en el servidor"**; no se rompe nada.
