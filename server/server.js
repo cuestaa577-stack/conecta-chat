@@ -50,6 +50,8 @@ function parseFrom() {
   return { name: MAIL_FROM_NAME, email: raw };
 }
 
+let lastMailError = '';
+
 async function sendViaApi(to, subject, text) {
   const provider = detectProvider();
   if (!MAIL_API_KEY || !provider) return null;
@@ -89,9 +91,11 @@ async function sendViaApi(to, subject, text) {
     }
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
-      console.error('[correo] ' + provider + ' respondio ' + res.status + ': ' + String(detail).slice(0, 300));
+      lastMailError = provider + ' respondio ' + res.status + ': ' + String(detail).slice(0, 300);
+      console.error('[correo] ' + lastMailError);
       return false;
     }
+    lastMailError = '';
     return true;
   } catch (e) {
     console.error('[correo] Fallo el envio por ' + provider + ': ' + e.message);
@@ -1078,6 +1082,30 @@ app.post('/api/upload', auth, async (req, res) => {
   db.uploads[fileName] = req.user.id;
   save();
   res.json({ url: '/uploads/' + fileName, mime, size: buffer.length, name: String(name || '').slice(0, 120) });
+});
+
+/* --- probar el correo desde el panel --- */
+app.post('/api/admin/test-mail', auth, adminOnly, async (req, res) => {
+  const provider = detectProvider();
+  const from = parseFrom();
+  if (!MAIL_API_KEY || !provider) {
+    return res.status(400).json({ error: 'Falta MAIL_API_KEY en las variables del servidor' });
+  }
+  if (!from.email) {
+    return res.status(400).json({ error: 'Falta MAIL_FROM con el correo remitente' });
+  }
+  const to = String((req.body && req.body.to) || req.user.email || '').trim();
+  if (!to) return res.status(400).json({ error: 'Escribe un correo de destino' });
+
+  lastMailError = '';
+  const ok = await sendCodeEmail(to, '123456', 'verify');
+  res.json({
+    ok: ok,
+    provider: provider,
+    from: from.email,
+    to: to,
+    detail: ok ? 'Correo enviado' : (lastMailError || 'No se pudo enviar')
+  });
 });
 
 /* --- panel del administrador --- */

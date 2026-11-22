@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v3.5';
+  const APP_VERSION = 'v3.6';
 
   const SERVICES = {
     cedula: {
@@ -1035,6 +1035,13 @@ const App = (() => {
           <div class="stat"><div class="n">${d.totals.visitsToday}</div><div class="l">Visitas de hoy</div></div>
         </div>
         <div class="panel">
+          <h3>Correo de la app</h3>
+          <p class="muted" style="font-size:12px;margin:0 0 8px">Envia un codigo de prueba para confirmar que los registros llegan.</p>
+          <input id="mailTestTo" class="mail-input" type="email" placeholder="tucorreo@ejemplo.com" value="${esc((d.mail && d.mail.to) || '')}" />
+          <button class="btn primary" id="mailTestBtn" onclick="App.testMail()">Enviar prueba</button>
+          <p id="mailTestResult" class="mail-test"></p>
+        </div>
+        <div class="panel">
           <h3>Conversaciones</h3>
           ${(d.conversations || []).map((c) => `<button class="panel-row tap" onclick="App.openChatFromAdmin('${c.chatId}')">
             <div class="who"><b>${esc(c.name)}</b><small>${esc(c.country)} \u00b7 ${esc(c.tramite ? c.tramite.serviceLabel + ' \u00b7 ' + c.tramite.subtypeLabel : 'Sin tramite')}</small><small>${esc(c.lastText || 'Sin mensajes todavia')}</small></div>
@@ -1061,6 +1068,26 @@ const App = (() => {
         </div>`;
     } catch (e) {
       box.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+    }
+  }
+
+  async function testMail() {
+    const input = $('#mailTestTo');
+    const to = input ? input.value.trim() : '';
+    const btn = $('#mailTestBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+    try {
+      const r = await api('/api/admin/test-mail', { method: 'POST', body: JSON.stringify({ to: to }) });
+      toast(r.ok ? 'Correo enviado a ' + r.to : 'No se pudo enviar: ' + r.detail);
+      const out = $('#mailTestResult');
+      if (out) {
+        out.textContent = (r.ok ? 'Listo. Revisa la bandeja de ' + r.to : 'Error: ' + r.detail);
+        out.className = 'mail-test ' + (r.ok ? 'ok' : 'bad');
+      }
+    } catch (e) {
+      toast(e.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Enviar prueba'; }
     }
   }
 
@@ -1220,7 +1247,7 @@ const App = (() => {
     openProfile, pickAvatar, saveProfileChanges, verifyCedula, renderCedulaData, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat,
     deleteAccount, openAdmin, openChatFromAdmin, openFirstChat,
     viewImage, closeViewer, logout,
-    installApp, dismissInstall, closeIosSheet,
+    installApp, dismissInstall, closeIosSheet, testMail,
   };
 })();
 window.App = App;
