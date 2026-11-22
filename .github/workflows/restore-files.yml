@@ -1,0 +1,35 @@
+name: restore-files
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/restore-files.yml'
+permissions:
+  contents: write
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Traer los archivos buenos del commit b18376ed
+        run: |
+          git show b18376ed:public/app.js > public/app.js
+          git show b18376ed:server/server.js > server/server.js
+      - name: Aplicar los cambios
+        run: |
+          git apply --verbose app.patch
+          git apply --verbose server.patch
+      - name: Comprobar sintaxis
+        run: |
+          node --check public/app.js
+          node --check server/server.js
+          wc -c public/app.js server/server.js
+      - name: Commit
+        run: |
+          git config user.name "restore-bot"
+          git config user.email "bot@local"
+          git add public/app.js server/server.js
+          git commit -m "fix: restaurar app.js y server.js con los cambios aplicados"
+          git push
