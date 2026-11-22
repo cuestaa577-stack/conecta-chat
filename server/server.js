@@ -167,7 +167,7 @@ async function consultarCedulaApi(nacionalidad, numero) {
   if (!cedulaApiConfigured()) {
     return {
       ok: false, code: 'no_configurada', status: 503,
-      message: 'La verificacion de cedula no esta configurada en el servidor. Faltan CEDULA_APP_ID y CEDULA_TOKEN.',
+      message: 'La verificacion de cedula no esta disponible en este momento. Intenta mas tarde.',
     };
   }
   const nac = String(nacionalidad || 'V').toUpperCase() === 'E' ? 'E' : 'V';
@@ -683,7 +683,7 @@ app.post('/api/register', async (req, res) => {
     return res.status(409).json({ error: 'Esa cedula ya tiene una cuenta. Entra con tu cedula y tu contrasena' });
   }
   if (Object.values(db.users).some((u) => (u.email || '') === email)) {
-    return res.status(409).json({ error: 'Ese correo ya tiene una cuenta' });
+    return req.status(409).json({ error: 'Ese correo ya tiene una cuenta' });
   }
 
   const user = makeUser(name, '', password, { country, email });
@@ -726,7 +726,7 @@ app.post('/api/verify-email', (req, res) => {
   user.emailVerified = true;
   user.lastSeen = now();
   save();
-  // Código correcto: recién aquí se inicia la sesión y entra a la app.
+  // Código correcto: recién se inicia la sesión y entra a la app.
   res.json({ ok: true, token: tokenFor(user), user: publicUser(user) });
 
   // Respaldo: si al registrarse la API no respondio, se reintenta al confirmar
@@ -1210,7 +1210,7 @@ wss.on('connection', (ws, req) => {
       if (!chat || !chat.members.includes(userId)) return;
       const m = {
         id: uid('m_'),
-        // clientId: permite al cliente reemplazar el mensaje "optimista" en vez
+        // clientId: permite al cliente reemplazar el mensaje "optimista" en uez
         // de agregarlo otra vez (esto causaba que se viera DUPLICADO).
         clientId: String(msg.localId || ''),
         chatId: chat.id,
