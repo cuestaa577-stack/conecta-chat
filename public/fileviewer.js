@@ -69,6 +69,25 @@
     return porDefecto || 'archivo';
   }
 
+  /* Nombre legible a partir del titulo del tramite + la extension real del
+     archivo. Se usa siempre en la descarga, porque el nombre que guarda el
+     servidor es un identificador interno (f_ab12cd.pdf) y no le dice nada a
+     la persona. */
+  function nombreLegible(blob) {
+    var t = $('#tramiteTitle');
+    var base = (t && t.textContent ? t.textContent : 'Documento').trim();
+    base = base.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Za-z0-9 ._-]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Documento';
+    var tipo = String((blob && blob.type) || '');
+    var ext = /pdf/i.test(tipo) ? '.pdf'
+      : /jpeg|jpg/i.test(tipo) ? '.jpg'
+      : /png/i.test(tipo) ? '.png'
+      : /webp/i.test(tipo) ? '.webp'
+      : /gif/i.test(tipo) ? '.gif'
+      : '.pdf';
+    return base.replace(/\s+/g, '-') + ext;
+  }
+
   function cargarPdf() {
     if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
     if (pdfLib) return pdfLib;
@@ -92,7 +111,6 @@
       var a = document.createElement('a');
       a.href = url;
       a.download = nombre || 'archivo';
-      a.setAttribute('data-fv-native', '1');
       document.body.appendChild(a);
       a.click();
       setTimeout(function () {
@@ -181,47 +199,32 @@
       });
   }
 
-  /* Titulo del tramite que se esta viendo, limpio, para usarlo como nombre. */
-  function tituloTramite() {
-    var t = $('#tramiteTitle');
-    var base = (t && t.textContent ? t.textContent : 'Documento').trim();
-    base = base.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^A-Za-z0-9 ._-]+/g, ' ').replace(/\s+/g, ' ').trim();
-    return base || 'Documento';
-  }
-
-  /* Descarga NATIVA.
+  /* Descarga del documento.
      ---------------------------------------------------------------------
-     Antes se hacia fetch() y despues se pulsaba un <a download> con el blob.
-     Eso falla en el celular: al pasar por un await, el navegador ya no ve el
-     toque de la persona como "gesto de usuario" y bloquea la descarga en
-     silencio (el boton se pulsa pero el archivo nunca llega).
-
-     Ahora se navega directamente a la URL del archivo, de forma SINCRONA
-     dentro del propio toque. El servidor responde con
-     Content-Disposition: attachment, asi que el navegador descarga el archivo
-     sin salir de la app. El nombre legible viaja en ?name= y el servidor le
-     agrega la extension correcta. */
+     Se pide el archivo con fetch y se guarda con un nombre legible. Dos cosas
+     importantes:
+       1) Si el servidor responde con error (por ejemplo 403 porque el
+          administrador aun no habilito la descarga), se muestra el mensaje y
+          NO se guarda nada. Antes el navegador guardaba ese JSON de error como
+          si fuera el documento (el archivo "download.json" con
+          "Error: Sin archivos").
+       2) El nombre del archivo se arma con el titulo del tramite, no con el
+          identificador interno del servidor. */
   function descargar(url) {
-    try {
-      var sep = url.indexOf('?') >= 0 ? '&' : '?';
-      var a = document.createElement('a');
-      a.href = url + sep + 'name=' + encodeURIComponent(tituloTramite());
-      a.rel = 'noopener';
-      a.style.display = 'none';
-      // Marca para que el interceptor de clics NO vuelva a procesar este
-      // enlace (si no, se llamaria a si mismo en bucle y el nombre se
-      // repetiria varias veces).
-      a.setAttribute('data-fv-native', '1');
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(function () {
-        if (a.parentNode) a.parentNode.removeChild(a);
-      }, 2000);
-      toast('Descargando tu documento...');
-    } catch (e) {
-      toast('No se pudo descargar el documento');
-    }
+    toast('Preparando la descarga...');
+    return fetch(url, { credentials: 'same-origin' })
+      .then(function (res) {
+        if (!res.ok) {
+          return res.json().catch(function () { return {}; }).then(function (d) {
+            throw new Error((d && d.error) || 'No se pudo descargar el documento');
+          });
+        }
+        return res.blob().then(function (blob) {
+          if (!blob || !blob.size) throw new Error('El documento llego vacio. Intenta de nuevo.');
+          guardar(blob, nombreLegible(blob));
+        });
+      })
+      .catch(function (e) { toast(e.message); });
   }
 
   /* ------------------------- interceptacion de clics ------------------------ */
@@ -243,8 +246,6 @@
   document.addEventListener('click', function (ev) {
     var a = ev.target && ev.target.closest ? ev.target.closest('a') : null;
     if (!a) return;
-    // Enlaces que crea el propio visor para descargar: dejarlos pasar tal cual.
-    if (a.getAttribute('data-fv-native') === '1') return;
     var href = a.getAttribute('href') || '';
     if (!href || href === '#') return;
 
