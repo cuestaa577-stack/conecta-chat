@@ -223,6 +223,9 @@ const SUPABASE_URL = cleanEnv(process.env.SUPABASE_URL);
 const SUPABASE_KEY = cleanEnv(process.env.SUPABASE_KEY);
 const SUPABASE_TABLE = process.env.SUPABASE_TABLE || 'conecta_state';
 const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || 'media';
+/* Bucket PRIVADO solo para documentos de tramites y comprobantes: los
+   archivos pesados NO van a la base de datos, viven aqui. */
+const SUPABASE_DOC_BUCKET = process.env.SUPABASE_DOC_BUCKET || 'documentos';
 const STATE_ID = 'main';
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -494,9 +497,11 @@ async function load() {
   let migrar = false;
   let filasNuevas = 0;
   if (supabase) {
-    /* 1) Registros por fila (formato nuevo). */
+    /* 1) Registros por fila (formato nuevo). Los archivos guardados en la base
+       (kind 'files') se piden aparte: si pesan mucho, esa sola consulta tarda y
+       se aborta. Primero se carga todo lo demas para que la app arranque. */
     try {
-      const { data, error } = await supabase.from(RECORDS_TABLE).select('id,kind,key,data');
+      const { data, error } = await supabase.from(RECORDS_TABLE).select('id,kind,key,data').neq('kind', 'files');
       if (error) {
         if (esTablaFaltante(error.message)) {
           recordsOk = false;
@@ -516,6 +521,23 @@ async function load() {
           filasNuevas = data.length;
           console.log('Datos cargados desde Supabase por registro (' + Object.keys(db.users).length + ' cuentas, ' + data.length + ' filas)');
         }
+        /* Archivos de respaldo que sigan dentro de la base. Se aplican a mano
+           porque aplicarRegistros() reinicia la base completa. */
+        try {
+          const { data: filasArch, error: errArch } = await supabase.from(RECORDS_TABLE).select('id,kind,key,data').eq('kind', 'files');
+          if (errArch) {
+            console.error('[archivos] No se pudieron leer los archivos de la base:', errArch.message);
+          } else if (filasArch && filasArch.length) {
+            if (!db.files || typeof db.files !== 'object') db.files = {};
+            filasArch.forEach((f) => {
+              if (String(f.kind) !== 'files') return;
+              db.files[String(f.key)] = f.data;
+              firmas.set(f.id, firmaDe(f.data));
+              ultimos.set(f.id, f.data);
+            });
+            console.log('[archivos] ' + filasArch.length + ' archivo(s) de respaldo leidos de la base');
+          }
+        } catch (e) { console.error('[archivos] ' + e.message); }
       }
     } catch (e) {
       console.error('Supabase load exception:', e.message);
@@ -1129,6 +1151,15 @@ app.get('/uploads/:file', async (req, res) => {
       res.setHeader('Cache-Control', 'private, max-age=604800');
       return res.send(buf);
     }
+    /* Ultimo recurso: el archivo vive en Supabase Storage. */
+    const deNube = await leerArchivoDeNube(name);
+    if (deNube) {
+      res.setHeader('Content-Type', tipoPorBytes(deNube, '', name));
+      res.setHeader('Content-Length', String(deNube.length));
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'private, max-age=604800');
+      return res.send(deNube);
+    }
     return res.status(404).json({ error: 'Archivo no encontrado' });
   }
   /* Tipo por bytes: un archivo guardado sin mime (o con mime equivocado) se
@@ -1693,6 +1724,82 @@ const MIME_EXT = {
   'text/plain': '.txt'
 };
 
+/* --- almacenamiento de archivos fuera de la base ---
+   Los documentos se guardan en Supabase Storage (bucket privado). La base solo
+   guarda la ruta y el tipo: asi la sincronizacion con Supabase no carga
+   megabytes de base64 y no se cae por tiempo de espera. */
+let bucketDocsListo = false;
+async function asegurarBucketDocs() {
+  if (!supabase || bucketDocsListo) return !!supabase;
+  try {
+    const { data } = await supabase.storage.getBucket(SUPABASE_DOC_BUCKET);
+    if (data) { bucketDocsListo = true; return true; }
+  } catch (e) {}
+  try {
+    const { error } = await supabase.storage.createBucket(SUPABASE_DOC_BUCKET, { public: false });
+    if (error && !/already exists|duplicate/i.test(error.message)) {
+      console.error('[archivos] No se pudo crear el bucket ' + SUPABASE_DOC_BUCKET + ': ' + error.message);
+      return false;
+    }
+    bucketDocsListo = true;
+    console.log('[archivos] Bucket ' + SUPABASE_DOC_BUCKET + ' listo');
+    return true;
+  } catch (e) {
+    console.error('[archivos] Error creando el bucket: ' + e.message);
+    return false;
+  }
+}
+
+async function guardarArchivoEnNube(nombre, buffer, mime) {
+  if (!supabase) return false;
+  if (!(await asegurarBucketDocs())) return false;
+  try {
+    const { error } = await supabase.storage.from(SUPABASE_DOC_BUCKET)
+      .upload(nombre, buffer, { contentType: mime || 'application/octet-stream', upsert: true });
+    if (error) { console.error('[archivos] No se pudo subir ' + nombre + ': ' + error.message); return false; }
+    return true;
+  } catch (e) {
+    console.error('[archivos] Error subiendo ' + nombre + ': ' + e.message);
+    return false;
+  }
+}
+
+async function leerArchivoDeNube(nombre) {
+  if (!supabase) return null;
+  if (!(await asegurarBucketDocs())) return null;
+  try {
+    const { data, error } = await supabase.storage.from(SUPABASE_DOC_BUCKET).download(nombre);
+    if (error || !data) return null;
+    const ab = await data.arrayBuffer();
+    return Buffer.from(ab);
+  } catch (e) { return null; }
+}
+
+/* Al arrancar: mueve a la nube las copias pesadas que quedaron dentro de la
+   base y las borra de ahi. Sin esto, cada arranque tiene que leer varios MB de
+   base64 desde Supabase y la operacion se aborta por lenta. */
+async function migrarArchivosPesados() {
+  if (!supabase || !db.files || typeof db.files !== 'object') return;
+  const nombres = Object.keys(db.files);
+  if (!nombres.length) return;
+  let movidos = 0, liberado = 0, fallos = 0;
+  for (const nombre of nombres) {
+    const f = db.files[nombre];
+    if (!f || !f.data) { delete db.files[nombre]; continue; }
+    const bytes = Math.floor(f.data.length * 0.75);
+    if (bytes < 400 * 1024) continue;
+    const buf = Buffer.from(f.data, 'base64');
+    const ok = await guardarArchivoEnNube(nombre, buf, f.mime);
+    if (ok) { delete db.files[nombre]; movidos++; liberado += bytes; }
+    else { fallos++; if (fallos > 2) break; }
+  }
+  if (movidos) {
+    save();
+    console.log('[archivos] ' + movidos + ' archivo(s) movidos a Supabase Storage (' + (liberado / 1048576).toFixed(1) + ' MB liberados de la base)');
+  }
+  if (fallos) console.error('[archivos] Quedan copias en la base: revisa SUPABASE_URL/SUPABASE_KEY y el bucket ' + SUPABASE_DOC_BUCKET);
+}
+
 app.post('/api/upload', auth, async (req, res) => {
   const { dataUrl, name } = req.body || {};
   if (!dataUrl || typeof dataUrl !== 'string') return res.status(400).json({ error: 'Falta el archivo' });
@@ -1747,7 +1854,7 @@ app.post('/api/upload', auth, async (req, res) => {
    El nombre real viaja en la cabecera X-File-Name. */
 /* Tope de tamano de un documento (PDF). El mismo valor que usa el cliente.
    Las FOTOS tienen su propio tope mas alto porque se reducen antes de subir. */
-const MAX_DOC_BYTES = Math.floor(1.7 * 1024 * 1024);
+const MAX_DOC_BYTES = Math.floor(10 * 1024 * 1024);
 const MAX_IMG_BYTES = 12 * 1024 * 1024;
 
 app.post('/api/upload-raw', auth, (req, res) => {
@@ -1786,7 +1893,7 @@ app.post('/api/upload-raw', auth, (req, res) => {
     if (!res.headersSent) res.status(500).json({ error: 'No se pudo guardar el archivo' });
   });
 
-  salida.on('finish', () => {
+  salida.on('finish', async () => {
     if (abortado) return;
     if (!total) {
       try { fs.unlinkSync(destino); } catch (e) {}
@@ -1798,19 +1905,25 @@ app.post('/api/upload-raw', auth, (req, res) => {
     }
     if (!db.uploads) db.uploads = {};
     db.uploads[fileName] = req.user.id;
-    /* Copia en la base. Las FOTOS se respaldan hasta 12 MB (una foto de perfil
-       o un comprobante fotografiado no debe perderse al redesplegar: el disco de
-       Render es efimero). Los documentos grandes se quedan solo en disco. */
-    const esImagen = /^image\//i.test(mime);
-    const topeRespaldo = esImagen ? 12 * 1024 * 1024 : 8 * 1024 * 1024;
-    if (total <= topeRespaldo) {
+    /* El archivo se guarda en Supabase Storage (bucket privado) y la base solo
+       guarda la ruta. Antes se metia una copia en base64 dentro de la base y
+       eso inflaba la sincronizacion hasta hacerla abortar por tiempo de espera.
+       Si la nube no responde, queda la copia en la base como respaldo, pero
+       solo hasta 4 MB. */
+    let enNube = false;
+    try {
+      const buf = fs.readFileSync(destino);
+      enNube = await guardarArchivoEnNube(fileName, buf, mime);
+    } catch (e) { console.error('No se pudo leer el archivo recien subido:', e.message); }
+    if (!enNube && total <= 4 * 1024 * 1024) {
       try {
         if (!db.files) db.files = {};
         db.files[fileName] = { mime: mime, size: total, data: fs.readFileSync(destino).toString('base64') };
+        console.error('[archivos] Sin nube: ' + fileName + ' queda respaldado en la base (la sincronizacion sera mas lenta)');
       } catch (e) { console.error('No se pudo respaldar el archivo:', e.message); }
     }
     save();
-    res.json({ url: '/uploads/' + fileName, mime: mime, size: total, name: String(nombreOriginal || '').slice(0, 120) });
+    res.json({ url: '/uploads/' + fileName, mime: mime, size: total, name: String(nombreOriginal || '').slice(0, 120), enNube: enNube });
   });
 });
 
@@ -1862,6 +1975,7 @@ app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
         conversations: chats.length,
         messages: msgs,
         lastMessageAt: last || null,
+        bloqueo: bloqueoView(u),
         tramites: chats.map((c) => c.tramite).filter(Boolean)
       };
     })
@@ -2724,6 +2838,8 @@ wss.on('connection', (ws, req) => {
   await load();
   dedupeVisits();
   ensureAdmin();
+  /* Mueve a la nube las copias pesadas que quedaron dentro de la base. */
+  try { await migrarArchivosPesados(); } catch (e) { console.error('[archivos] ' + e.message); }
   server.listen(PORT, () => {
     console.log('Tramites Venezolanos en Linea escuchando en el puerto ' + PORT);
     console.log('Persistencia: ' + (supabase ? 'Supabase (permanente)' : 'archivo local (se borra al reiniciar)'));

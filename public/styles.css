@@ -331,11 +331,13 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 #chatsList { padding: 12px 14px 24px; display: flex; flex-direction: column; gap: 8px; }
 .chat-row {
   display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
-  background: var(--card); border: 1px solid var(--border); border-radius: 14px;
-  padding: 12px; cursor: pointer; color: var(--text);
+  background: var(--card); border: 1px solid rgba(215, 228, 242, .9); border-radius: 18px;
+  padding: 11px 12px; cursor: pointer; color: var(--text);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .04); transition: box-shadow .14s, transform .14s;
 }
+.chat-row:active { transform: scale(.995); box-shadow: 0 8px 20px rgba(16, 24, 40, .09); }
 .chat-row .grow { flex: 1; min-width: 0; }
-.chat-row .t { font-size: 14.5px; font-weight: 700; }
+.chat-row .t { font-size: 14.5px; font-weight: 700; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .chat-row .s { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-row .time { font-size: 11px; color: var(--muted); }
 
@@ -354,34 +356,98 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 
 /* Chat */
 .chat-tramite {
-  background: var(--blue-soft); color: var(--navy); font-size: 12.5px; font-weight: 600;
-  padding: 9px 14px; border-bottom: 1px solid var(--border);
+  background: #eaf2fc; color: var(--navy); font-size: 12.5px; font-weight: 700;
+  padding: 9px 14px; border-bottom: 1px solid rgba(215, 228, 242, .9);
 }
 .chat-body {
-  flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 8px;
-  background:
-    linear-gradient(rgba(244, 246, 251, .72), rgba(244, 246, 251, .82)),
-    url('bg.jpg') center/cover no-repeat;
+  flex: 1; overflow-y: auto; padding: 14px 14px 18px; display: flex; flex-direction: column;
+  background: #eef4fb;
+  background-image:
+    radial-gradient(circle at 18% 6%, rgba(31, 95, 158, .08), transparent 44%),
+    radial-gradient(circle at 86% 94%, rgba(43, 111, 174, .08), transparent 48%);
+  scroll-behavior: smooth;
 }
-.bubble { max-width: 78%; padding: 9px 12px; border-radius: 14px; font-size: 14.5px; line-height: 1.4; position: relative; word-wrap: break-word; }
-.bubble.mine { align-self: flex-end; background: var(--navy); color: #fff; border-bottom-right-radius: 5px; }
-.bubble.theirs { align-self: flex-start; background: var(--card); border: 1px solid var(--border); border-bottom-left-radius: 5px; }
-.bubble .meta { display: block; font-size: 10.5px; opacity: .65; margin-top: 4px; text-align: right; }
-.bubble img.media { max-width: 100%; border-radius: 10px; display: block; margin-bottom: 5px; }
+.chat-empty {
+  margin: auto; text-align: center; color: var(--muted); display: flex; flex-direction: column;
+  align-items: center; gap: 5px; padding: 30px 22px;
+}
+.chat-empty b { color: var(--text); font-size: 15px; }
+.chat-empty span { font-size: 13px; }
+.chat-empty-ic {
+  width: 56px; height: 56px; border-radius: 50%; background: #fff; color: var(--navy);
+  display: flex; align-items: center; justify-content: center; margin-bottom: 4px;
+  box-shadow: 0 8px 20px rgba(16, 24, 40, .09);
+}
+.chat-empty-ic svg { width: 26px; height: 26px; }
+
+.day-sep { display: flex; justify-content: center; margin: 14px 0 10px; }
+.day-sep span {
+  background: rgba(31, 95, 158, .1); color: #46698f; font-size: 11.5px; font-weight: 800;
+  letter-spacing: .02em; padding: 4px 12px; border-radius: 999px;
+}
+
+.msg-row { display: flex; align-items: flex-end; gap: 7px; margin-top: 10px; }
+.msg-row.pegado { margin-top: 2px; }
+.msg-row.mine { justify-content: flex-end; }
+.b-avatar {
+  width: 27px; height: 27px; border-radius: 50%; background: var(--navy); color: #fff;
+  font-size: 10.5px; font-weight: 800; display: flex; align-items: center; justify-content: center;
+  background-size: cover; background-position: center; background-repeat: no-repeat;
+  flex: 0 0 auto; box-shadow: 0 1px 3px rgba(16, 24, 40, .14);
+}
+.b-avatar.hueco { background: transparent; box-shadow: none; }
+
+.bubble {
+  max-width: 79%; padding: 9px 13px 6px; border-radius: 18px; font-size: 14.6px; line-height: 1.45;
+  word-wrap: break-word; position: relative; animation: bubbleIn .16s ease-out;
+}
+.bubble.mine {
+  background: linear-gradient(135deg, #1f5f9e, #2f79bb); color: #fff;
+  border-bottom-right-radius: 7px; box-shadow: 0 4px 14px rgba(31, 95, 158, .26);
+}
+.bubble.theirs {
+  background: #fff; color: var(--text); border: 1px solid rgba(215, 228, 242, .9);
+  border-bottom-left-radius: 7px; box-shadow: 0 2px 8px rgba(16, 24, 40, .07);
+}
+.bubble.mine.pegado-arriba { border-top-right-radius: 8px; }
+.bubble.mine.pegado-abajo { border-bottom-right-radius: 8px; }
+.bubble.theirs.pegado-arriba { border-top-left-radius: 8px; }
+.bubble.theirs.pegado-abajo { border-bottom-left-radius: 8px; }
+.bubble.pendiente { opacity: .78; }
+.bubble .meta {
+  display: flex; align-items: center; justify-content: flex-end; gap: 4px;
+  font-size: 10.5px; margin-top: 3px; color: #93a3b8;
+}
+.bubble.mine .meta { color: rgba(255, 255, 255, .82); }
+.bubble .meta .tick { font-size: 12px; line-height: 1; }
+.bubble img.media, .bubble video.media { max-width: 100%; border-radius: 12px; display: block; margin-bottom: 4px; }
 .bubble .gone { opacity: .6; font-style: italic; }
-.bubble .file-link { display: flex; align-items: center; gap: 8px; color: inherit; text-decoration: none; font-weight: 600; }
+.bubble .file-link { display: flex; align-items: center; gap: 8px; color: inherit; text-decoration: none; font-weight: 700; }
 .bubble .file-link svg { width: 20px; height: 20px; flex-shrink: 0; }
+@keyframes bubbleIn {
+  from { opacity: 0; transform: translateY(5px) scale(.99); }
+  to { opacity: 1; transform: none; }
+}
+
 .chat-input {
-  display: flex; align-items: flex-end; gap: 8px; padding: 9px 10px max(9px, env(safe-area-inset-bottom));
-  background: var(--card); border-top: 1px solid var(--border); flex-shrink: 0;
+  display: flex; align-items: flex-end; gap: 8px;
+  padding: 10px 12px max(10px, env(safe-area-inset-bottom));
+  background: rgba(255, 255, 255, .94); backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(215, 228, 242, .85); flex-shrink: 0;
 }
 .chat-input textarea {
   flex: 1; border: 1px solid var(--border); outline: none; resize: none; font-size: 15px;
-  padding: 11px 14px; border-radius: 20px; background: var(--bg); max-height: 110px;
-  font-family: inherit; color: var(--text);
+  padding: 11px 16px; border-radius: 22px; background: #f2f7fd; max-height: 110px;
+  font-family: inherit; color: var(--text); transition: border-color .15s, background .15s;
 }
-.chat-input .iconbtn { background: var(--navy); color: #fff; }
-.chat-input .attach { background: var(--blue-soft); color: var(--navy); }
+.chat-input textarea:focus { border-color: #9dc0e6; background: #fff; }
+.chat-input .iconbtn { width: 42px; height: 42px; }
+.chat-input .send {
+  background: linear-gradient(135deg, #1f5f9e, #2f79bb); color: #fff;
+  box-shadow: 0 5px 14px rgba(31, 95, 158, .34);
+}
+.chat-input .send:active { transform: scale(.95); }
+.chat-input .attach { background: #eaf2fc; color: var(--navy); }
 
 /* Perfil */
 .profile-head { padding: 22px 18px 6px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
@@ -577,18 +643,6 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .preview-img { display: block; width: 100%; height: auto; max-height: 62vh; object-fit: contain; background: #fff; }
 .preview-pdf { display: block; width: 100%; height: 62vh; border: 0; background: #fff; }
 .preview-none { padding: 26px 14px; text-align: center; font-size: 13px; color: var(--muted); }
-.preview-mark {
-  position: absolute; inset: 0; pointer-events: none; display: flex; align-items: center; justify-content: center;
-  overflow: hidden;
-}
-/* La marca de agua es una sola: "VISTA PREVIA" en azul, centrada. Se dibuja
-   sobre el propio documento (canvas), asi que no se puede quitar con el
-   inspector; esta regla queda solo por compatibilidad. */
-.preview-mark span {
-  font-size: 15px; font-weight: 900; letter-spacing: .28em; color: rgba(31, 95, 158, .55);
-  border: 2px solid rgba(31, 95, 158, .35); border-radius: 10px; padding: 8px 14px;
-  transform: rotate(-20deg); white-space: nowrap; text-transform: uppercase;
-}
 .preview-panel.locked { border-style: dashed; }
 .locked-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; color: #64748b; background: #f1f3f7; }
 .locked-btn .lock-ic { width: 17px; height: 17px; }

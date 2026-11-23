@@ -281,6 +281,27 @@ a WhatsApp contaria como intento.
 > Android con `FLAG_SECURE`; si algun dia se necesita, ese es el camino (por ejemplo con
 > Capacitor).
 
+## Almacenamiento de archivos (documentos y comprobantes)
+
+Los archivos **no** se guardan dentro de la base de datos. Van a **Supabase
+Storage**, en un bucket privado, y la base solo guarda la ruta y el tipo.
+
+- Variable `SUPABASE_DOC_BUCKET` (opcional): nombre del bucket. Por defecto
+  `documentos`. Si no existe, la app lo crea sola al arrancar (necesita la
+  secret key en `SUPABASE_KEY`).
+- El bucket es **privado**: los archivos se entregan solo por `/uploads/<archivo>`,
+  que exige sesion valida. Nadie los abre por URL publica.
+- Los archivos se sirven desde el disco si estan ahi; si el disco se reinicio
+  (Render free es efimero), se traen del bucket sin cambiar la URL.
+- Tope por documento: **10 MB** (antes 1.70 MB), subido por partes (streaming),
+  sin cargar el archivo entero en memoria.
+- Al arrancar, la app mueve a Storage las copias viejas en base64 que quedaron
+  dentro de la base y las borra de ahi. Eso es lo que hacia que la
+  sincronizacion con Supabase tardara y saliera
+  "Supabase tardo demasiado (This operation was aborted)".
+- Si la nube no responde, la app sigue funcionando y guarda un respaldo en la
+  base solo hasta 4 MB, avisando en el log.
+
 ## Estructura
 
 ```

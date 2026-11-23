@@ -1,15 +1,15 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v4.1';
+  const APP_VERSION = 'v4.2';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
-     Se fija en 1.70 MB, que es el limite pedido: el documento de 1.35 MB
-     entra de sobra. El mismo tope se comprueba en el servidor, para que no
-     dependa solo del navegador. */
-  const MAX_DOC_BYTES = Math.floor(1.7 * 1024 * 1024);
-  const MAX_DOC_TEXTO = '1.70 MB';
+     Ahora que el archivo se guarda en Supabase Storage (no dentro de la base)
+     el tope sube a 10 MB y sigue viajando por partes, sin cargarlo entero en
+     memoria. El mismo tope se comprueba en el servidor. */
+  const MAX_DOC_BYTES = Math.floor(10 * 1024 * 1024);
+  const MAX_DOC_TEXTO = '10 MB';
 
   const SERVICES = {
     cedula: {
@@ -905,12 +905,43 @@ const App = (() => {
     } catch (e) { toast(e.message); }
   }
 
+  /* Mensajes con aspecto moderno: separador de dia, burbujas agrupadas,
+     avatar de la otra parte, hora y estado de envio. */
   function renderMessages() {
     const body = $('#chatBody');
     if (!body) return;
     const msgs = state.messages[state.currentChatId] || [];
-    body.innerHTML = msgs.map((m) => {
+    if (!msgs.length) {
+      body.innerHTML = `<div class="chat-empty">
+        <div class="chat-empty-ic"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-11.6 7.1L4 20.5l1.4-5.4A8 8 0 1121 12z"/></svg></div>
+        <b>Escribe tu primer mensaje</b>
+        <span>El servidor público te responde por aquí.</span>
+      </div>`;
+      return;
+    }
+    const chat = (state.chats || []).find((c) => c && c.id === state.currentChatId);
+    const other = otherOf(chat);
+    const nombreOtro = state.me.role === 'admin' ? (other ? other.name : 'Persona') : 'Servidor publico';
+    const fotoOtro = (other && other.avatar) || '';
+
+    let html = '';
+    let dia = '';
+    msgs.forEach((m, i) => {
       const mine = m.senderId === (state.me && state.me.id);
+      const etiqueta = dayLabel(m.ts);
+      if (etiqueta !== dia) {
+        dia = etiqueta;
+        html += `<div class="day-sep"><span>${esc(etiqueta)}</span></div>`;
+      }
+      const prev = msgs[i - 1];
+      const next = msgs[i + 1];
+      const pegadoArriba = !!(prev && prev.senderId === m.senderId);
+      const pegadoAbajo = !!(next && next.senderId === m.senderId);
+      const clases = ['bubble', mine ? 'mine' : 'theirs'];
+      if (pegadoArriba) clases.push('pegado-arriba');
+      if (pegadoAbajo) clases.push('pegado-abajo');
+      if (m.pending) clases.push('pendiente');
+
       let inner = '';
       if (m.type === 'image') inner = `<img class="media" src="${esc(media(m.url))}" onclick="App.viewImage('${esc(media(m.url))}')" alt="" />`;
       else if (m.type === 'video') inner = `<video class="media" src="${esc(media(m.url))}" controls playsinline></video>`;
@@ -920,8 +951,21 @@ const App = (() => {
           <svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1 1 0 01-1 1H6a1 1 0 01-1-1V4.5a1 1 0 011-1z"/><path d="M14 3.6V8h4"/></svg>
           <span>${esc(m.text || 'Archivo')}</span></a>`;
       } else inner = esc(m.text || '');
-      return `<div class="bubble ${mine ? 'mine' : 'theirs'}">${inner}<span class="meta">${clock(m.ts)}</span></div>`;
-    }).join('') || `<div class="empty">Escribe tu primer mensaje.</div>`;
+
+      const marca = mine
+        ? (m.pending ? '<span class="tick">&#8226;</span>' : '<span class="tick">&#10003;</span>')
+        : '';
+      const hora = `<span class="meta">${clock(m.ts)}${marca}</span>`;
+      const avatar = (!mine && !pegadoArriba)
+        ? `<div class="b-avatar" data-avatar="${esc(fotoOtro)}" data-nombre="${esc(nombreOtro)}">${fotoOtro ? '' : initials(nombreOtro)}</div>`
+        : (mine ? '' : '<div class="b-avatar hueco"></div>');
+
+      html += `<div class="msg-row ${mine ? 'mine' : 'theirs'}${pegadoArriba ? ' pegado' : ''}">${avatar}<div class="${clases.join(' ')}">${inner}${hora}</div></div>`;
+    });
+    body.innerHTML = html;
+    body.querySelectorAll('.b-avatar[data-avatar]').forEach((el) => {
+      pintarAvatar(el, el.getAttribute('data-avatar'), el.getAttribute('data-nombre'));
+    });
     body.scrollTop = body.scrollHeight;
   }
 
@@ -1386,7 +1430,9 @@ const App = (() => {
   function adminPersonasFilas(lista) {
     return (lista || []).map((p) => `<div class="panel-row">
             <div class="who"><b>${esc(p.name)}</b><small>${esc(p.cedula || 'Sin cedula')} \u00b7 ${esc(p.country || 'Sin pais')}</small><small>${esc(p.phone || p.email || '')}</small></div>
-            <span class="pill">${p.messages} msj</span>
+            ${p.bloqueo
+              ? `<button class="mini" onclick="App.adminDesbloquear('${esc(p.id)}')">Desbloquear</button><span class="pill bad">Bloqueada ${esc(String(p.bloqueo.restanteMin))} min</span>`
+              : `<span class="pill">${p.messages} msj</span>`}
           </div>`).join('') || '<div class="panel-row"><span>Sin personas</span></div>';
   }
 
@@ -1435,16 +1481,6 @@ const App = (() => {
           <input id="mailTestTo" class="mail-input" type="email" placeholder="tucorreo@ejemplo.com" value="${esc((d && d.mail && d.mail.to) || '')}" />
           <button class="btn primary" id="mailTestBtn" onclick="App.testMail()">Enviar prueba</button>
           <p id="mailTestResult" class="mail-test"></p>
-        </div>
-        <div class="panel">
-          <h3>Seguridad del documento</h3>
-          <p class="pnote muted">El documento se ve dentro de la app y no se puede descargar hasta que confirmes el pago. Si la persona intenta capturarlo (menu del telefono, guardar, imprimir, pulsacion larga), queda registrado y al tercer intento la cuenta se bloquea ${esc(String(captura.horas || 3))} horas.</p>
-          <label class="check">
-            <input type="checkbox" ${captura.salirCuenta ? 'checked' : ''} onchange="App.guardarCapturaConfig(this.checked)">
-            <span>Contar "salir de la app con el documento abierto" como intento</span>
-          </label>
-          <p class="pnote muted">Dejalo apagado si no quieres que cambiar a WhatsApp cuente como intento.</p>
-          ${bloqueados.length ? bloqueados.map((p) => `<div class="panel-row"><div class="who"><b>${esc(p.name)}</b><small>${esc(p.cedula || p.phone || '')} \u00b7 bloqueada ${esc(String(p.bloqueo.restanteMin))} min mas</small></div><button class="mini" onclick="App.adminDesbloquear('${esc(p.id)}')">Desbloquear</button></div>`).join('') : '<div class="panel-row"><span>Nadie esta bloqueado ahora</span></div>'}
         </div>
         <div class="panel">
           <h3>Nuevo tramite para una persona</h3>
@@ -1746,13 +1782,23 @@ const App = (() => {
           <a class="btn primary" href="${PORTAL_SAIME}" target="_blank" rel="noopener">Abrir portal del SAIME</a>
         </div>`;
 
-    const descargaHtml = esAdmin ? '' : `
-        <div class="panel">
+    /* La descarga solo existe con el pago confirmado. Mientras no lo este, el
+       boton queda inhabilitado con el texto que pidio la administradora. */
+    const descargaHtml = esAdmin ? '' : (t.canDownload ? `
+        <div class="panel ok-panel">
           <h3>Descarga</h3>
-          <p class="pnote muted">${t.status === 'pago_en_revision'
-            ? 'Tu comprobante está en revisión. El servidor público te confirma por el chat.'
-            : 'Cuando tu trámite esté listo, descargas tu documento desde el portal del SAIME con tu cuenta.'}</p>
-        </div>`;
+          <p class="pnote">Tu pago está confirmado. Ya puedes descargar tu documento.</p>
+          <a class="btn primary" href="${esc(archivoUrl(t.id, 'download'))}" download>Descargar mi documento</a>
+          <p class="pnote muted">Cada descarga queda registrada en el historial de tu trámite.</p>
+        </div>` : `
+        <div class="panel preview-panel locked">
+          <h3>Descarga</h3>
+          <p class="pnote">Descarga inhabilitada hasta que hagas tu pago correspondiente.</p>
+          <button class="btn locked-btn" type="button" onclick="App.avisoDescarga()">
+            <svg class="lock-ic" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="9.5" rx="2.2"/><path d="M8 10.5V8a4 4 0 018 0v2.5"/></svg>
+            Descarga inhabilitada
+          </button>
+        </div>`);
 
     let pagoHtml = '';
     if (t.canUploadProof) {
@@ -1846,32 +1892,6 @@ const App = (() => {
        documento a mas resolucion cuando la persona acerca. */
     buf: null, tipo: '', tramite: null, escala: 1, escalaTmp: 1, zoomActivo: false,
     pinchDist: 0, pinchEscala: 1, ultimoToque: 0, redibujando: false };
-
-  /* Marca de agua: SOLO el texto "VISTA PREVIA", en azul, una sola vez y
-     centrado en la pagina. Antes se repetia en diagonal por toda la hoja y
-     llevaba nombre, cedula, fecha y el aviso de difusion; ahora es una marca
-     discreta en el medio, como se pidio. */
-  function pintarMarca(ctx, w, h) {
-    const texto = 'VISTA PREVIA';
-    ctx.save();
-    ctx.globalAlpha = 0.32;
-    ctx.fillStyle = '#1f5f9e';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    /* El tamano se ajusta al ancho de la hoja para que quepa siempre. */
-    let fuente = Math.max(14, Math.round(w / 13));
-    ctx.font = '900 ' + fuente + 'px system-ui, Arial, sans-serif';
-    const anchoTexto = ctx.measureText(texto).width;
-    const maximo = w * 0.82;
-    if (anchoTexto > maximo) {
-      fuente = Math.max(11, Math.floor(fuente * (maximo / anchoTexto)));
-      ctx.font = '900 ' + fuente + 'px system-ui, Arial, sans-serif';
-    }
-    ctx.translate(w / 2, h / 2);
-    ctx.rotate(-Math.PI / 9);
-    ctx.fillText(texto, 0, 0);
-    ctx.restore();
-  }
 
   function cargarPdfJs() {
     if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
@@ -2142,7 +2162,6 @@ const App = (() => {
           pages.appendChild(cv);
           const ctx = cv.getContext('2d');
           await page.render({ canvasContext: ctx, viewport: vp }).promise;
-          pintarMarca(ctx, cv.width, cv.height);
           /* La pagina ya esta en el canvas: se suelta para no retener su
              contenido en memoria. */
           try { page.cleanup(); } catch (e) {}
@@ -2181,7 +2200,6 @@ const App = (() => {
       pages.appendChild(cv);
       const ctx = cv.getContext('2d');
       ctx.drawImage(img, 0, 0, cv.width, cv.height);
-      pintarMarca(ctx, cv.width, cv.height);
       return 1;
     } finally {
       setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 4000);
@@ -2273,7 +2291,6 @@ const App = (() => {
       pages.appendChild(cv);
       const ctx = cv.getContext('2d');
       await page.render({ canvasContext: ctx, viewport: vp, intent: 'print' }).promise;
-      pintarMarca(ctx, cv.width, cv.height);
       try { page.cleanup(); } catch (e) {}
       if (pdf.numPages > 1) {
         const av = document.createElement('div');
@@ -2657,6 +2674,8 @@ const App = (() => {
     try {
       await api('/api/admin/usuarios/' + encodeURIComponent(id) + '/desbloquear', { method: 'POST', body: JSON.stringify({}) });
       toast('Persona desbloqueada');
+      adminOverview = await api('/api/admin/overview');
+      renderAdminTab();
       loadAdminTramites();
     } catch (e) { toast(e.message); }
   }
