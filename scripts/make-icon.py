@@ -44,11 +44,15 @@ LETRA = '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf'
 
 AZUL = (41, 97, 180)      # #2961B4, el azul de la guia
 TEXTO = 'Tr\u00e1mites'
+SALUDO = 'Bienvenidos'    # linea chiquita de arriba
 
 BLANCO_MIN = 215          # desde que tono se considera blanco de fondo
 LOGO_ANCHO = 2200         # ancho del logo dentro del bloque maestro
 MARGEN_X = 100            # aire a los lados del bloque
-GAP = 120                 # separacion entre el texto y el logo
+GAP = 170                 # aire entre "Tramites" y el logo
+GAP_LINEAS = 26           # aire entre "Bienvenidos" y "Tramites"
+SALUDO_REL = 0.56         # que tan grande va "Bienvenidos" frente a "Tramites"
+FIT = 1.02                # ancho del texto frente al ancho del logo
 
 ESCALA_NORMAL = 0.94      # cuanto del cuadro ocupa el bloque
 ESCALA_SEGURA = 0.72      # version maskable
@@ -158,7 +162,7 @@ def bloque_maestro(logo):
     alto_logo = int(logo.height * LOGO_ANCHO / logo.width)
     ancho = LOGO_ANCHO + MARGEN_X * 2
 
-    objetivo = LOGO_ANCHO * 0.92
+    objetivo = LOGO_ANCHO * FIT
     tam = 100
     for _ in range(40):
         f = ImageFont.truetype(LETRA, tam)
@@ -170,17 +174,28 @@ def bloque_maestro(logo):
     caja = f.getbbox(TEXTO)
     alto_texto = caja[3] - caja[1]
 
-    img = Image.new('RGBA', (ancho, alto_texto + GAP + alto_logo), (0, 0, 0, 0))
+    f2 = ImageFont.truetype(LETRA, max(10, int(tam * SALUDO_REL)))
+    caja2 = f2.getbbox(SALUDO)
+    alto_saludo = caja2[3] - caja2[1]
+
+    alto_bloque = alto_saludo + GAP_LINEAS + alto_texto + GAP + alto_logo
+    img = Image.new('RGBA', (ancho, alto_bloque), (0, 0, 0, 0))
+    lapiz = ImageDraw.Draw(img)
+
+    # Sin sombra: sobre azul plano el blanco ya resalta y la sombra difuminaba
+    # los bordes de las letras, que es justo lo que hay que evitar.
+    sx = (ancho - (caja2[2] - caja2[0])) // 2 - caja2[0]
+    lapiz.text((sx, -caja2[1]), SALUDO, font=f2, fill=(255, 255, 255, 235))
 
     tx = (ancho - (caja[2] - caja[0])) // 2 - caja[0]
-    ty = -caja[1]
-    sombra = Image.new('RGBA', img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(sombra).text((tx, ty + 8), TEXTO, font=f, fill=(0, 0, 0, 90))
-    img.alpha_composite(sombra.filter(ImageFilter.GaussianBlur(10)))
-    ImageDraw.Draw(img).text((tx, ty), TEXTO, font=f, fill=(255, 255, 255, 255))
+    ty = alto_saludo + GAP_LINEAS - caja[1]
+    lapiz.text((tx, ty), TEXTO, font=f, fill=(255, 255, 255, 255))
 
-    img.alpha_composite(logo.resize((LOGO_ANCHO, alto_logo), Image.LANCZOS),
-                        ((ancho - LOGO_ANCHO) // 2, alto_texto + GAP))
+    # El logo viene de una foto de 553 px: al agrandarlo se afina un poco para
+    # que las letras SAIME no salgan borrosas.
+    pieza = logo.resize((LOGO_ANCHO, alto_logo), Image.LANCZOS)
+    pieza = pieza.filter(ImageFilter.UnsharpMask(radius=1.6, percent=85, threshold=2))
+    img.alpha_composite(pieza, ((ancho - LOGO_ANCHO) // 2, alto_saludo + GAP_LINEAS + alto_texto + GAP))
     return img
 
 
@@ -205,7 +220,7 @@ def icono(bloque, size, escala):
     h = max(1, int(bloque.height * k))
     pieza = bloque.resize((w, h), Image.LANCZOS)
     lienzo.paste(pieza, ((size - w) // 2, (size - h) // 2), pieza)
-    return lienzo
+    return lienzo.filter(ImageFilter.UnsharpMask(radius=1.2, percent=45, threshold=2))
 
 
 def main():
