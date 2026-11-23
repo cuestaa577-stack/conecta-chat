@@ -50,7 +50,7 @@ function parseFrom() {
   return { name: MAIL_FROM_NAME, email: raw };
 }
 
-async function sendViaApi(to, subject, text) {
+async function sendViaApi(to, subject, text, html) {
   const provider = detectProvider();
   if (!MAIL_API_KEY || !provider) return null;
   const from = parseFrom();
@@ -64,13 +64,13 @@ async function sendViaApi(to, subject, text) {
       res = await fetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
         headers: { 'api-key': MAIL_API_KEY, 'Content-Type': 'application/json', accept: 'application/json' },
-        body: JSON.stringify({ sender: from, to: [{ email: to }], subject, textContent: text })
+        body: JSON.stringify({ sender: from, to: [{ email: to }], subject, textContent: text, htmlContent: html || undefined })
       });
     } else if (provider === 'resend') {
       res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + MAIL_API_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: from.name + ' <' + from.email + '>', to: [to], subject, text })
+        body: JSON.stringify({ from: from.name + ' <' + from.email + '>', to: [to], subject, text, html: html || undefined })
       });
     } else if (provider === 'sendgrid') {
       res = await fetch('https://api.sendgrid.com/v3/mail/send', {
@@ -80,7 +80,9 @@ async function sendViaApi(to, subject, text) {
           personalizations: [{ to: [{ email: to }] }],
           from,
           subject,
-          content: [{ type: 'text/plain', value: text }]
+          content: html
+            ? [{ type: 'text/plain', value: text }, { type: 'text/html', value: html }]
+            : [{ type: 'text/plain', value: text }]
         })
       });
     } else {
@@ -499,20 +501,140 @@ function checkCode(user, code, purpose) {
   return ok;
 }
 
+/* Plantilla HTML del correo de codigo.
+   - Tablas + estilos en linea: se ve bien en Gmail, Outlook y Apple Mail.
+   - Ancho maximo 600px y media query para celulares.
+   - El texto plano se sigue enviando como respaldo (multipart/alternative). */
+function buildCodeEmailHtml(code, purpose) {
+  const esReset = purpose === 'reset';
+  const titulo = esReset ? 'Cambia tu contrasena' : 'Confirma tu correo';
+  const intro = esReset
+    ? 'Recibimos una solicitud para cambiar la contrasena de tu cuenta. Usa este codigo para continuar:'
+    : 'Gracias por registrarte. Usa este codigo para confirmar tu correo y activar tu cuenta:';
+  const codigo = String(code == null ? '' : code).replace(/[^0-9]/g, '').slice(0, 6);
+  const anio = new Date().getFullYear();
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="color-scheme" content="light">
+<title>${titulo}</title>
+<style>
+  /* Solo aplica en clientes que respetan <style>; el resto usa los estilos en linea. */
+  @media only screen and (max-width: 600px) {
+    .wrap { width: 100% !important; }
+    .pad { padding: 24px 20px !important; }
+    .code { font-size: 34px !important; letter-spacing: 8px !important; }
+    .h1 { font-size: 20px !important; }
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background-color:#eef1f5;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+    Tu codigo de verificacion es ${codigo}. Vence en 10 minutos.
+  </div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#eef1f5;padding:24px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" class="wrap" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(15,23,42,0.08);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+
+          <!-- Encabezado institucional -->
+          <tr>
+            <td style="background-color:#0b3d91;padding:22px 28px;">
+              <div style="color:#ffffff;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.3;">
+                Tramites Venezolanos en Linea
+              </div>
+              <div style="color:#c7d6f5;font-size:12px;margin-top:4px;letter-spacing:0.4px;text-transform:uppercase;">
+                Verificacion de correo
+              </div>
+            </td>
+          </tr>
+
+          <!-- Contenido -->
+          <tr>
+            <td class="pad" style="padding:32px 28px 8px 28px;">
+              <h1 class="h1" style="margin:0 0 12px 0;font-size:22px;line-height:1.3;color:#0f172a;font-weight:700;">
+                ${titulo}
+              </h1>
+              <p style="margin:0 0 24px 0;font-size:15px;line-height:1.6;color:#475569;">
+                ${intro}
+              </p>
+
+              <!-- Codigo destacado -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="center" style="padding:0 0 8px 0;">
+                    <div style="display:inline-block;background-color:#f1f5fb;border:2px dashed #0b3d91;border-radius:10px;padding:18px 28px;">
+                      <div class="code" style="font-family:'Courier New',Courier,monospace;font-size:40px;font-weight:700;letter-spacing:12px;color:#0b3d91;line-height:1.1;text-align:center;mso-line-height-rule:exactly;">
+                        ${codigo}
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="padding:0 0 24px 0;">
+                    <div style="font-size:12px;color:#64748b;letter-spacing:0.3px;">
+                      Copia este codigo de 6 digitos
+                    </div>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Aviso de vencimiento -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px 0;">
+                <tr>
+                  <td style="background-color:#fff7ed;border-left:4px solid #f59e0b;border-radius:6px;padding:12px 16px;">
+                    <p style="margin:0;font-size:14px;line-height:1.5;color:#92400e;">
+                      <strong>Importante:</strong> este codigo vence en <strong>10 minutos</strong>.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:20px 0 0 0;font-size:13px;line-height:1.6;color:#64748b;">
+                Si no solicitaste este codigo, puedes ignorar este mensaje. Nadie de nuestro equipo te pedira el codigo por telefono ni por mensaje.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Pie -->
+          <tr>
+            <td style="padding:24px 28px 28px 28px;">
+              <hr style="border:none;border-top:1px solid #e2e8f0;margin:0 0 16px 0;">
+              <p style="margin:0;font-size:12px;line-height:1.6;color:#94a3b8;text-align:center;">
+                Tramites Venezolanos en Linea<br>
+                Este es un mensaje automatico, no respondas a este correo.<br>
+                &copy; ${anio} Tramites Venezolanos en Linea
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
 async function sendCodeEmail(to, code, purpose) {
   const subject = purpose === 'reset'
     ? 'Codigo para cambiar tu contrasena'
     : 'Codigo para confirmar tu correo';
   const text = 'Tu codigo de 6 digitos es ' + code + '.\n\nVence en 10 minutos.\n\n' +
     'Tramites Venezolanos en Linea\nSi no lo pediste, ignora este mensaje.';
-  const viaApi = await sendViaApi(to, subject, text);
+  const html = buildCodeEmailHtml(code, purpose);
+  const viaApi = await sendViaApi(to, subject, text, html);
   if (viaApi !== null) return viaApi;
   if (!mailer) {
     console.warn('[correo] Sin correo configurado. Codigo para ' + to + ': ' + code);
     return false;
   }
   try {
-    await mailer.sendMail({ from: MAIL_FROM || SMTP_USER, to, subject, text });
+    await mailer.sendMail({ from: MAIL_FROM || SMTP_USER, to, subject, text, html });
     return true;
   } catch (e) {
     console.error('[correo] No se pudo enviar a ' + to + ': ' + e.message);
