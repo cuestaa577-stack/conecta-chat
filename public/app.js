@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v4.4';
+  const APP_VERSION = 'v4.5';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -10,6 +10,37 @@ const App = (() => {
      memoria. El mismo tope se comprueba en el servidor. */
   const MAX_DOC_BYTES = Math.floor(25 * 1024 * 1024);
   const MAX_DOC_TEXTO = '25 MB';
+
+  /* ------------------------- tarifas por tramite -------------------------
+     El valor es el mismo en todos los paises; la etiqueta lleva el pais donde
+     se registro la persona. Cedula: renovacion 28.000, extravio 25.000,
+     deterioro 24.000, hurto 23.000. Licencia: grado 2 35.000, grado 3 45.000,
+     grado 4 50.000, grado 5 55.000. */
+  const TARIFAS_CEDULA = { renovacion: 28000, extravio: 25000, deterioro: 24000, hurto: 23000 };
+  const TARIFAS_LICENCIA = { '2': 35000, '3': 45000, '4': 50000, '5': 55000 };
+
+  function precioDeTramite(service, subtype, grade) {
+    const s = String(service || '').toLowerCase();
+    if (s === 'cedula') return TARIFAS_CEDULA[String(subtype || '').toLowerCase()] || 0;
+    if (s === 'licencia') return TARIFAS_LICENCIA[String(grade || '').replace(/\D/g, '')] || 0;
+    return 0;
+  }
+
+  function numeroConPuntos(n) {
+    return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  }
+
+  function precioEtiqueta(monto, country) {
+    if (!monto) return '';
+    const pais = String(country || '').trim();
+    return numeroConPuntos(monto) + (pais ? ' ' + pais : '');
+  }
+
+  function precioDelTramite(service, subtype, grade) {
+    const monto = precioDeTramite(service, subtype, grade);
+    if (!monto) return '';
+    return precioEtiqueta(monto, state.me && state.me.country);
+  }
 
   const SERVICES = {
     cedula: {
@@ -735,6 +766,7 @@ const App = (() => {
         <h3>${esc(s.serviceLabel)}</h3>
         <div class="summary-row"><span>Tramite</span><span>${esc(s.subtypeLabel)}</span></div>
         ${s.grade ? `<div class="summary-row"><span>Grado</span><span>${esc(s.grade)}</span></div>` : ''}
+        ${precioDelTramite(s.service, s.subtype, s.grade) ? `<div class="summary-row"><span>Valor</span><span class="valor-tramite">${esc(precioDelTramite(s.service, s.subtype, s.grade))}</span></div>` : ''}
         <p class="summary-note">Al continuar se abre el chat con un servidor publico, que te envia los requisitos, el costo y el paso a paso de tu caso.</p>
       </div>
       <button class="btn primary" onclick="App.startChat()">Continuar por el chat</button>`;
@@ -1857,14 +1889,12 @@ const App = (() => {
           <p class="pnote nota-clara">${esAdmin
             ? 'Así lo ve la persona en su app: lo puede leer con zoom, pero no descargarlo hasta que confirmes el pago.'
             : 'Acércalo con dos dedos o con los botones para leerlo bien. Cuando esté todo correcto, envía tu comprobante de pago aquí abajo.'}</p>
-          <a class="linkbtn" href="${PORTAL_SAIME}" target="_blank" rel="noopener">Abrir el portal del SAIME</a>
         </div>` : `
         <div class="panel">
           <h3>${esAdmin ? 'Documento del trámite' : 'Tu documento'}</h3>
           <p class="pnote nota-clara">${esAdmin
             ? 'Todavía no has subido el documento. Súbelo con el botón de arriba y la persona lo verá aquí en vista previa.'
             : 'Tu documento está en preparación. En cuanto el servidor público lo suba, lo verás aquí mismo en vista previa.'}</p>
-          <a class="btn ghost" href="${PORTAL_SAIME}" target="_blank" rel="noopener">Abrir el portal del SAIME</a>
         </div>`;
 
     /* La descarga solo existe con el pago confirmado. Mientras no lo este, el
@@ -1873,8 +1903,8 @@ const App = (() => {
         <div class="panel ok-panel">
           <h3>Descarga</h3>
           <p class="pnote">Tu pago está confirmado. Ya puedes descargar tu documento.</p>
-          <a class="btn primary" href="${esc(archivoUrl(t.id, 'download'))}" download>Descargar mi documento</a>
           <p class="pnote nota-clara">Cada descarga queda registrada en el historial de tu trámite.</p>
+          <a class="btn primary btn-descarga" href="${esc(archivoUrl(t.id, 'download'))}" download>Descargar mi documento</a>
         </div>` : `
         <div class="panel preview-panel locked">
           <h3>Descarga</h3>
@@ -2841,6 +2871,7 @@ const App = (() => {
         /* Si el panel esta abierto, cualquier novedad se refleja al instante. */
         if (m.type === 'message:new' || m.type === 'chat:new' || m.type === 'chat:updated'
           || m.type === 'tramite:new' || m.type === 'tramite:updated') refrescarPanelSiAdmin();
+        if (m.type === 'admin:changed') { refrescarPanelSiAdmin(); return; }
         if (m.type === 'message:new') {
           const msg = m.message;
           if (!msg) return;

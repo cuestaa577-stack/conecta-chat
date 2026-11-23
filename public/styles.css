@@ -970,3 +970,10 @@ body.con-actualizacion .view.active { padding-top: 54px; }
   box-shadow: 0 3px 10px rgba(232, 54, 47, .35);
 }
 .cc-count { font-size: 11.5px; font-weight: 700; color: #a9b8c8; flex: 0 0 auto; }
+
+/* ---------------- boton de descarga y valor del tramite ---------------- */
+.btn-descarga {
+  display: block; width: 100%; margin-top: 12px; clear: both;
+  position: static; z-index: 0;
+}
+.valor-tramite { color: #1f5f9e; font-weight: 800; }

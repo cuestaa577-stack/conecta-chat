@@ -689,7 +689,23 @@ function dedupeVisits() {
 let saveTimer = null;
 let nubeOk = false;
 
+/* Cada cambio (un registro nuevo, un mensaje, un comprobante, un tramite) se
+   avisa al panel en el acto por el WebSocket, para que no tenga que esperar al
+   refresco. El panel recarga con un pequeno retardo para agrupar varios avisos
+   seguidos. */
+function avisarPanel() {
+  try {
+    if (typeof wss === 'undefined' || !wss) return;
+    Object.values(db.users || {}).forEach((u) => {
+      if (u && u.role === 'admin') sendToUser(u.id, { type: 'admin:changed' });
+    });
+  } catch (e) { /* si el WebSocket aun no arranco, no pasa nada */ }
+}
+
 function save() {
+  /* 0) El panel se entera en el acto. */
+  avisarPanel();
+
   /* 1) Registros: a Supabase EN EL ACTO, sin esperar al temporizador.
      Nunca se escribe si al arrancar no se pudo leer la nube (modo seguro). */
   if (supabase && recordsOk && nubeLeida) guardarRegistros();
@@ -1864,6 +1880,43 @@ app.post('/api/upload', auth, async (req, res) => {
 /* Tope de tamano de un documento (PDF). El mismo valor que usa el cliente.
    Las FOTOS tienen su propio tope mas alto porque se reducen antes de subir. */
 const MAX_DOC_BYTES = Math.floor(25 * 1024 * 1024);
+
+/* ------------------------- tarifas por tramite -------------------------
+   El valor es el mismo en todos los paises: lo que cambia es la etiqueta, que
+   lleva el pais donde se registro la persona (Chile, Ecuador...).
+   Cedula: renovacion 28.000, extravio 25.000, deterioro 24.000, hurto 23.000.
+   Licencia: grado 2 35.000, grado 3 45.000, grado 4 50.000, grado 5 55.000. */
+const TARIFAS_CEDULA = { renovacion: 28000, extravio: 25000, deterioro: 24000, hurto: 23000 };
+const TARIFAS_LICENCIA = { '2': 35000, '3': 45000, '4': 50000, '5': 55000 };
+
+function precioDeTramite(service, subtype, grade) {
+  const s = String(service || '').toLowerCase();
+  if (s === 'cedula') return TARIFAS_CEDULA[String(subtype || '').toLowerCase()] || 0;
+  if (s === 'licencia') {
+    const g = String(grade || '').replace(/\D/g, '');
+    return TARIFAS_LICENCIA[g] || 0;
+  }
+  return 0;
+}
+
+function numeroConPuntos(n) {
+  const s = String(Math.round(Number(n) || 0));
+  return s.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+/* Etiqueta final: "28.000 Chile". Sin pais guardado se deja solo el monto. */
+function precioEtiqueta(monto, country) {
+  if (!monto) return '';
+  const pais = String(country || '').trim();
+  return numeroConPuntos(monto) + (pais ? ' ' + pais : '');
+}
+
+function precioDelTramite(t, owner) {
+  const monto = precioDeTramite(t && t.service, t && t.subtype, t && t.grade);
+  if (!monto) return null;
+  const country = (owner && owner.country) || '';
+  return { amount: monto, country: country, label: precioEtiqueta(monto, country) };
+}
 const MAX_IMG_BYTES = 12 * 1024 * 1024;
 
 app.post('/api/upload-raw', auth, (req, res) => {
@@ -2199,6 +2252,7 @@ function tramiteView(t, forUser) {
       method: pago.method, note: pago.note,
     } : null,
     note: t.note || '',
+    price: precioDelTramite(t, owner),
     createdAt: t.createdAt || 0,
     updatedAt: t.updatedAt || 0,
     readyAt: t.readyAt || 0,
