@@ -98,17 +98,30 @@ Pasos: crear cuenta gratis en brevo.com, verificar el correo remitente (Senders,
 ### Imagen del encabezado del correo (logo SAIME)
 
 El correo de verificación es HTML y su encabezado lleva el logo del SAIME
-(`public/logos/saime-email.png`). Los clientes de correo no resuelven rutas
-relativas, así que la plantilla arma la URL absoluta de la imagen a partir de
-la dirección pública del sitio:
+(`public/logos/saime-email.png`). **La persona debe recibir solo el correo, con
+el logo dentro del mensaje y sin ningún archivo adjunto en la bandeja.**
 
-1. `PUBLIC_URL` o `APP_URL`, si están definidas.
-2. `RENDER_EXTERNAL_URL`, que Render define solo.
-3. La dirección del propio pedido (`x-forwarded-proto` + `host`), que es la que
-   se usa normalmente y siempre apunta al dominio correcto.
+Cómo se consigue según el proveedor:
 
-Si el logo no aparece en la bandeja, revisa que
-`https://TU-DOMINIO/logos/saime-email.png` abra la imagen en el navegador.
+| Proveedor | Cómo viaja el logo |
+| --- | --- |
+| `resend`, `sendgrid` | Imagen **en línea** (Content-ID). El cliente la pinta dentro del HTML y no aparece como adjunto. |
+| SMTP (nodemailer) | Igual: parte MIME `multipart/related` con `Content-Disposition: inline`. |
+| `brevo` | **URL pública.** Brevo no admite imágenes en línea en su API v3: cualquier campo `attachment` se convierte en un archivo adjunto visible. Por eso a Brevo no se le envía ningún adjunto. |
+
+La URL pública del logo se resuelve en este orden:
+
+1. `LOGO_URL`, si la defines (por ejemplo, un CDN propio).
+2. Una copia publicada en **Supabase Storage** (`email/saime-logo.png`), que se
+   sube sola la primera vez y se comprueba que abra sin sesión. Es lo más
+   rápido y no depende de que Render esté despierto.
+3. La dirección pública de la app: `PUBLIC_URL` / `APP_URL` /
+   `RENDER_EXTERNAL_URL` o, si no hay ninguna, la del propio pedido
+   (`x-forwarded-proto` + `host`).
+
+Si usas Brevo y el logo no aparece, revisa que la URL resuelta abra la imagen en
+el navegador. Con `LOGO_URL` apuntando a un CDN fijo te aseguras de que no
+dependa de nada más.
 
 ### Alternativa: SMTP (solo en planes pagos de Render)
 
