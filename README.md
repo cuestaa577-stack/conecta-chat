@@ -19,7 +19,7 @@ Web de mensajería y multimedia para asesoría de trámites venezolanos: cédula
   - Personas registradas, conversaciones y mensajes.
   - Control por país (Chile, Ecuador y los demás) con datos reales.
   - Quién entró al enlace y cuándo.
-- Instalable como app en el teléfono (PWA) con la bandera de Venezuela como icono.
+- Instalable como app en el teléfono (PWA) con el logo SAIME y la palabra "Trámites" como icono.
 - Icono generado desde una sola imagen de origen con `scripts/make-icon.py` (ver más abajo).
 
 ## Acceso del administrador
@@ -310,7 +310,12 @@ El chat se abre al confirmar el tramite y queda guardado en la conversacion.
 
 Todos los tamanos del icono (`icon-1024.png`, `icon-512.png`, `icon-192.png`, los
 `maskable`, `apple-touch-icon.png` y `favicon-32.png`) salen de una sola imagen:
-`scripts/icono-fuente.png`.
+`scripts/icono-saime-fuente.jpg`, el logo SAIME.
+
+El script le quita el fondo blanco de abajo (el triangulo que queda a los lados de la
+cinta), deja solo el logo y lo pone al medio del cuadro azul `#2961B4` de la guia, con
+"Tramites" en letras blancas arriba. El favicon de 32 px va sin texto porque a ese
+tamano la palabra no se lee.
 
 ```
 python3 scripts/make-icon.py
