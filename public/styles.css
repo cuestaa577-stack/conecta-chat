@@ -44,38 +44,58 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
   background: linear-gradient(90deg, #f7d117 0 33.33%, #0033a0 33.33% 66.66%, #cf142b 66.66% 100%);
 }
 .auth-card {
-  width: 100%; max-width: 400px; background: var(--card); border-radius: 20px;
-  margin: auto; padding: 34px 18px 18px; box-shadow: 0 18px 44px rgba(0, 0, 0, .38);
-  border-top: 4px solid transparent;
-  border-image: linear-gradient(90deg, #f7d117 0 33.33%, #0033a0 33.33% 66.66%, #cf142b 66.66% 100%) 1;
+  width: 100%; max-width: 410px; background: var(--card); border-radius: 26px;
+  margin: auto; padding: 30px 20px 22px; box-shadow: 0 24px 60px rgba(4, 12, 30, .42);
+  border: 1px solid rgba(255, 255, 255, .65);
 }
 .auth-logo {
-  display: block; width: 68px; height: 68px; margin: 6px auto 10px;
-  border-radius: 20px; object-fit: cover; box-shadow: 0 8px 20px rgba(11, 27, 58, .28);
+  display: block; width: 72px; height: 72px; margin: 2px auto 12px;
+  border-radius: 22px; object-fit: cover;
+  box-shadow: 0 10px 26px rgba(11, 27, 58, .3);
 }
 .auth-card h1 { font-size: 20px; text-align: center; margin: 4px 0 6px; line-height: 1.25; }
 /* Frase de gancho bajo el logo de la portada */
 .auth-card .tagline { text-align: center; font-size: 14.5px; font-weight: 800; color: var(--blue); letter-spacing: -.01em; margin: 0 0 4px; }
 .auth-card .tagline-sub { font-size: 12.5px; margin: 0 0 16px; }
 .auth-card > p { text-align: center; font-size: 13px; margin: 0 0 16px; }
-.auth-tabs { display: flex; gap: 6px; background: var(--bg); border-radius: 12px; padding: 4px; margin-bottom: 14px; }
-.auth-tab {
-  flex: 1; border: none; background: none; padding: 9px 6px; border-radius: 9px;
-  font-size: 14px; font-weight: 600; color: var(--muted); cursor: pointer;
+.auth-tabs {
+  display: flex; gap: 4px; background: #eef3fa; border-radius: 16px;
+  padding: 5px; margin-bottom: 18px;
 }
-.auth-tab.active { background: var(--card); color: var(--navy); box-shadow: 0 2px 8px rgba(11, 27, 58, .12); }
+.auth-tab {
+  flex: 1; border: none; background: none; padding: 11px 6px; border-radius: 12px;
+  font-size: 14px; font-weight: 700; color: var(--muted); cursor: pointer;
+  transition: background .18s ease, color .18s ease, box-shadow .18s ease;
+}
+.auth-tab.active {
+  background: linear-gradient(180deg, var(--navy-2), var(--navy));
+  color: #fff; box-shadow: 0 6px 16px rgba(31, 95, 158, .32);
+}
 .auth-note { font-size: 11.5px; text-align: center; margin: 12px 0 0; }
 .linkbtn { display: block; width: 100%; margin-top: 10px; background: none; border: 0; padding: 6px 0; color: var(--blue); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; text-align: center; }
 .linkbtn:active { opacity: .7; }
-.auth-card .btn.primary { width: 100%; }
-
-.field { display: block; margin-bottom: 11px; }
-.field > span { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
-.field input, .field select, .field textarea {
-  width: 100%; border: 1.4px solid var(--border); background: #fbfcfe; border-radius: 11px;
-  padding: 11px 12px; font-size: 15px; color: var(--text); font-family: inherit; outline: none;
+.auth-card .btn.primary {
+  width: 100%; padding: 15px; border-radius: 15px; font-size: 15.5px;
+  background: linear-gradient(180deg, var(--navy-2), var(--navy));
+  box-shadow: 0 10px 24px rgba(31, 95, 158, .34);
+  transition: transform .12s ease, box-shadow .18s ease;
 }
-.field input:focus, .field select:focus { border-color: var(--blue); background: #fff; }
+.auth-card .btn.primary:active { transform: translateY(1px); box-shadow: 0 6px 16px rgba(31, 95, 158, .3); }
+
+.field { display: block; margin-bottom: 14px; }
+.field > span {
+  display: block; font-size: 11px; font-weight: 800; color: var(--muted);
+  letter-spacing: .06em; text-transform: uppercase; margin-bottom: 7px;
+}
+.field input, .field select, .field textarea {
+  width: 100%; border: 1.5px solid var(--border); background: #f7faff; border-radius: 14px;
+  padding: 14px 14px; font-size: 15px; color: var(--text); font-family: inherit; outline: none;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  border-color: var(--navy-2); background: #fff;
+  box-shadow: 0 0 0 4px rgba(43, 111, 174, .14);
+}
 .field input:disabled { color: var(--muted); background: var(--bg); }
 
 .btn {
