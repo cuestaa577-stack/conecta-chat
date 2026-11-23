@@ -95,6 +95,21 @@ Las cuentas antiguas creadas con teléfono o correo siguen entrando igual que an
 
 Pasos: crear cuenta gratis en brevo.com, verificar el correo remitente (Senders, Domains & IPs → Add a sender) y crear la clave en SMTP & API → API Keys.
 
+### Imagen del encabezado del correo (logo SAIME)
+
+El correo de verificación es HTML y su encabezado lleva el logo del SAIME
+(`public/logos/saime-email.png`). Los clientes de correo no resuelven rutas
+relativas, así que la plantilla arma la URL absoluta de la imagen a partir de
+la dirección pública del sitio:
+
+1. `PUBLIC_URL` o `APP_URL`, si están definidas.
+2. `RENDER_EXTERNAL_URL`, que Render define solo.
+3. La dirección del propio pedido (`x-forwarded-proto` + `host`), que es la que
+   se usa normalmente y siempre apunta al dominio correcto.
+
+Si el logo no aparece en la bandeja, revisa que
+`https://TU-DOMINIO/logos/saime-email.png` abra la imagen en el navegador.
+
 ### Alternativa: SMTP (solo en planes pagos de Render)
 
 | Variable | Ejemplo |

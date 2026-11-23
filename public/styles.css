@@ -110,7 +110,9 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 }
 .brand-logo { width: 34px; height: 34px; border-radius: 9px; object-fit: cover; }
 /* El bloque del nombre se sube unos pixeles para que "Tramites en Linea"
-   quede mas arriba dentro de la barra, como se pidio. */
+   quede mas arriba dentro de la barra, como se pidio. El tamano de la letra
+   se deja en 18px (el original): a 20px el texto no cabia y se cortaba con
+   puntos suspensivos en pantallas de 390px. */
 .brand-block { flex: 1; min-width: 0; margin-top: -3px; }
 .brand-line { display: flex; align-items: center; gap: 5px; min-width: 0; }
 /* Chulo de verificacion: solo aparece en la cuenta del administrador. Se dibuja
@@ -126,7 +128,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .verified[hidden] { display: none; }
 .verified.sm { width: 14px; height: 14px; margin-left: 5px; vertical-align: -2px; }
 .brand {
-  font-size: 20px; font-weight: 800; line-height: 1.15; color: #ffffff;
+  font-size: 18px; font-weight: 800; line-height: 1.15; color: #ffffff;
   letter-spacing: .2px; text-shadow: 0 1px 2px rgba(0, 0, 0, .18);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }

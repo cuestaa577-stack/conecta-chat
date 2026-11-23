@@ -501,11 +501,30 @@ function checkCode(user, code, purpose) {
   return ok;
 }
 
+/* Direccion publica del sitio, para armar las URLs absolutas de las imagenes
+   del correo (los clientes de correo no resuelven rutas relativas).
+   Prioridad: PUBLIC_URL / APP_URL / RENDER_EXTERNAL_URL y, si no hay ninguna,
+   la del propio pedido (x-forwarded-proto + host), que siempre es la correcta. */
+function publicBase(req) {
+  const raw = String(process.env.PUBLIC_URL || process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || '').trim();
+  if (raw) return raw.replace(/\/+$/, '');
+  if (req && req.headers) {
+    const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    if (!host) return '';
+    let proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim().toLowerCase();
+    // Los clientes de correo bloquean las imagenes por http: fuera de local, siempre https.
+    const esLocal = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host);
+    if (!esLocal) proto = 'https';
+    return proto + '://' + host;
+  }
+  return '';
+}
+
 /* Plantilla HTML del correo de codigo.
    - Tablas + estilos en linea: se ve bien en Gmail, Outlook y Apple Mail.
    - Ancho maximo 600px y media query para celulares.
    - El texto plano se sigue enviando como respaldo (multipart/alternative). */
-function buildCodeEmailHtml(code, purpose) {
+function buildCodeEmailHtml(code, purpose, baseUrl) {
   const esReset = purpose === 'reset';
   const titulo = esReset ? 'Cambia tu contrasena' : 'Confirma tu correo';
   const intro = esReset
@@ -513,6 +532,10 @@ function buildCodeEmailHtml(code, purpose) {
     : 'Gracias por registrarte. Usa este codigo para confirmar tu correo y activar tu cuenta:';
   const codigo = String(code == null ? '' : code).replace(/[^0-9]/g, '').slice(0, 6);
   const anio = new Date().getFullYear();
+  const logoUrl = baseUrl ? String(baseUrl).replace(/\/+$/, '') + '/logos/saime-email.png' : '';
+  const logoCell = logoUrl
+    ? `\n                  <td width="68" valign="middle" style="width:68px;padding:0 14px 0 0;">\n                    <img src="${logoUrl}" width="56" height="56" alt="SAIME" style="display:block;width:56px;height:56px;border:0;outline:none;text-decoration:none;border-radius:8px;background-color:#ffffff;">\n                  </td>`
+    : '';
 
   return `<!DOCTYPE html>
 <html lang="es">
@@ -541,15 +564,21 @@ function buildCodeEmailHtml(code, purpose) {
       <td align="center">
         <table role="presentation" class="wrap" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(15,23,42,0.08);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
 
-          <!-- Encabezado institucional -->
+          <!-- Encabezado institucional con el logo del SAIME -->
           <tr>
-            <td style="background-color:#0b3d91;padding:22px 28px;">
-              <div style="color:#ffffff;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.3;">
-                Tramites Venezolanos en Linea
-              </div>
-              <div style="color:#c7d6f5;font-size:12px;margin-top:4px;letter-spacing:0.4px;text-transform:uppercase;">
-                Verificacion de correo
-              </div>
+            <td style="background-color:#0b3d91;padding:20px 28px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>${logoCell}
+                  <td valign="middle">
+                    <div style="color:#ffffff;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.3;">
+                      Tramites Venezolanos en Linea
+                    </div>
+                    <div style="color:#c7d6f5;font-size:12px;margin-top:4px;letter-spacing:0.4px;text-transform:uppercase;">
+                      Verificacion de correo
+                    </div>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
 
@@ -620,13 +649,13 @@ function buildCodeEmailHtml(code, purpose) {
 </html>`;
 }
 
-async function sendCodeEmail(to, code, purpose) {
+async function sendCodeEmail(to, code, purpose, baseUrl) {
   const subject = purpose === 'reset'
     ? 'Codigo para cambiar tu contrasena'
     : 'Codigo para confirmar tu correo';
   const text = 'Tu codigo de 6 digitos es ' + code + '.\n\nVence en 10 minutos.\n\n' +
     'Tramites Venezolanos en Linea\nSi no lo pediste, ignora este mensaje.';
-  const html = buildCodeEmailHtml(code, purpose);
+  const html = buildCodeEmailHtml(code, purpose, baseUrl);
   const viaApi = await sendViaApi(to, subject, text, html);
   if (viaApi !== null) return viaApi;
   if (!mailer) {
@@ -829,7 +858,7 @@ app.post('/api/register', async (req, res) => {
     // y la llevamos a la pantalla de verificación (no se le da acceso todavía).
     if (existing.emailVerified === false) {
       const code = issueCode(existing, 'verify');
-      const codeSent = await sendCodeEmail(existing.email || email, code, 'verify');
+      const codeSent = await sendCodeEmail(existing.email || email, code, 'verify', publicBase(req));
       return res.json({
         ok: true,
         needVerify: true,
@@ -856,7 +885,7 @@ app.post('/api/register', async (req, res) => {
   await attachCedulaData(user);
 
   const code = issueCode(user, 'verify');
-  const codeSent = await sendCodeEmail(email, code, 'verify');
+  const codeSent = await sendCodeEmail(email, code, 'verify', publicBase(req));
 
   // IMPORTANTE: NO se entrega sesión aquí. La cuenta queda sin verificar y la
   // persona debe escribir el código de 6 dígitos antes de entrar a la app.
@@ -904,7 +933,7 @@ app.post('/api/resend-code', async (req, res) => {
   const guard = codeGuardOk(cedula);
   if (!guard.ok) return res.status(429).json({ error: guard.error });
   const code = issueCode(user, purpose);
-  const sent = await sendCodeEmail(user.email, code, purpose);
+  const sent = await sendCodeEmail(user.email, code, purpose, publicBase(req));
   res.json({ ok: true, codeSent: sent, email: maskEmail(user.email) });
 });
 
@@ -950,7 +979,7 @@ app.post('/api/login', async (req, res) => {
     let codeSent = false;
     try {
       const code = issueCode(user, 'verify');
-      codeSent = await sendCodeEmail(user.email, code, 'verify');
+      codeSent = await sendCodeEmail(user.email, code, 'verify', publicBase(req));
     } catch (e) {}
     return res.status(403).json({
       error: 'Confirma tu correo para entrar. Enviamos un codigo de 6 digitos.',
@@ -987,7 +1016,7 @@ app.post('/api/forgot', async (req, res) => {
   const guard = codeGuardOk(cedula);
   if (!guard.ok) return res.status(429).json({ error: guard.error });
   const code = issueCode(user, 'reset');
-  const sent = await sendCodeEmail(user.email, code, 'reset');
+  const sent = await sendCodeEmail(user.email, code, 'reset', publicBase(req));
   if (!sent) return res.status(502).json({ error: 'No se pudo enviar el correo. Intenta de nuevo en un momento' });
   res.json({ ok: true, email: maskEmail(user.email) });
 });
