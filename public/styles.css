@@ -107,6 +107,15 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 }
 .brand-logo { width: 34px; height: 34px; border-radius: 9px; object-fit: cover; }
 .brand-block { flex: 1; min-width: 0; }
+.brand-line { display: flex; align-items: center; gap: 5px; min-width: 0; }
+/* Chulo de verificacion: solo aparece en la cuenta del administrador. Se dibuja
+   con SVG (no es una imagen) para que se vea nitido en cualquier pantalla. */
+.verified {
+  flex-shrink: 0; width: 17px; height: 17px; display: inline-block;
+  background: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2322c55e' d='M12 1.6l2.5 1.9 3.1-.3 1.1 2.9 2.7 1.6-.7 3 1.6 2.7-1.9 2.5.3 3.1-2.9 1.1-1.6 2.7-3-.7-2.7 1.6-2.5-1.9-3.1.3-1.1-2.9-2.7-1.6.7-3L1.6 12l1.9-2.5-.3-3.1 2.9-1.1L7.7 2.6l3 .7z'/%3E%3Cpath fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' d='M7.6 12.2l3 3 5.8-6'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+.verified[hidden] { display: none; }
+.verified.sm { width: 14px; height: 14px; }
 .brand {
   font-size: 18px; font-weight: 800; line-height: 1.15; color: #ffffff;
   letter-spacing: .2px; text-shadow: 0 1px 2px rgba(0, 0, 0, .18);
@@ -324,11 +333,20 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
   animation: installIn .28s ease-out;
 }
 @keyframes installIn { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+/* El aviso flota encima del contenido: mientras esta visible se reserva su
+   alto al final de la pantalla, para que no tape la ultima linea (el texto
+   "Adjunta una foto o un PDF..." quedaba a medias). */
+body.has-install .scroll,
+body.has-install #tramiteDetail,
+body.has-install #chatMessages { padding-bottom: 96px; }
 .install-logo { width: 42px; height: 42px; border-radius: 11px; object-fit: cover; flex-shrink: 0; }
 .install-txt { flex: 1; min-width: 0; }
 .install-title { font-size: 14.5px; font-weight: 800; line-height: 1.2; }
 .install-sub { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
-.install-go { padding: 9px 14px; font-size: 13px; flex-shrink: 0; }
+/* El boton hereda width:100% de .btn y se comia todo el ancho del aviso: el
+   texto quedaba en 0 px y el aviso se veia roto. Aqui se le devuelve su ancho
+   natural para que quepan el icono, las dos lineas de texto y el boton. */
+.install-go { width: auto; padding: 9px 14px; font-size: 13px; flex-shrink: 0; }
 .install-x { width: 30px; height: 30px; background: var(--bg); color: var(--muted); flex-shrink: 0; }
 .mail-input {
   width: 100%; border: 1.4px solid var(--border); background: #fbfcfe; border-radius: 11px;
@@ -481,8 +499,22 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
   user-select: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
+  /* El zoom con los dedos lo maneja el codigo (app.js): aqui solo se evita que
+     el navegador haga su propio zoom de pagina y se pelee con el nuestro. */
+  touch-action: pan-x pan-y;
+  overscroll-behavior: contain;
 }
-.doc-viewer .doc-pages { display: flex; flex-direction: column; gap: 8px; padding: 6px; }
+/* Mientras se hace zoom con dos dedos no se desplaza la pagina. */
+.doc-viewer.zooming { touch-action: none; }
+.doc-viewer .doc-pages { display: flex; flex-direction: column; gap: 8px; padding: 6px; transform-origin: 0 0; }
+/* Aviso de zoom: aparece un momento al acercar o alejar. */
+.zoom-hint {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+  z-index: 4; background: rgba(8, 20, 36, .82); color: #fff;
+  font-size: 12px; font-weight: 700; padding: 5px 11px; border-radius: 999px;
+  pointer-events: none; opacity: 0; transition: opacity .18s ease;
+}
+.zoom-hint.on { opacity: 1; }
 .doc-page {
   display: block;
   width: 100%;

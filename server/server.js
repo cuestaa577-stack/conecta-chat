@@ -1438,9 +1438,15 @@ function tramitePuedeDescargar(t) {
 /* --- Intentos de captura del documento --- */
 /* El documento no debe salir de la app: cada intento de capturarlo o guardarlo
    (menu contextual, imprimir, guardar, tecla de captura, pulsacion larga) se
-   cuenta. Al tercer intento la cuenta queda bloqueada 3 horas. */
+   anota en el historial del tramite para que el administrador lo vea.
+
+   YA NO SE BLOQUEA LA CUENTA. Antes, al tercer intento, la persona quedaba
+   fuera de la app 3 horas; en la practica eso interrumpia el tramite (un
+   toque largo sin querer y la persona no podia seguir). Ahora solo se deja
+   constancia. CAPTURA_BLOQUEO_MS se mantiene en 0 para que cualquier codigo
+   que lo lea siga funcionando sin bloquear a nadie. */
 const CAPTURA_LIMITE = 3;
-const CAPTURA_BLOQUEO_MS = 3 * 60 * 60 * 1000;
+const CAPTURA_BLOQUEO_MS = 0;
 const CAPTURA_VENTANA_MS = 24 * 60 * 60 * 1000;
 
 function capturaConfig() {
@@ -1454,10 +1460,11 @@ function capturaConfig() {
   };
 }
 
+/* El bloqueo por captura se quito: esta funcion se conserva (la usan el login
+   y el perfil) pero ya nunca devuelve un bloqueo. Asi las cuentas que quedaron
+   bloqueadas con la version anterior vuelven a entrar solas. */
 function bloqueoView(user) {
-  const hasta = Number((user && user.lockUntil) || 0);
-  if (!hasta || hasta <= now()) return null;
-  return { hasta: hasta, restanteMin: Math.max(1, Math.ceil((hasta - now()) / 60000)) };
+  return null;
 }
 
 function intentosCaptura(user) {
@@ -1493,7 +1500,7 @@ function archivoResumen(f) {
     mime: String(f.mime || ''),
     size: Number(f.size || 0),
     uploadedAt: Number(f.uploadedAt || 0),
-    reference: String(f.reference || ''),
+    method: String(f.method || ''),
     note: String(f.note || ''),
   };
 }
@@ -1528,7 +1535,7 @@ function tramiteView(t, forUser) {
     doc: doc ? { name: doc.name, mime: doc.mime, size: doc.size, uploadedAt: doc.uploadedAt } : null,
     payment: pago ? {
       name: pago.name, mime: pago.mime, size: pago.size, uploadedAt: pago.uploadedAt,
-      reference: pago.reference, note: pago.note,
+      method: pago.method, note: pago.note,
     } : null,
     note: t.note || '',
     createdAt: t.createdAt || 0,
@@ -1751,24 +1758,17 @@ app.post('/api/tramites/:id/intento-captura', auth, (req, res) => {
   previos.push({ at: now(), tipo: tipo, tramiteId: t.id });
   u.captureAttempts = previos;
   const intentos = previos.length;
-  let bloqueado = false;
-  if (intentos >= CAPTURA_LIMITE) {
-    u.lockUntil = now() + CAPTURA_BLOQUEO_MS;
-    u.lockReason = 'intentos de captura del documento';
-    bloqueado = true;
-    tramiteHistorial(t, t.status, 'Cuenta bloqueada 3 horas: ' + intentos + ' intentos de captura del documento', 'sistema');
-  } else {
-    tramiteHistorial(t, t.status, 'Intento de captura del documento (' + intentos + '/' + CAPTURA_LIMITE + '): ' + tipo, 'sistema');
-  }
+  /* Solo se deja constancia en el historial: la cuenta NO se bloquea. */
+  tramiteHistorial(t, t.status, 'Intento de captura del documento (' + intentos + '): ' + tipo, 'sistema');
   t.updatedAt = now();
   save();
   res.json({
     intentos: intentos,
     limite: CAPTURA_LIMITE,
     restantes: Math.max(0, CAPTURA_LIMITE - intentos),
-    bloqueado: bloqueado,
-    hasta: u.lockUntil || 0,
-    restanteMin: bloqueado ? Math.round(CAPTURA_BLOQUEO_MS / 60000) : 0,
+    bloqueado: false,
+    hasta: 0,
+    restanteMin: 0,
   });
 });
 
@@ -1826,7 +1826,7 @@ app.post('/api/tramites/:id/comprobante', auth, (req, res) => {
     name: String(body.name || 'Comprobante de pago').slice(0, 140),
     mime: String(body.mime || ''),
     size: Number(body.size || 0),
-    reference: String(body.reference || '').slice(0, 60),
+    method: String(body.method || '').slice(0, 60),
     note: String(body.note || '').slice(0, 400),
     uploadedAt: now(),
   };

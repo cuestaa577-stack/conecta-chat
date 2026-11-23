@@ -7,8 +7,8 @@
   <meta name="description" content="Tramites Venezolanos en Linea: cedula, licencia y antecedentes penales. Asesoria y acompanamiento." />
   <title>Tramites Venezolanos en Linea</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="icon" href="favicon-32.png?v=19" sizes="32x32" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=19" />
+  <link rel="icon" href="favicon-32.png?v=28" sizes="32x32" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=28" />
   <link rel="stylesheet" href="styles.css" />
   <style>
     .auth-card{position:relative}
@@ -26,7 +26,7 @@
   <div class="tricolor"></div>
   <div class="auth-card">
     <button class="admin-corner" type="button" onclick="App.showAdminAuth()">Personal autorizado</button>
-    <img class="auth-logo" src="icon-192.png" alt="Tramites Venezolanos en Linea" />
+    <img class="auth-logo" src="icon-192.png" srcset="icon-192.png 1x, icon-512.png 2x" alt="Tramites Venezolanos en Linea" />
     <h1>Tramites Venezolanos en Linea</h1>
     <p class="muted">Cedula, licencia y antecedentes penales. Te acompanamos en todo el tramite.</p>
 
@@ -133,9 +133,12 @@
   <!-- Portada de servicios -->
   <section class="view active" id="homeView">
     <header class="topbar">
-      <img class="brand-logo" src="icon-192.png" alt="Trámites en Línea" />
+      <img class="brand-logo" src="icon-192.png" srcset="icon-192.png 1x, icon-512.png 2x" alt="Trámites en Línea" />
       <div class="brand-block">
-        <div class="brand">Trámites en Línea</div>
+        <div class="brand-line">
+          <div class="brand">Trámites en Línea</div>
+          <span class="verified" id="brandVerified" hidden title="Cuenta verificada"></span>
+        </div>
         <div class="brand-sub">Cédula, licencia y antecedentes penales</div>
       </div>
       <div class="top-actions">
@@ -284,7 +287,10 @@
         <svg viewBox="0 0 24 24" class="ico"><path d="M15 6l-6 6 6 6"/></svg>
       </button>
       <div class="brand-block">
-        <div class="brand" id="chatTitle">Servidor publico</div>
+        <div class="brand-line">
+          <div class="brand" id="chatTitle">Servidor publico</div>
+          <span class="verified" id="chatVerified" hidden title="Cuenta verificada"></span>
+        </div>
         <div class="brand-sub" id="chatSubtitle">En linea</div>
       </div>
       <button class="iconbtn" onclick="App.deleteChat()" title="Eliminar conversacion">
@@ -442,7 +448,7 @@
 
 <!-- Instalar la app -->
 <div class="install hidden" id="installBanner">
-  <img class="install-logo" src="icon-192.png" alt="" />
+  <img class="install-logo" src="icon-192.png" srcset="icon-192.png 1x, icon-512.png 2x" alt="" />
   <div class="install-txt">
     <div class="install-title">Instala la app</div>
     <div class="install-sub">Queda en tu celular, como una app</div>

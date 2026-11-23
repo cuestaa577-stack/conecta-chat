@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v3.9';
+  const APP_VERSION = 'v4.0';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -42,6 +42,29 @@ const App = (() => {
 
   const GRADES = ['Grado 2\u00b0', 'Grado 3\u00b0', 'Grado 4\u00b0', 'Grado 5\u00b0'];
 
+  /* Metodos de pago por pais.
+     ---------------------------------------------------------------------
+     Antes la persona escribia a mano la "referencia" del pago, que no le
+     decia nada al administrador. Ahora elige con que pago, y las opciones
+     cambian segun el pais de su cuenta: en Venezuela aparece Pago Movil, en
+     Colombia Nequi, en Ecuador Banco Pichincha, en Chile Banco Estado y Caja
+     Vecina, etc. Si el pais no esta en la lista se muestran las opciones
+     generales. */
+  const PAY_METHODS = {
+    Venezuela: ['Pago Movil', 'Transferencia bancaria', 'Zelle', 'Binance (USDT)', 'Efectivo'],
+    Colombia: ['Nequi', 'Daviplata', 'Bancolombia', 'Transferencia bancaria', 'Efectivo'],
+    Ecuador: ['Banco Pichincha', 'Banco Guayaquil', 'Banco del Pacifico', 'Efectivo'],
+    Chile: ['Banco Estado', 'Caja Vecina', 'Mercado Pago', 'Transferencia bancaria'],
+    Peru: ['Yape', 'Plin', 'BCP', 'Interbank', 'Efectivo'],
+    Argentina: ['Mercado Pago', 'Uala', 'Transferencia bancaria', 'Efectivo'],
+    Otro: ['Transferencia bancaria', 'Western Union', 'Binance (USDT)', 'Efectivo'],
+  };
+
+  function metodosDePago(pais) {
+    const lista = PAY_METHODS[pais];
+    return lista && lista.length ? lista : PAY_METHODS.Otro;
+  }
+
   const state = {
     token: localStorage.getItem('tve_token') || '',
     me: null,
@@ -58,7 +81,7 @@ const App = (() => {
     uploading: false,
     installEvent: null,
     installShown: false,
-    captura: { limite: 3, horas: 3, salirCuenta: false },
+    captura: { limite: 3, horas: 0, salirCuenta: false },
   };
 
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -490,6 +513,10 @@ const App = (() => {
     pintarAvatar($('#myAvatarBtn'), state.me.avatar, state.me.name);
     const adminBtn = $('#adminBtn');
     if (adminBtn) adminBtn.style.display = state.me.role === 'admin' ? 'block' : 'none';
+    /* Chulo de verificacion junto al nombre de la app: solo en la cuenta del
+       administrador. */
+    const marca = $('#brandVerified');
+    if (marca) marca.hidden = state.me.role !== 'admin';
     showView('home', false);
     state.viewStack = [];
     renderMyData();
@@ -677,13 +704,16 @@ const App = (() => {
     list.innerHTML = state.chats.map((c) => {
       const other = otherOf(c);
       const name = state.me.role === 'admin' ? (other ? other.name : 'Persona') : 'Servidor publico';
+      /* El chulo marca la cuenta del administrador: se ve cuando la otra parte
+         de la conversacion es el administrador. */
+      const chulo = (other && other.role === 'admin') ? '<span class="verified sm" title="Cuenta verificada"></span>' : '';
       const lm = c.lastMessage;
       const last = lm ? (lm.type === 'text' ? lm.text : '[' + lm.type + ']') : 'Sin mensajes';
       const tramite = c.tramite ? `${c.tramite.serviceLabel || ''}${c.tramite.subtypeLabel ? ' \u00b7 ' + c.tramite.subtypeLabel : ''}` : '';
       return `<button class="chat-row" onclick="App.openChat('${c.id}')">
         <div class="avatar" data-avatar="${esc(other && other.avatar ? other.avatar : '')}" data-nombre="${esc(name)}" style="width:46px;height:46px;font-size:16px">${other && other.avatar ? '' : initials(name)}</div>
         <div class="grow">
-          <div class="t">${esc(name)}</div>
+          <div class="t">${esc(name)}${chulo}</div>
           <div class="s">${esc(tramite || last)}</div>
         </div>
         <div class="time">${lm ? clock(lm.ts) : ''}</div>
@@ -708,6 +738,9 @@ const App = (() => {
     const title = state.me.role === 'admin' ? (other ? other.name : 'Persona') : 'Servidor publico';
     $('#chatTitle').textContent = title;
     $('#chatSubtitle').textContent = 'En linea';
+    /* El chulo sale en la conversacion cuando el otro es el administrador. */
+    const chuloChat = $('#chatVerified');
+    if (chuloChat) chuloChat.hidden = !(other && other.role === 'admin');
 
     const tEl = $('#chatTramite');
     if (chat && chat.tramite) {
@@ -1429,7 +1462,7 @@ const App = (() => {
             <div class="doc-alert" id="docAlert" hidden></div>
           </div>
           <p class="pnote muted">Revisa que todo esté correcto. La descarga se habilita cuando el servidor público confirme tu pago.</p>
-          <p class="pnote muted doc-aviso">El documento no se puede capturar ni guardar. Cada intento queda registrado y al tercero la cuenta se bloquea por ${Number(state.captura && state.captura.horas) || 3} horas.</p>
+          <p class="pnote muted doc-aviso">El documento no se puede capturar ni guardar.</p>
         </div>`;
     } else {
       previewHtml = `
@@ -1483,7 +1516,11 @@ const App = (() => {
         <div class="panel pay-panel">
           <h3>Cómo pagar</h3>
           <p class="pnote">${info}</p>
-          <label class="field"><span>Referencia o últimos dígitos del pago</span><input id="pagoRef" type="text" inputmode="numeric" placeholder="Ej: 458921" /></label>
+          <label class="field"><span>¿Con qué pagaste?</span>
+            <select id="pagoMetodo">
+              ${metodosDePago(state.me && state.me.country).map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join('')}
+            </select>
+          </label>
           <label class="field"><span>Nota (opcional)</span><input id="pagoNota" type="text" placeholder="Ej: pagué por Pago Móvil" /></label>
           <button class="btn primary" onclick="App.subirComprobante()">Enviar mi comprobante de pago</button>
           <p class="pnote muted">Adjunta una foto o un PDF del comprobante. El servidor público lo revisa y te confirma la descarga.</p>
@@ -1495,7 +1532,7 @@ const App = (() => {
           <h3>Tu comprobante de pago</h3>
           <div class="panel-row"><span>Estado del comprobante</span><span class="pill">${esc(etiqueta)}</span></div>
           <div class="panel-row"><span>Enviado</span><span>${esc(fechaCorta(t.payment.uploadedAt))}</span></div>
-          ${t.payment.reference ? '<div class="panel-row"><span>Referencia</span><span>' + esc(t.payment.reference) + '</span></div>' : ''}
+          ${t.payment.method ? '<div class="panel-row"><span>Método de pago</span><span>' + esc(t.payment.method) + '</span></div>' : ''}
           ${t.payment.note ? '<div class="panel-row"><span>Nota</span><span>' + esc(t.payment.note) + '</span></div>' : ''}
           <a class="btn ghost" href="${esc(archivoUrl(t.id, 'comprobante'))}" target="_blank" rel="noopener">Ver mi comprobante</a>
           ${t.status === 'rechazado' && t.note ? '<p class="rechazo-nota">' + esc(t.note) + '</p>' : ''}
@@ -1555,9 +1592,13 @@ const App = (() => {
 
   /* --------------------- visor del documento (sin salir de la app) --------------------- */
   /* El PDF se dibuja en canvas con marca de agua: se ve dentro de la app, no se abre
-     en otra pestaña y no se puede guardar con una pulsación larga. Cada intento de
-     captura se registra y al tercero la cuenta queda bloqueada 3 horas. */
-  const visor = { abierto: false, tramiteId: '', ultimo: 0, guardaActiva: false, touchTimer: null, pdf: null };
+     en otra pestaña y no se puede guardar con una pulsación larga. Los intentos de
+     captura solo se anotan en el historial (ya no bloquean la cuenta). */
+  const visor = { abierto: false, tramiteId: '', ultimo: 0, guardaActiva: false, touchTimer: null, pdf: null,
+    /* Zoom con los dedos: buf/tipo se guardan para volver a dibujar el
+       documento a mas resolucion cuando la persona acerca. */
+    buf: null, tipo: '', tramite: null, escala: 1, escalaTmp: 1, zoomActivo: false,
+    pinchDist: 0, pinchEscala: 1, ultimoToque: 0, redibujando: false };
 
   /* Marca de agua: SOLO el texto "VISTA PREVIA", en azul, una sola vez y
      centrado en la pagina. Antes se repetia en diagonal por toda la hoja y
@@ -1615,6 +1656,143 @@ const App = (() => {
     const v = $('#docViewer');
     const w = (v && v.clientWidth) || 340;
     return Math.max(280, Math.min(760, w));
+  }
+
+  /* ------------------------- zoom con los dedos -------------------------
+     La persona toca la cedula y la acerca con dos dedos para leer los datos.
+
+     Como funciona: mientras los dedos se mueven se escala la capa con CSS
+     (respuesta inmediata, sin esperar a dibujar). Al levantar los dedos se
+     vuelve a dibujar el documento al ancho nuevo, y ahi si se ve nitido: el
+     canvas se genera con la resolucion real del zoom, no es una imagen
+     estirada. Por eso el texto queda legible y no borroso.
+
+     Limites: de 1x a 4x. El canvas se corta en 2400 px de ancho para que un
+     telefono con poca memoria no se quede sin espacio. */
+  const ZOOM_MIN = 1;
+  const ZOOM_MAX = 4;
+  const ZOOM_ANCHO_MAX = 2400;
+
+  function capaZoom() { return $('#docPages'); }
+
+  function aplicarTransform(escalaRel) {
+    const capa = capaZoom();
+    if (!capa) return;
+    capa.style.transformOrigin = '0 0';
+    capa.style.transform = escalaRel === 1 ? '' : 'scale(' + escalaRel + ')';
+  }
+
+  function mostrarPistaZoom(txt) {
+    const v = $('#docViewer');
+    if (!v) return;
+    let hint = v.querySelector('.zoom-hint');
+    if (!hint) {
+      hint = document.createElement('div');
+      hint.className = 'zoom-hint';
+      v.appendChild(hint);
+    }
+    hint.textContent = txt;
+    hint.classList.add('on');
+    clearTimeout(hint._t);
+    hint._t = setTimeout(() => hint.classList.remove('on'), 1100);
+  }
+
+  /* Vuelve a dibujar el documento al zoom actual. */
+  async function redibujarAlZoom() {
+    const pages = $('#docPages');
+    if (!pages || !visor.buf || visor.redibujando) return;
+    visor.redibujando = true;
+    const v = $('#docViewer');
+    const scrollAntes = v ? v.scrollTop : 0;
+    const factorAntes = visor.escalaAnterior || 1;
+    try {
+      const ancho = Math.min(ZOOM_ANCHO_MAX, Math.round(anchoVisor() * visor.escala));
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      pages.innerHTML = '';
+      if (/pdf/i.test(visor.tipo)) await pintarPdf(visor.buf, pages, ancho, dpr);
+      else await pintarFoto(visor.buf, visor.tipo, pages, ancho, dpr);
+      /* Se mantiene mas o menos el punto donde estaba leyendo. */
+      if (v) v.scrollTop = Math.round(scrollAntes * (visor.escala / factorAntes));
+      visor.escalaAnterior = visor.escala;
+    } catch (e) {
+      console.warn('No se pudo redibujar al zoom:', e && e.message);
+    } finally {
+      visor.redibujando = false;
+    }
+  }
+
+  function distanciaDedos(t1, t2) {
+    const dx = t1.clientX - t2.clientX;
+    const dy = t1.clientY - t2.clientY;
+    return Math.sqrt(dx * dx + dy * dy) || 1;
+  }
+
+  function onPinchStart(e) {
+    if (!visor.abierto || e.touches.length !== 2) return;
+    visor.zoomActivo = true;
+    visor.pinchDist = distanciaDedos(e.touches[0], e.touches[1]);
+    visor.pinchEscala = visor.escala;
+    const v = $('#docViewer');
+    if (v) v.classList.add('zooming');
+    clearTimeout(visor.touchTimer);
+  }
+
+  function onPinchMove(e) {
+    if (!visor.zoomActivo || e.touches.length !== 2) return;
+    e.preventDefault();
+    const dist = distanciaDedos(e.touches[0], e.touches[1]);
+    const rel = dist / visor.pinchDist;
+    const objetivo = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, visor.pinchEscala * rel));
+    visor.escalaTmp = objetivo;
+    aplicarTransform(objetivo / visor.escala);
+  }
+
+  function onPinchEnd() {
+    if (!visor.zoomActivo) return;
+    visor.zoomActivo = false;
+    const v = $('#docViewer');
+    if (v) v.classList.remove('zooming');
+    const nueva = Math.round(visor.escalaTmp * 10) / 10;
+    aplicarTransform(1);
+    if (Math.abs(nueva - visor.escala) < 0.15) { visor.escalaTmp = visor.escala; return; }
+    visor.escala = nueva;
+    visor.escalaTmp = nueva;
+    mostrarPistaZoom(nueva <= 1.05 ? 'Tamaño normal' : 'Zoom ' + nueva.toFixed(1) + 'x');
+    redibujarAlZoom();
+  }
+
+  /* Doble toque: acerca al doble y, si ya esta cerca, vuelve al tamaño normal. */
+  function onDobleToque(e) {
+    if (!visor.abierto) return;
+    const ahora = Date.now();
+    if (ahora - visor.ultimoToque < 320) {
+      visor.ultimoToque = 0;
+      visor.escala = visor.escala > 1.2 ? 1 : 2.2;
+      visor.escalaTmp = visor.escala;
+      mostrarPistaZoom(visor.escala === 1 ? 'Tamaño normal' : 'Zoom ' + visor.escala.toFixed(1) + 'x');
+      redibujarAlZoom();
+      return;
+    }
+    visor.ultimoToque = ahora;
+  }
+
+  function activarZoom() {
+    const v = $('#docViewer');
+    if (!v || v._zoomListo) return;
+    v._zoomListo = true;
+    v.addEventListener('touchstart', onPinchStart, { passive: true });
+    v.addEventListener('touchmove', onPinchMove, { passive: false });
+    v.addEventListener('touchend', onPinchEnd);
+    v.addEventListener('touchcancel', onPinchEnd);
+    v.addEventListener('touchend', onDobleToque);
+    /* Con raton (computadora) se puede acercar con la rueda y Ctrl. */
+    v.addEventListener('wheel', (e) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      visor.escala = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, visor.escala * (e.deltaY < 0 ? 1.15 : 0.87)));
+      visor.escalaTmp = visor.escala;
+      redibujarAlZoom();
+    }, { passive: false });
   }
 
   /* Tipo real del archivo por sus primeros bytes. El mime que guarda el
@@ -1740,6 +1918,14 @@ const App = (() => {
       const buf = await res.arrayBuffer();
       if (!buf || !buf.byteLength) throw new Error('El documento llegó vacío');
       const tipo = tipoReal(buf, t.doc.mime, t.doc.name);
+      /* Se guardan para el zoom: al acercar se vuelve a dibujar a mas
+         resolucion sin pedir el archivo otra vez. */
+      visor.buf = buf;
+      visor.tipo = tipo;
+      visor.tramite = t;
+      visor.escala = 1;
+      visor.escalaTmp = 1;
+      visor.escalaAnterior = 1;
       const ancho = anchoVisor();
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       pages.innerHTML = '';
@@ -1767,6 +1953,7 @@ const App = (() => {
         }
       }
       activarGuardaVisor();
+      activarZoom();
     } catch (e) {
       /* Ni siquiera se pudo descargar el archivo: se muestra la tarjeta de
          respaldo en vez de un error que deja la pantalla en blanco. */
@@ -1910,23 +2097,20 @@ const App = (() => {
     if (alerta) { alerta.hidden = true; alerta.innerHTML = ''; }
   }
 
+  /* Se deja constancia del intento en el historial del tramite, pero YA NO se
+     tapa el documento ni se bloquea la cuenta. Antes, al tercer intento, la
+     persona quedaba 3 horas fuera de la app y el tramite se interrumpia; ahora
+     solo queda anotado para que el administrador lo vea. */
   async function registrarIntento(tipo) {
     if (!visor.abierto || !visor.tramiteId) return;
     if (Date.now() - visor.ultimo < 2500) return;
     visor.ultimo = Date.now();
-    taparDocumento();
     try {
-      const r = await api('/api/tramites/' + encodeURIComponent(visor.tramiteId) + '/intento-captura', {
+      await api('/api/tramites/' + encodeURIComponent(visor.tramiteId) + '/intento-captura', {
         method: 'POST',
         body: JSON.stringify({ tipo: tipo }),
       });
-      if (r && r.esAdmin) { destaparDocumento(); return; }
-      if (r && r.bloqueado) return mostrarBloqueo(r.hasta);
-      mostrarAvisoCaptura(r.intentos, r.limite, r.restantes);
-    } catch (e) {
-      if (e.status === 423) return mostrarBloqueo((e.data && e.data.hasta) || 0);
-      mostrarAvisoCaptura(1, (state.captura && state.captura.limite) || 3, 2);
-    }
+    } catch (e) { /* el aviso nunca debe interrumpir el tramite */ }
   }
 
   function mostrarAvisoCaptura(intentos, limite, restantes) {
@@ -1948,37 +2132,10 @@ const App = (() => {
     destaparDocumento();
   }
 
+  /* El bloqueo de 3 horas se quito de la app. Esta funcion queda vacia para
+     que cualquier llamada vieja no haga nada (y no rompa la app). */
   function mostrarBloqueo(hasta) {
-    const t = Number(hasta || 0);
-    let el = $('#bloqueoScreen');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'bloqueoScreen';
-      el.className = 'bloqueo-screen';
-      document.body.appendChild(el);
-    }
-    const pintar = () => {
-      let txt = 'Tu cuenta está bloqueada.';
-      if (t) {
-        const ms = t - Date.now();
-        if (ms <= 0) { el.remove(); location.reload(); return; }
-        const min = Math.ceil(ms / 60000);
-        const h = Math.floor(min / 60);
-        const m = min % 60;
-        txt = 'Podrás volver a entrar en ' + (h ? h + ' h ' : '') + m + ' min.';
-      }
-      el.innerHTML = `
-        <div class="bloqueo-box">
-          <div class="bloqueo-ic">🔒</div>
-          <h2>Cuenta bloqueada por 3 horas</h2>
-          <p>Se detectaron intentos de capturar el documento. Por seguridad, el documento no se puede fotografiar, capturar ni guardar.</p>
-          <p class="bloqueo-timer">${esc(txt)}</p>
-          <button class="btn ghost" onclick="App.salirBloqueo()">Salir</button>
-        </div>`;
-    };
-    pintar();
-    clearInterval(el._timer);
-    el._timer = setInterval(pintar, 30000);
+    return;
   }
 
   function salirBloqueo() {
@@ -2002,9 +2159,9 @@ const App = (() => {
       const f = inp.files && inp.files[0];
       if (!f) return;
       if (f.size > MAX_DOC_BYTES) return toast('El comprobante pesa ' + peso(f.size) + ' y el maximo es ' + MAX_DOC_TEXTO);
-      const refEl = $('#pagoRef');
+      const metodoEl = $('#pagoMetodo');
       const notaEl = $('#pagoNota');
-      const reference = refEl ? String(refEl.value || '').trim() : '';
+      const method = metodoEl ? String(metodoEl.value || '').trim() : '';
       const note = notaEl ? String(notaEl.value || '').trim() : '';
       try {
         toast('Subiendo comprobante...');
@@ -2016,7 +2173,7 @@ const App = (() => {
             name: up.name || f.name,
             mime: up.mime || f.type || '',
             size: up.size || f.size || 0,
-            reference,
+            method,
             note,
           }),
         });
@@ -2074,7 +2231,7 @@ const App = (() => {
           </div>
           <span class="chip ${st.cls}">${esc(st.txt)}</span>
         </div>
-        ${t.payment ? `<div class="at-pay">Comprobante: ${esc(t.payment.name)} \u00b7 ${esc(fechaCorta(t.payment.uploadedAt))}${t.payment.reference ? ' \u00b7 Ref. ' + esc(t.payment.reference) : ''}
+        ${t.payment ? `<div class="at-pay">Comprobante: ${esc(t.payment.name)} \u00b7 ${esc(fechaCorta(t.payment.uploadedAt))}${t.payment.method ? ' \u00b7 ' + esc(t.payment.method) : ''}
           <a href="${esc(archivoUrl(t.id, 'comprobante'))}" target="_blank" rel="noopener">Ver comprobante</a></div>` : ''}
         ${t.note ? `<div class="at-note">${esc(t.note)}</div>` : ''}
         <div class="row-actions">
@@ -2341,12 +2498,15 @@ const App = (() => {
     if (!el) return;
     if (localStorage.getItem('install_dismissed') === '1') return;
     el.classList.remove('hidden');
+    /* Reserva espacio al final para que el aviso no tape la ultima linea. */
+    document.body.classList.add('has-install');
     state.installShown = true;
   }
 
   function hideInstall() {
     const el = $('#installBanner');
     if (el) el.classList.add('hidden');
+    document.body.classList.remove('has-install');
   }
 
   function dismissInstall() {
