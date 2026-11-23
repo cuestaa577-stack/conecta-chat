@@ -275,6 +275,9 @@ let registrosSucios = false;
 let guardandoRegistros = false;
 let reintentoNube = null;
 const firmas = new Map();
+/* Cuentas que la propia persona borro. Solo estas se eliminan de la nube;
+   ninguna otra cuenta se borra automaticamente. */
+const borradosExplicitos = new Set();
 const ultimos = new Map();
 
 let supabase = null;
@@ -356,7 +359,14 @@ async function guardarRegistros() {
       /* Registros que ya no existen (cuenta borrada, chat eliminado). */
       const vivos = new Set(lista.map((r) => r.id));
       const borrar = [];
-      firmas.forEach((_f, id) => { if (!vivos.has(id)) borrar.push(id); });
+      firmas.forEach((_f, id) => {
+        if (vivos.has(id)) return;
+        /* Proteccion de cuentas: una cuenta solo se borra si su dueno la borro.
+           Si el arranque no pudo leer la nube, la lista local va incompleta y
+           antes esto borraba las cuentas registradas. */
+        if (id.indexOf('users:') === 0 && !borradosExplicitos.has(id)) return;
+        borrar.push(id);
+      });
 
       for (let i = 0; i < filas.length; i += 50) {
         const lote = filas.slice(i, i + 50);
@@ -391,7 +401,7 @@ async function guardarRegistros() {
           const lote = borrar.slice(i, i + 50);
           const { error } = await supabase.from(RECORDS_TABLE).delete().in('id', lote);
           if (error) { console.error('Supabase borrado error:', error.message); break; }
-          lote.forEach((id) => { firmas.delete(id); ultimos.delete(id); });
+          lote.forEach((id) => { firmas.delete(id); ultimos.delete(id); borradosExplicitos.delete(id); });
         }
       }
     } while (registrosSucios);
@@ -1539,6 +1549,7 @@ app.delete('/api/account', auth, (req, res) => {
   if (Array.isArray(db.visits)) db.visits = db.visits.filter((v) => v && v.userId !== me.id);
 
   // 5) La cuenta
+  borradosExplicitos.add('users:' + me.id);
   delete db.users[me.id];
   save();
   res.json({ ok: true, eliminado: true });
