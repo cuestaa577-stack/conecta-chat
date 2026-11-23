@@ -50,11 +50,16 @@ function parseFrom() {
   return { name: MAIL_FROM_NAME, email: raw };
 }
 
-/* Logo del SAIME incrustado en el correo.
-   Se envia como imagen adjunta "inline" (CID) en lugar de una URL externa: el
-   cliente de correo ya no tiene que descargarla, asi el logo aparece desde el
-   primer momento, sin el hueco vacio ni el salto de "cargando imagen".
-   Si el archivo no se puede leer, se usa la URL publica como respaldo. */
+/* Logo del SAIME en el correo.
+   La persona debe recibir SOLO el correo, con el logo pintado dentro del
+   mensaje y sin ningun archivo adjunto en la bandeja.
+
+   - Resend, SendGrid y SMTP si admiten imagenes en linea: el logo viaja como
+     parte MIME "inline" con Content-ID y el cliente lo pinta dentro del HTML.
+   - Brevo NO admite imagenes en linea en su API v3: su campo "attachment"
+     siempre crea un adjunto visible (el "saime-logo.png" que salia en la
+     bandeja). Por eso a Brevo se le manda solo la URL publica del logo, sin
+     adjuntar nada. */
 const LOGO_CID = 'saime-logo.png';
 const LOGO_FILE = path.join(__dirname, 'public', 'logos', 'saime-email.png');
 let logoCache = null;
@@ -68,6 +73,49 @@ function loadEmailLogo() {
     logoCache = false;
   }
   return logoCache;
+}
+
+/* Proveedores cuya API respeta Content-ID / disposition "inline". */
+function providerSupportsInline(provider) {
+  return provider === 'resend' || provider === 'sendgrid';
+}
+
+/* URL publica del logo, para los proveedores que no admiten imagenes en linea.
+   Prioridad: LOGO_URL (si la defines) -> copia en Supabase Storage (CDN rapido,
+   no depende de que Render este despierto) -> la propia app. */
+let hostedLogoCache = null; // null = sin intentar, '' = no disponible
+async function hostedLogoUrl() {
+  if (hostedLogoCache !== null) return hostedLogoCache;
+  hostedLogoCache = '';
+  if (!supabase) return hostedLogoCache;
+  try {
+    const buf = fs.readFileSync(LOGO_FILE);
+    const key = 'email/saime-logo.png';
+    const up = await supabase.storage.from(SUPABASE_BUCKET).upload(key, buf, { contentType: 'image/png', upsert: true });
+    if (up && up.error && !/already exists|duplicate|resource already/i.test(up.error.message || '')) {
+      console.warn('[correo] No se pudo publicar el logo en Supabase: ' + up.error.message);
+      return hostedLogoCache;
+    }
+    const { data } = supabase.storage.from(SUPABASE_BUCKET).getPublicUrl(key);
+    const url = data && data.publicUrl ? String(data.publicUrl) : '';
+    if (!url) return hostedLogoCache;
+    // Solo se usa si de verdad se abre sin sesion (bucket publico).
+    const probe = await fetch(url).catch(() => null);
+    if (probe && probe.ok) hostedLogoCache = url;
+    else console.warn('[correo] El logo en Supabase no es publico; se usara la URL de la app.');
+  } catch (e) {
+    console.warn('[correo] No se pudo publicar el logo en Supabase: ' + e.message);
+  }
+  return hostedLogoCache;
+}
+
+async function resolveLogoUrl(baseUrl) {
+  const override = String(process.env.LOGO_URL || '').trim();
+  if (override) return override;
+  const hosted = await hostedLogoUrl();
+  if (hosted) return hosted;
+  const base = String(baseUrl || '').replace(/\/+$/, '');
+  return base ? base + '/logos/saime-email.png' : '';
 }
 
 async function sendViaApi(to, subject, text, html, logo) {
@@ -86,10 +134,9 @@ async function sendViaApi(to, subject, text, html, logo) {
         headers: { 'api-key': MAIL_API_KEY, 'Content-Type': 'application/json', accept: 'application/json' },
         body: JSON.stringify({
           sender: from, to: [{ email: to }], subject,
-          textContent: text, htmlContent: html || undefined,
-          // Brevo no tiene campo de Content-ID: el truco es que el nombre del
-          // adjunto sea exactamente el mismo que el "cid:" del HTML.
-          attachment: logo ? [{ content: logo.content, name: logo.filename }] : undefined
+          textContent: text, htmlContent: html || undefined
+          // Sin "attachment": Brevo no soporta imagenes en linea y cualquier
+          // adjunto aparece como archivo en la bandeja. El logo va por URL.
         })
       });
     } else if (provider === 'resend') {
@@ -687,12 +734,17 @@ async function sendCodeEmail(to, code, purpose, baseUrl) {
     : 'Codigo para confirmar tu correo';
   const text = 'Tu codigo de 6 digitos es ' + code + '.\n\nVence en 10 minutos.\n\n' +
     'Tramites Venezolanos en Linea\nSi no lo pediste, ignora este mensaje.';
+  const provider = detectProvider();
+  const apiConfigured = !!(MAIL_API_KEY && provider);
+  // Con API configurada responde el proveedor; sin API se usa SMTP, que si
+  // admite imagenes en linea.
+  const inlineOk = !apiConfigured || providerSupportsInline(provider);
   const logo = loadEmailLogo();
-  const logoSrc = logo
+  const logoSrc = logo && inlineOk
     ? 'cid:' + logo.cid
-    : (baseUrl ? String(baseUrl).replace(/\/+$/, '') + '/logos/saime-email.png' : '');
+    : await resolveLogoUrl(baseUrl);
   const html = buildCodeEmailHtml(code, purpose, logoSrc);
-  const viaApi = await sendViaApi(to, subject, text, html, logo || null);
+  const viaApi = await sendViaApi(to, subject, text, html, inlineOk ? (logo || null) : null);
   if (viaApi !== null) return viaApi;
   if (!mailer) {
     console.warn('[correo] Sin correo configurado. Codigo para ' + to + ': ' + code);
