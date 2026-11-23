@@ -741,6 +741,88 @@ function save() {
 const uid = (p) => p + crypto.randomBytes(8).toString('hex');
 const now = () => Date.now();
 
+/* --------------------------------------------------- pais por IP (geolocalizacion) */
+const GEO_TTL = 1000 * 60 * 60 * 12;
+const geoCache = new Map();
+
+function clientIp(req) {
+  const raw = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
+    (req.socket && req.socket.remoteAddress) || '';
+  return raw.replace(/^::ffff:/, '');
+}
+
+function ipPrivada(ip) {
+  return !ip || /^(::1|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|localhost)/i.test(ip);
+}
+
+/* Nombres normalizados: la API puede devolver "Peru", "Perú" o el codigo ISO */
+const PAISES_ALIAS = {
+  VE: 'Venezuela', VENEZUELA: 'Venezuela',
+  CL: 'Chile', CHILE: 'Chile',
+  EC: 'Ecuador', ECUADOR: 'Ecuador',
+  CO: 'Colombia', COLOMBIA: 'Colombia',
+  PE: 'Perú', PERU: 'Perú', 'PERÚ': 'Perú',
+  AR: 'Argentina', ARGENTINA: 'Argentina',
+  BR: 'Brasil', BRASIL: 'Brasil', BRAZIL: 'Brasil',
+  US: 'Estados Unidos', 'ESTADOS UNIDOS': 'Estados Unidos', 'UNITED STATES': 'Estados Unidos',
+  ES: 'España', ESPANA: 'España', 'ESPAÑA': 'España', SPAIN: 'España',
+  MX: 'México', MEXICO: 'México', 'MÉXICO': 'México',
+  PA: 'Panamá', PANAMA: 'Panamá', 'PANAMÁ': 'Panamá',
+  DO: 'República Dominicana', 'REPUBLICA DOMINICANA': 'República Dominicana',
+  IT: 'Italia', ITALIA: 'Italia', ITALY: 'Italia',
+  PT: 'Portugal', PORTUGAL: 'Portugal',
+  CA: 'Canadá', CANADA: 'Canadá', 'CANADÁ': 'Canadá'
+};
+
+function normalizarPais(valor) {
+  const v = String(valor || '').trim();
+  if (!v) return '';
+  const clave = v.toUpperCase();
+  return PAISES_ALIAS[clave] || v;
+}
+
+async function paisPorIp(ip) {
+  if (ipPrivada(ip)) return null;
+  const cacheado = geoCache.get(ip);
+  if (cacheado && cacheado.exp > now()) return cacheado.dato;
+
+  const consultar = async (url, leer) => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 3000);
+    try {
+      const r = await fetch(url, { signal: ctrl.signal, headers: { accept: 'application/json' } });
+      clearTimeout(t);
+      if (!r.ok) return null;
+      const data = await r.json();
+      return leer(data);
+    } catch (e) {
+      clearTimeout(t);
+      return null;
+    }
+  };
+
+  let dato = await consultar(
+    'https://ipwho.is/' + encodeURIComponent(ip) + '?fields=success,country,country_code',
+    (d) => (d && d.success && d.country ? { country: normalizarPais(d.country), code: String(d.country_code || '').toUpperCase() } : null)
+  );
+
+  if (!dato) {
+    dato = await consultar(
+      'https://ipapi.co/' + encodeURIComponent(ip) + '/json/',
+      (d) => (d && d.country_name ? { country: normalizarPais(d.country_name), code: String(d.country_code || '').toUpperCase() } : null)
+    );
+  }
+
+  if (dato) {
+    geoCache.set(ip, { dato: dato, exp: now() + GEO_TTL });
+    if (geoCache.size > 2000) {
+      const primero = geoCache.keys().next().value;
+      geoCache.delete(primero);
+    }
+  }
+  return dato;
+}
+
 /* ------------------------------------------------------------------ claves */
 function hashPassword(password, salt) {
   return crypto.scryptSync(String(password), salt, 32).toString('hex');
@@ -1204,6 +1286,12 @@ app.get('/uploads/:file', async (req, res) => {
   res.sendFile(file);
 });
 
+/* Pais real de la conexion, para avisar antes de registrarse */
+app.get('/api/geo', async (req, res) => {
+  const dato = await paisPorIp(clientIp(req));
+  res.json({ country: dato ? dato.country : '', code: dato ? dato.code : '', checked: !!dato });
+});
+
 app.get('/api/health', (req, res) => {
   res.json({
     ok: true,
@@ -1251,18 +1339,12 @@ app.post('/api/visit', async (req, res) => {
   res.json({ ok: true, nueva: esNueva });
 
   // Pais por IP (mejor esfuerzo, no bloquea la respuesta)
-  if (!visit.country && ip && !/^(::1|127\.|10\.|192\.168\.)/.test(ip)) {
-    try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 2500);
-      const r = await fetch('http://ip-api.com/json/' + encodeURIComponent(ip) + '?fields=country', { signal: ctrl.signal });
-      clearTimeout(t);
-      const data = await r.json();
-      if (data && data.country) {
-        visit.country = data.country;
-        save();
-      }
-    } catch (e) { /* sin pais, no pasa nada */ }
+  if (!visit.country) {
+    const dato = await paisPorIp(ip);
+    if (dato && dato.country) {
+      visit.country = dato.country;
+      save();
+    }
   }
 });
 
@@ -1301,6 +1383,20 @@ app.post('/api/register', async (req, res) => {
   const country = String(body.country || '').trim();
 
   if (name.length < 2) return res.status(400).json({ error: 'Escribe tu nombre y apellido' });
+
+  /* El pais declarado debe coincidir con el pais real de la conexion (IP).
+     Si la deteccion no es concluyente se deja pasar para no bloquear a nadie. */
+  const geo = await paisPorIp(clientIp(req));
+  const paisDeclarado = normalizarPais(country);
+  const paisReal = geo ? normalizarPais(geo.country) : '';
+  if (process.env.COUNTRY_IP_CHECK !== 'off' && paisReal && paisDeclarado && paisReal !== paisDeclarado) {
+    return res.status(403).json({
+      error: 'Debes registrarte con el pais donde vives actualmente para poder crear tu cuenta.',
+      code: 'country_mismatch',
+      detected: paisReal,
+      declared: paisDeclarado
+    });
+  }
   if (!cedula) return res.status(400).json({ error: 'Cedula no valida. Escribe por ejemplo V-12345678' });
   if (!isValidBirth(birthDate)) return res.status(400).json({ error: 'Fecha de nacimiento no valida' });
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Correo electronico no valido' });
@@ -1323,7 +1419,7 @@ app.post('/api/register', async (req, res) => {
     return res.status(409).json({ error: 'Esa cedula ya tiene una cuenta. Entra con tu cedula y tu contrasena' });
   }
   if (Object.values(db.users).some((u) => (u.email || '') === email)) {
-    return req.status(409).json({ error: 'Ese correo ya tiene una cuenta' });
+    return res.status(409).json({ error: 'Ese correo ya tiene una cuenta' });
   }
 
   const user = makeUser(name, '', password, { country, email });

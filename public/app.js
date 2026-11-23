@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v4.5';
+  const APP_VERSION = 'v4.6';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -313,6 +313,7 @@ const App = (() => {
       const el = document.getElementById(key + 'Panel');
       if (el) el.classList.toggle('hidden', key !== name);
     });
+    if (name === 'register') { try { cargarPaisDetectado(); } catch (e) {} }
     const tabs = $('#authTabs');
     const isTab = name === 'login' || name === 'register';
     if (tabs) tabs.classList.toggle('hidden', !isTab);
@@ -424,6 +425,94 @@ const App = (() => {
 
   /* Crear cuenta: cedula + fecha de nacimiento + correo */
   let enviandoRegistro = false;
+  /* ------------------------ pais por IP al registrarse ------------------------ */
+  let paisDetectado = '';
+
+  function countryChanged() {
+    const sel = $('#authCountry');
+    const wrap = $('#authCountryOtherWrap');
+    if (!sel || !wrap) return;
+    const esOtro = sel.value === 'Otro';
+    wrap.classList.toggle('hidden', !esOtro);
+    if (esOtro) {
+      const otro = $('#authCountryOther');
+      if (otro) setTimeout(() => { try { otro.focus(); } catch (e) {} }, 60);
+    }
+    comprobarPais();
+  }
+
+  function paisElegido() {
+    const sel = $('#authCountry');
+    if (!sel) return '';
+    if (sel.value === 'Otro') {
+      const otro = $('#authCountryOther');
+      return otro ? otro.value.trim() : '';
+    }
+    return sel.value;
+  }
+
+  function mostrarGeo(texto, tipo) {
+    const hint = $('#geoHint');
+    const alert = $('#geoAlert');
+    if (tipo === 'alerta') {
+      if (alert) { alert.textContent = texto; alert.classList.remove('hidden'); }
+      if (hint) hint.textContent = '';
+    } else {
+      if (hint) hint.innerHTML = texto;
+      if (alert) { alert.classList.add('hidden'); alert.textContent = ''; }
+    }
+  }
+
+  async function cargarPaisDetectado() {
+    if (paisDetectado !== '') return paisDetectado;
+    try {
+      const r = await fetch('/api/geo');
+      const d = await r.json();
+      paisDetectado = (d && d.country) || '';
+    } catch (e) {
+      paisDetectado = '';
+    }
+    const hint = $('#geoHint');
+    if (hint) {
+      hint.innerHTML = paisDetectado
+        ? 'Detectamos que te conectas desde <b>' + esc(paisDetectado) + '</b>.'
+        : '';
+    }
+    // Preselecciona el pais real si esta en la lista
+    const sel = $('#authCountry');
+    if (sel && paisDetectado) {
+      const opciones = Array.from(sel.options).map((o) => o.value);
+      if (opciones.includes(paisDetectado)) sel.value = paisDetectado;
+      else {
+        sel.value = 'Otro';
+        const otro = $('#authCountryOther');
+        if (otro) otro.value = paisDetectado;
+        const wrap = $('#authCountryOtherWrap');
+        if (wrap) wrap.classList.remove('hidden');
+      }
+    }
+    return paisDetectado;
+  }
+
+  function comprobarPais() {
+    const elegido = paisElegido();
+    if (!paisDetectado || !elegido) {
+      const alert = $('#geoAlert');
+      if (alert) { alert.classList.add('hidden'); alert.textContent = ''; }
+      return true;
+    }
+    const iguales = elegido.trim().toLowerCase() === paisDetectado.trim().toLowerCase();
+    if (iguales) {
+      const alert = $('#geoAlert');
+      if (alert) { alert.classList.add('hidden'); alert.textContent = ''; }
+      return true;
+    }
+    mostrarGeo('Debes registrarte con el pais donde vives actualmente para poder crear tu cuenta. ' +
+      'Detectamos que estas en ' + paisDetectado + '. Si vives en ' + elegido +
+      ', revisa que no estes usando una VPN o datos de otro pais.', 'alerta');
+    return false;
+  }
+
   async function submitRegister() {
     if (enviandoRegistro) return;
     const nombres = ($('#regNombres').value || '').trim();
@@ -433,7 +522,7 @@ const App = (() => {
     const birthDate = $('#regBirth').value || '';
     const email = ($('#regEmail').value || '').trim();
     const password = ($('#regPassword').value || '');
-    const country = $('#authCountry').value;
+    const country = paisElegido();
 
     if (nombres.length < 2) return toast('Escribe tus nombres');
     if (apellidos.length < 2) return toast('Escribe tus apellidos');
@@ -441,6 +530,8 @@ const App = (() => {
     if (!birthDate) return toast('Escribe tu fecha de nacimiento');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return toast('Escribe un correo valido');
     if (password.length < 8) return toast('La contrasena debe tener al menos 8 caracteres');
+    if (!country) return toast('Escribe el pais donde vives');
+    if (!comprobarPais()) return toast('Debes registrarte con el pais donde vives actualmente');
 
     enviandoRegistro = true;
     try {
@@ -450,7 +541,16 @@ const App = (() => {
       });
       // La cuenta queda SIN verificar: primero debe escribir el c\u00f3digo del correo.
       showVerifyPanel(data.cedula || cedula, data.email, data.codeSent);
-    } catch (e) { toast(e.message); }
+    } catch (e) {
+      if (e.data && e.data.code === 'country_mismatch') {
+        mostrarGeo('Debes registrarte con el pais donde vives actualmente para poder crear tu cuenta. ' +
+          'Detectamos que estas en ' + (e.data.detected || 'otro pais') +
+          '. Si esa deteccion es un error por VPN o datos moviles, escribele al servidor publico.', 'alerta');
+        toast('Debes registrarte con el pais donde vives actualmente');
+        return;
+      }
+      toast(e.message);
+    }
     finally { enviandoRegistro = false; }
   }
 
@@ -3081,7 +3181,7 @@ const App = (() => {
     openAdmin, openChatFromAdmin, openFirstChat,
     adminTab, adminIr, adminFiltrar, adminBuscarPersona, adminBuscarTramite, salirPanel,
     viewImage, closeViewer, logout,
-    installApp, dismissInstall, closeIosSheet, testMail,
+    installApp, dismissInstall, closeIosSheet, testMail, countryChanged, cargarPaisDetectado,
     openTramites, loadTramites, openTramite, openTramiteChat, subirComprobante, avisoDescarga,
     adminFillSubtypes, crearTramite, adminSubirDocumento, adminAprobar, adminRechazar,
     adminBorrarTramite, guardarPagoInfo, cerrarArchivo,
