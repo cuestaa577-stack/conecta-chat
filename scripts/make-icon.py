@@ -7,20 +7,24 @@ Por que existe este script
 --------------------------
 El icono sale de una sola imagen de origen, scripts/icono-saime-fuente.jpg: el
 logo SAIME (la caja azul con las letras y la cinta tricolor con las estrellas).
-Esa imagen viene con un fondo blanco en la parte de abajo, el triangulo que se
-ve a los lados de la cinta. El script quita SOLO ese blanco:
+Esa imagen trae dos fondos que no van en el icono:
 
-  1. marca los pixeles casi blancos,
-  2. rellena desde el borde de la imagen (asi solo cae el blanco de afuera y no
-     las letras ni las estrellas, que quedan encerradas por el azul),
-  3. come un par de pixeles del filo para que no quede una linea blanca.
+  1. El blanco de abajo, el triangulo que se ve a los lados de la cinta.
+  2. La caja azul de atras, que sobre el azul de la app se veia como un
+     recuadro oscuro. El icono tiene que quedar solo con las letras SAIME y
+     la cinta, flotando sobre el azul.
 
-Despues arma el bloque "Tramites" + logo y lo pone al medio del cuadro azul.
-El azul es el de la guia, #2961B4, el mismo que va en manifest.json.
+Los dos se sacan igual: se marca la zona por color y se rellena desde un borde
+conocido. Asi solo cae el fondo y quedan intactas las letras y las estrellas,
+que estan encerradas por otros colores.
 
-Los iconos "maskable" son los que Android recorta con su propia forma (circulo,
-gota, cuadrado redondeado). Por eso el bloque se dibuja mas chico: todo lo
-importante tiene que caber en el 80% central o Android lo corta.
+  - El blanco se rellena desde el borde de la imagen.
+  - La caja azul se rellena desde arriba y desde los costados, antes de que
+    empiece la cinta: el azul de la cinta no se toca porque queda aislado por
+    las franjas amarilla y roja.
+
+El filo que queda entre las letras y la caja se recompone sobre el azul nuevo,
+si no quedaria un halo oscuro alrededor de cada letra.
 
 Uso:  python3 scripts/make-icon.py
 Salida: public/icon-1024.png, icon-512.png, icon-192.png,
@@ -31,7 +35,7 @@ import os
 import sys
 from collections import deque
 
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 PUBLIC = os.path.join(AQUI, '..', 'public')
@@ -39,78 +43,114 @@ FUENTE = os.path.join(AQUI, 'icono-saime-fuente.jpg')
 LETRA = '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf'
 
 AZUL = (41, 97, 180)      # #2961B4, el azul de la guia
-TEXTO = 'Tramites'        # se dibuja con acento mas abajo
 TEXTO = 'Tr\u00e1mites'
 
 BLANCO_MIN = 215          # desde que tono se considera blanco de fondo
 LOGO_ANCHO = 2200         # ancho del logo dentro del bloque maestro
 MARGEN_X = 100            # aire a los lados del bloque
-GAP = 110                 # separacion entre el texto y el logo
+GAP = 120                 # separacion entre el texto y el logo
 
 ESCALA_NORMAL = 0.94      # cuanto del cuadro ocupa el bloque
 ESCALA_SEGURA = 0.72      # version maskable
 
 
-def logo_sin_blanco():
-    """Devuelve el logo recortado con el fondo blanco de abajo hecho transparencia."""
-    if not os.path.exists(FUENTE):
-        sys.exit('Falta la imagen de origen: ' + FUENTE)
-    im = Image.open(FUENTE).convert('RGB')
-    px = im.load()
-    w, h = im.size
-
-    def blanco(x, y):
-        r, g, b = px[x, y]
-        return r >= BLANCO_MIN and g >= BLANCO_MIN and b >= BLANCO_MIN
-
-    # Relleno desde el borde: cae el blanco de afuera, no el de las letras.
-    fuera = [[False] * w for _ in range(h)]
+def rellenar(mascara, semillas):
+    """Devuelve los pixeles de la mascara alcanzables desde las semillas."""
+    alto = len(mascara)
+    ancho = len(mascara[0])
+    visto = [[False] * ancho for _ in range(alto)]
     cola = deque()
-
-    def sembrar(x, y):
-        if blanco(x, y) and not fuera[y][x]:
-            fuera[y][x] = True
+    for x, y in semillas:
+        if 0 <= x < ancho and 0 <= y < alto and mascara[y][x] and not visto[y][x]:
+            visto[y][x] = True
             cola.append((x, y))
-
-    for x in range(w):
-        sembrar(x, 0)
-        sembrar(x, h - 1)
-    for y in range(h):
-        sembrar(0, y)
-        sembrar(w - 1, y)
-
     while cola:
         x, y = cola.popleft()
         for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
             nx, ny = x + dx, y + dy
-            if 0 <= nx < w and 0 <= ny < h and not fuera[ny][nx] and blanco(nx, ny):
-                fuera[ny][nx] = True
+            if 0 <= nx < ancho and 0 <= ny < alto and mascara[ny][nx] and not visto[ny][nx]:
+                visto[ny][nx] = True
                 cola.append((nx, ny))
+    return visto
 
-    # Un par de pasadas comiendo el filo claro que deja el JPEG.
-    for _ in range(2):
-        matar = []
-        for y in range(h):
-            for x in range(w):
-                if fuera[y][x]:
-                    continue
-                r, g, b = px[x, y]
-                if min(r, g, b) < 185:
-                    continue
-                vecino = ((x > 0 and fuera[y][x - 1]) or (x < w - 1 and fuera[y][x + 1]) or
-                          (y > 0 and fuera[y - 1][x]) or (y < h - 1 and fuera[y + 1][x]))
-                if vecino:
-                    matar.append((x, y))
-        for x, y in matar:
-            fuera[y][x] = True
+
+def logo_limpio():
+    """Saca el blanco de afuera y la caja azul: deja letras y cinta."""
+    if not os.path.exists(FUENTE):
+        sys.exit('Falta la imagen de origen: ' + FUENTE)
+    im = Image.open(FUENTE).convert('RGB')
+    px = im.load()
+    ancho, alto = im.size
+
+    def es_blanco(x, y):
+        r, g, b = px[x, y]
+        return r >= BLANCO_MIN and g >= BLANCO_MIN and b >= BLANCO_MIN
+
+    def es_caja(x, y):
+        r, g, b = px[x, y]
+        return b > r + 12 and b > g + 6 and 110 < b < 235
+
+    # 1) el blanco de afuera, rellenando desde todo el borde
+    blanco = [[es_blanco(x, y) for x in range(ancho)] for y in range(alto)]
+    semillas = []
+    for x in range(ancho):
+        semillas += [(x, 0), (x, alto - 1)]
+    for y in range(alto):
+        semillas += [(0, y), (ancho - 1, y)]
+    fuera = rellenar(blanco, semillas)
+
+    # 2) la caja azul, rellenando desde arriba y los costados (por encima de la
+    #    cinta) para no comerse el azul de la bandera
+    caja = [[es_caja(x, y) for x in range(ancho)] for y in range(alto)]
+    semillas = []
+    for x in range(ancho):
+        semillas += [(x, y) for y in range(0, int(alto * 0.55), 3)]
+    for y in range(0, int(alto * 0.55), 3):
+        semillas += [(0, y), (ancho - 1, y)]
+    dentro = rellenar(caja, semillas)
+
+    # 3) el filo claro entre las letras y la caja: se recompone sobre el azul
+    #    nuevo para que no quede un halo oscuro alrededor de cada letra
+    zona = Image.new('L', (ancho, alto), 0)
+    zpx = zona.load()
+    for y in range(alto):
+        for x in range(ancho):
+            if dentro[y][x]:
+                zpx[x, y] = 255
+    borde = zona.filter(ImageFilter.MaxFilter(5)).load()
+
+    def fondo_caja(x, y):
+        """Color de la caja alrededor de (x, y), promediando la zona rellenada."""
+        sr = sg = sb = n = 0
+        for yy in range(max(0, y - 12), min(alto, y + 13)):
+            for xx in range(max(0, x - 12), min(ancho, x + 13)):
+                if dentro[yy][xx]:
+                    r, g, b = px[xx, yy]
+                    sr += r; sg += g; sb += b; n += 1
+        if not n:
+            return None
+        return sr / n, sg / n, sb / n
 
     salida = im.convert('RGBA')
-    datos = salida.load()
-    for y in range(h):
-        for x in range(w):
-            if fuera[y][x]:
-                datos[x, y] = (0, 0, 0, 0)
-    return salida.crop(salida.getchannel('A').getbbox() or (0, 0, w, h))
+    dp = salida.load()
+    for y in range(alto):
+        for x in range(ancho):
+            if fuera[y][x] or dentro[y][x]:
+                dp[x, y] = (0, 0, 0, 0)
+                continue
+            if borde[x, y] and min(px[x, y]) >= 110:
+                viejo = fondo_caja(x, y)
+                if viejo:
+                    r, g, b = px[x, y]
+                    # cuanto de la letra hay en este pixel, canal por canal
+                    alfa = [min(1.0, max(0.0, (c - v) / (255.0 - v)))
+                            for c, v in zip((r, g, b), viejo)]
+                    a = sum(alfa) / 3.0
+                    dp[x, y] = (int(255 * a + (1 - a) * AZUL[0]),
+                                int(255 * a + (1 - a) * AZUL[1]),
+                                int(255 * a + (1 - a) * AZUL[2]), 255)
+
+    return salida.crop(salida.getchannel('A').getbbox() or (0, 0, ancho, alto))
 
 
 def bloque_maestro(logo):
@@ -169,7 +209,7 @@ def icono(bloque, size, escala):
 
 
 def main():
-    logo = logo_sin_blanco()
+    logo = logo_limpio()
     bloque = bloque_maestro(logo)
 
     salidas = {
