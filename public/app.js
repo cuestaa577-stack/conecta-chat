@@ -1045,7 +1045,6 @@ const App = (() => {
     $('#profilePhone').value = state.me.phone || '';
     $('#profileEmail').value = state.me.email || '';
     $('#profileCountry').value = state.me.country || '';
-    renderCedulaData(state.me.cedulaData || null);
     $('#appVersion').textContent = 'Tramites Venezolanos en Linea ' + APP_VERSION;
     const adminBtn = $('#adminBtn');
     if (adminBtn) adminBtn.style.display = state.me.role === 'admin' ? 'block' : 'none';
@@ -1136,24 +1135,18 @@ const App = (() => {
     } catch (e) { toast(e.message); }
   }
 
-  /* ------------------------------ verificacion de cedula ------------------------------ */
-  /* Pinta el bloque de verificacion de cedula de la pantalla principal. */
+  /* ------------------------------ mis datos ------------------------------ */
+  /* Pinta los datos de la cuenta en el perfil. La verificacion de cedula se
+     retiro: la cedula se usa como usuario, sin consultar ningun servicio. */
   function renderMyData() {
     if (!state.me) return;
-    const cd = state.me.cedulaData;
     const nacEl = $('#cedulaNac');
     const numEl = $('#cedulaNum');
-    if (cd) {
-      if (nacEl) nacEl.value = (cd.nacionalidad === 'E') ? 'E' : 'V';
-      if (numEl) numEl.value = cd.cedula || '';
-    } else {
-      const c = String(state.me.cedula || '');
-      if (c) {
-        if (nacEl) nacEl.value = c.charAt(0).toUpperCase() === 'E' ? 'E' : 'V';
-        if (numEl) numEl.value = c.replace(/\D/g, '');
-      }
+    const c = String(state.me.cedula || '');
+    if (c) {
+      if (nacEl) nacEl.value = c.charAt(0).toUpperCase() === 'E' ? 'E' : 'V';
+      if (numEl) numEl.value = c.replace(/\D/g, '');
     }
-    renderCedulaData(cd || null);
   }
 
   function toggleMyData() {
@@ -1162,78 +1155,7 @@ const App = (() => {
     body.classList.toggle('collapsed');
   }
 
-  /* Al registrarse: consulta automatica con la cedula de la cuenta. */
-  async function autoVerifyCedula() {
-    // La consulta automatica se retiro: no se llama al servicio de cedulas.
-    return;
-    if (!state.me || state.me.cedulaData) return;
-    const c = String(state.me.cedula || '');
-    const num = c.replace(/\D/g, '');
-    if (num.length < 6) return;
-    const nac = c.charAt(0).toUpperCase() === 'E' ? 'E' : 'V';
-    try {
-      const data = await api('/api/cedula/verify', {
-        method: 'POST',
-        body: JSON.stringify({ nacionalidad: nac, cedula: num }),
-      });
-      state.me = data.user;
-      renderMyData();
-    } catch (e) {
-      // Si la API no responde o no encuentra la cedula, no se bloquea el registro.
-      renderMyData();
-    }
-  }
-
-  async function verifyCedula() {
-    if (!state.me) return;
-    const nac = String(($('#cedulaNac') || {}).value || 'V').toUpperCase() === 'E' ? 'E' : 'V';
-    const num = String(($('#cedulaNum') || {}).value || '').replace(/\D/g, '');
-    if (num.length < 6) return toast('Escribe el numero de cedula de identidad');
-    const btn = $('#cedulaBtn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Verificando...'; }
-    try {
-      const data = await api('/api/cedula/verify', {
-        method: 'POST',
-        body: JSON.stringify({ nacionalidad: nac, cedula: num }),
-      });
-      state.me = data.user;
-      renderCedulaData(state.me.cedulaData);
-      renderMyData();
-      toast('Cedula de identidad verificada');
-    } catch (e) {
-      const box = $('#cedulaResult');
-      if (box) { box.classList.remove('hidden'); box.innerHTML = '<div class="cedula-error">' + esc(e.message) + '</div>'; }
-      toast(e.message);
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = 'Verificar'; }
-    }
-  }
-
-  function renderCedulaData(d) {
-    const box = $('#cedulaResult');
-    if (!box) return;
-    if (!d) { box.classList.add('hidden'); box.innerHTML = ''; return; }
-    const cne = d.cne || {};
-    const nombreCompleto = [d.primer_nombre, d.segundo_nombre, d.primer_apellido, d.segundo_apellido].filter(Boolean).join(' ');
-    const row = (k, v) => (v ? '<div class="row"><span>' + esc(k) + '</span><b>' + esc(v) + '</b></div>' : '');
-    box.innerHTML =
-      '<h4>Cedula verificada</h4>' +
-      row('Nombre completo', nombreCompleto) +
-      row('Primer nombre', d.primer_nombre) +
-      row('Segundo nombre', d.segundo_nombre) +
-      row('Primer apellido', d.primer_apellido) +
-      row('Segundo apellido', d.segundo_apellido) +
-      row('Cedula', (d.nacionalidad || '') + '-' + (d.cedula || '')) +
-      row('RIF', d.rif) +
-      '<div class="cne">' +
-        row('Estado', cne.estado) +
-        row('Municipio', cne.municipio) +
-        row('Parroquia', cne.parroquia) +
-        row('Centro electoral', cne.centro_electoral) +
-      '</div>';
-    box.classList.remove('hidden');
-  }
-
+  function autoVerifyCedula() { /* sin verificacion de cedula */ }
   function openEditData() {
     if (!state.me) return;
     $('#editEmail').value = state.me.email || '';
@@ -2989,7 +2911,7 @@ const App = (() => {
     submitVerify, resendVerify, showAdminAuth, submitAdminLogin,
     back, pickService, pickOption, pickGrade, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
-    openProfile, pickAvatar, saveProfileChanges, verifyCedula, renderCedulaData, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat,
+    openProfile, pickAvatar, saveProfileChanges, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat,
     deleteAccount, openAdmin, openChatFromAdmin, openFirstChat,
     adminTab, adminIr, adminFiltrar, adminBuscarPersona, adminBuscarTramite, salirPanel,
     viewImage, closeViewer, logout,

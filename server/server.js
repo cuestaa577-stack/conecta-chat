@@ -10,6 +10,10 @@ const { WebSocketServer } = require('ws');
 let nodemailer = null;
 try { nodemailer = require('nodemailer'); } catch (e) { nodemailer = null; }
 
+/* Estado en memoria de la app. Se declara aqui para que cualquier funcion
+   pueda usarlo desde el arranque, antes de que load() lo rellene. */
+let db = { users: {}, chats: {}, messages: {}, visits: [], files: {}, uploads: {}, tramites: {}, settings: {} };
+
 /* pdf-lib: repara la geometria de los PDF antes de servirlos (ver
    public/pdf-normalize.js). Es JavaScript puro, sin binarios nativos, asi que
    funciona igual en Render. Si no esta instalado, la app sigue funcionando y
@@ -289,155 +293,6 @@ function explainSupabaseError(msg) {
 /* ------------- consulta de cedula (api.cedula.com.ve) -------------
    Las credenciales (APP-ID y token) viven SOLO en el servidor, en
    variables de entorno. Nunca se envian al navegador. */
-const CEDULA_API_BASE = String(process.env.CEDULA_API_URL || 'https://api.cedula.com.ve/api/v1').trim();
-const CEDULA_API_APP_ID = cleanEnv(process.env.CEDULA_APP_ID || process.env.CEDULA_API_APP_ID);
-const CEDULA_API_TOKEN = cleanEnv(process.env.CEDULA_TOKEN || process.env.CEDULA_API_TOKEN);
-
-function cedulaApiConfigured() {
-  return !!(CEDULA_API_APP_ID && CEDULA_API_TOKEN);
-}
-
-/* Consulta la cedula en api.cedula.com.ve. Devuelve siempre un objeto
-   { ok, datos } o { ok:false, code, status, message } listo para responder. */
-async function consultarCedulaApi(nacionalidad, numero) {
-  if (!cedulaApiConfigured()) {
-    return {
-      ok: false, code: 'no_configurada', status: 503,
-      message: 'La verificacion de cedula no esta disponible en este momento. Intenta mas tarde.',
-    };
-  }
-  const nac = String(nacionalidad || 'V').toUpperCase() === 'E' ? 'E' : 'V';
-  const ced = String(numero || '').replace(/\D/g, '');
-  if (!/^\d{6,9}$/.test(ced)) {
-    return { ok: false, code: 'cedula_invalida', status: 400, message: 'Escribe un numero de cedula valido (solo digitos).' };
-  }
-  const url = CEDULA_API_BASE + '?app_id=' + encodeURIComponent(CEDULA_API_APP_ID)
-    + '&token=' + encodeURIComponent(CEDULA_API_TOKEN)
-    + '&nacionalidad=' + encodeURIComponent(nac)
-    + '&cedula=' + encodeURIComponent(ced);
-
-  let res;
-  let raw = '';
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
-    res = await fetch(url, { signal: controller.signal, headers: { accept: 'application/json' } });
-    clearTimeout(timer);
-    raw = await res.text();
-  } catch (e) {
-    return { ok: false, code: 'api_error', status: 502, message: 'No se pudo conectar con el servicio de cedulas. Intenta de nuevo en un momento.' };
-  }
-
-  let json = null;
-  try { json = JSON.parse(raw); } catch (e) { json = null; }
-  if (!json || typeof json !== 'object') {
-    return { ok: false, code: 'api_error', status: 502, message: 'El servicio de cedulas respondio de forma inesperada. Intenta de nuevo.' };
-  }
-
-  if (json.error === true) {
-    const detalle = String(json.error_str || '').trim();
-    const low = detalle.toLowerCase();
-    let code = 'api_error';
-    let status = 502;
-    let message = detalle || 'El servicio de cedulas rechazo la consulta.';
-    if (/saldo|credito|crédito|balance|pago|cuota|limite|límite|agotad|sin consultas|quota|insufficient/.test(low) || res.status === 402) {
-      code = 'sin_saldo';
-      status = 402;
-      message = 'La consulta automatica no esta disponible en este momento. Escribenos y la verificamos por ti.';
-    } else if (/invalid_token|token|app|credencial|autentic|autoriz|invali|denegad|forbidden|unauthor/.test(low) || res.status === 401 || res.status === 403) {
-      code = 'credenciales';
-      status = 502;
-      message = 'La consulta automatica no esta disponible en este momento. Escribenos y la verificamos por ti.';
-    } else if (/record_not_found|not_found|no (se )?encontr|no exist|sin resultado|no registrad|inexistente|no hay|404/.test(low) || res.status === 404) {
-      code = 'no_encontrada';
-      status = 404;
-      message = 'No se encontro esa cedula en el registro. Verifica la nacionalidad y el numero.';
-    } else if (res.status === 429) {
-      code = 'sin_saldo';
-      status = 402;
-      message = 'La consulta automatica no esta disponible en este momento. Escribenos y la verificamos por ti.';
-    }
-    return { ok: false, code, status, message, detalle };
-  }
-
-  const d = json.data;
-  if (!d || typeof d !== 'object' || (!d.primer_nombre && !d.primer_apellido && !d.cedula)) {
-    return { ok: false, code: 'no_encontrada', status: 404, message: 'No se encontro esa cedula en el registro. Verifica la nacionalidad y el numero.' };
-  }
-  const cne = (d.cne && typeof d.cne === 'object') ? d.cne : {};
-  const datos = {
-    nacionalidad: String(d.nacionalidad || nac).toUpperCase(),
-    cedula: String(d.cedula || ced),
-    rif: String(d.rif || ''),
-    primer_apellido: String(d.primer_apellido || ''),
-    segundo_apellido: String(d.segundo_apellido || ''),
-    primer_nombre: String(d.primer_nombre || ''),
-    segundo_nombre: String(d.segundo_nombre || ''),
-    cne: {
-      estado: String(cne.estado || ''),
-      municipio: String(cne.municipio || ''),
-      parroquia: String(cne.parroquia || ''),
-      centro_electoral: String(cne.centro_electoral || ''),
-    },
-    request_date: String(d.request_date || ''),
-  };
-  return { ok: true, datos };
-}
-
-/* Guarda en la cuenta los datos reales de la cedula, tomando la API como fuente.
-   Se llama al REGISTRAR (con la cedula que escribe la persona) y, como respaldo,
-   al confirmar el correo. Si la API falla o no encuentra la cedula, no bloquea
-   nada: la cuenta queda creada igual y la persona puede consultar luego. */
-async function attachCedulaData(user) {
-  if (!user || user.cedulaData || !user.cedula) return;
-  if (!cedulaApiConfigured()) return;
-  const num = String(user.cedula).replace(/\D/g, '');
-  const nac = String(user.cedula).charAt(0).toUpperCase() === 'E' ? 'E' : 'V';
-  try {
-    const r = await consultarCedulaApi(nac, num);
-    if (r.ok) {
-      user.cedulaData = Object.assign({}, r.datos, { verifiedAt: now() });
-      user.rif = r.datos.rif || user.rif || '';
-      save();
-    }
-  } catch (e) { /* sin datos reales, no pasa nada */ }
-}
-
-let db = { users: {}, chats: {}, messages: {}, visits: [], files: {} };
-
-/* ---------------- persistencia POR REGISTRO (Supabase) ----------------
-   Antes TODO el estado (cuentas, chats, mensajes, tramites, archivos) vivia
-   en UNA sola fila de conecta_state, en la columna data. Al reiniciarse el
-   servicio por limite de memoria, esa unica escritura se perdia y con ella
-   una cuenta entera.
-
-   Ahora cada registro va en SU PROPIA fila de conecta_records:
-     users:u_xxx   chats:c_xxx   messages:c_xxx   tramites:t_xxx
-     files:f_xxx   uploads:f_xxx settings:main    secret:main   visits:all
-
-   Cada alta o cambio se escribe a Supabase EN EL ACTO (sin esperar al guardado
-   periodico), asi un reinicio solo puede perder el ultimo cambio, nunca la
-   cuenta completa. La fila vieja de conecta_state se conserva como respaldo y,
-   antes de sobrescribirla, su contenido anterior se copia a
-   conecta_state_backup. */
-const RECORDS_TABLE = process.env.SUPABASE_RECORDS_TABLE || 'conecta_records';
-const BACKUP_TABLE = process.env.SUPABASE_BACKUP_TABLE || 'conecta_state_backup';
-const BACKUP_MAX = 20;
-
-/* Firma de cada registro ya guardado: id -> sha1 del contenido. Solo se sube
-   lo que cambio, asi un guardado no reescribe cientos de filas iguales. */
-const firmas = new Map();
-/* Ultimo valor conocido de cada registro: es lo que se guarda en prev_data
-   antes de sobrescribir la fila, para poder recuperar el estado anterior. */
-const ultimos = new Map();
-let recordsOk = true;
-/* Solo se escribe en Supabase cuando YA se pudo leer. Si el arranque no logra
-   leer (timeout, proyecto pausado), la app trabaja con lo local y NO toca la
-   nube: asi un reinicio nunca sobrescribe las cuentas guardadas. */
-let nubeLeida = false;
-let reintentoNube = null;
-let guardandoRegistros = false;
-let registrosSucios = false;
 
 function firmaDe(valor) {
   return crypto.createHash('sha1').update(JSON.stringify(valor)).digest('hex');
@@ -857,7 +712,6 @@ function publicUser(u) {
     phone: u.phone,
     email: u.email || '',
     cedula: u.cedula || '',
-    cedulaData: u.cedulaData || null,
     birthDate: u.birthDate || '',
     emailVerified: !!u.emailVerified,
     role: u.role,
@@ -1413,10 +1267,6 @@ app.post('/api/register', async (req, res) => {
   db.users[user.id] = user;
   save();
 
-  // Al registrarse con la cedula, se consultan y guardan de una vez los datos
-  // reales (nombres, apellidos, RIF, CNE) tomando la API como fuente.
-  await attachCedulaData(user);
-
   const code = issueCode(user, 'verify');
   const codeSent = await sendCodeEmail(email, code, 'verify', publicBase(req));
 
@@ -1448,10 +1298,6 @@ app.post('/api/verify-email', (req, res) => {
   save();
   // Código correcto: recién se inicia la sesión y entra a la app.
   res.json({ ok: true, token: tokenFor(user), user: publicUser(user) });
-
-  // Respaldo: si al registrarse la API no respondio, se reintenta al confirmar
-  // el correo (en segundo plano, para no retrasar la entrada a la app).
-  attachCedulaData(user).catch(() => {});
 });
 
 /* Reenviar codigo (confirmar correo o cambiar contrasena) */
@@ -1630,22 +1476,7 @@ app.post('/api/profile', auth, (req, res) => {
 });
 
 /* --- verificar la cedula con api.cedula.com.ve (consulta en el servidor) --- */
-app.post('/api/cedula/verify', auth, async (req, res) => {
-  const body = req.body || {};
-  const nacionalidad = String(body.nacionalidad || '').trim().toUpperCase() === 'E' ? 'E' : 'V';
-  const numero = String(body.cedula == null ? '' : body.cedula).replace(/\D/g, '');
-  if (!/^\d{6,9}$/.test(numero)) {
-    return res.status(400).json({ error: 'Escribe un numero de cedula valido (solo digitos).' });
-  }
-  const r = await consultarCedulaApi(nacionalidad, numero);
-  if (!r.ok) {
-    return res.status(r.status || 502).json({ error: r.message, code: r.code });
-  }
-  req.user.cedulaData = Object.assign({}, r.datos, { verifiedAt: now() });
-  req.user.rif = r.datos.rif || req.user.rif || '';
-  save();
-  res.json({ ok: true, user: publicUser(req.user), data: r.datos });
-});
+
 
 /* --- eliminar cuenta --- */
 app.delete('/api/account', auth, (req, res) => {
