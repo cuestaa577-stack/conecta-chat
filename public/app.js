@@ -1330,7 +1330,7 @@ const App = (() => {
   const ADMIN_TABS = [
     { key: 'resumen', txt: 'Resumen' },
     { key: 'tramites', txt: 'Tramites' },
-    { key: 'chats', txt: 'Conversaciones' },
+    { key: 'chats', txt: 'Chats' },
     { key: 'personas', txt: 'Personas' },
     { key: 'ajustes', txt: 'Ajustes' },
   ];

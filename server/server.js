@@ -768,6 +768,24 @@ function estadoDeFilas(filas) {
   return out;
 }
 
+/* Deja una sola visita por persona: si hay repetidas, conserva la ultima vez
+   y suma cuantas veces entro. */
+function dedupeVisits() {
+  if (!Array.isArray(db.visits)) { db.visits = []; return; }
+  const mapa = new Map();
+  db.visits.forEach((v) => {
+    if (!v) return;
+    const k = v.userId || ('ip:' + (v.ip || ''));
+    const prev = mapa.get(k);
+    if (!prev) { mapa.set(k, v); return; }
+    const total = Number(prev.count || 1) + Number(v.count || 1);
+    const reciente = (v.ts || 0) >= (prev.ts || 0) ? v : prev;
+    reciente.count = total;
+    mapa.set(k, reciente);
+  });
+  db.visits = Array.from(mapa.values()).sort((a, b) => (a.ts || 0) - (b.ts || 0));
+}
+
 let saveTimer = null;
 let nubeOk = false;
 
@@ -1274,18 +1292,39 @@ app.get('/api/health', (req, res) => {
 /* --- visitas (quien entra al enlace) --- */
 app.post('/api/visit', async (req, res) => {
   const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-  const visit = {
-    id: uid('v_'),
-    ts: now(),
-    ip,
-    ua: String(req.headers['user-agent'] || '').slice(0, 220),
-    country: String((req.body && req.body.country) || '').slice(0, 40),
-    path: String((req.body && req.body.path) || '/').slice(0, 120)
-  };
-  db.visits.push(visit);
-  if (db.visits.length > 5000) db.visits = db.visits.slice(-5000);
+  const user = userFromReq(req);
+  const clave = user ? user.id : ('ip:' + ip);
+  const pais = String((req.body && req.body.country) || '').slice(0, 40);
+  const ruta = String((req.body && req.body.path) || '/').slice(0, 120);
+  const ua = String(req.headers['user-agent'] || '').slice(0, 220);
+
+  // Una sola visita por persona: si vuelve, solo se actualiza la ultima vez.
+  let visit = (db.visits || []).find((v) => v && (v.userId || ('ip:' + (v.ip || ''))) === clave);
+  let esNueva = false;
+  if (visit) {
+    visit.ts = now();
+    visit.count = Number(visit.count || 1) + 1;
+    visit.ua = ua;
+    visit.path = ruta;
+    if (pais) visit.country = pais;
+    if (user) visit.userId = user.id;
+  } else {
+    esNueva = true;
+    visit = {
+      id: uid('v_'),
+      ts: now(),
+      ip,
+      ua,
+      country: pais,
+      path: ruta,
+      userId: user ? user.id : '',
+      count: 1,
+    };
+    db.visits.push(visit);
+    if (db.visits.length > 5000) db.visits = db.visits.slice(-5000);
+  }
   save();
-  res.json({ ok: true });
+  res.json({ ok: true, nueva: esNueva });
 
   // Pais por IP (mejor esfuerzo, no bloquea la respuesta)
   if (!visit.country && ip && !/^(::1|127\.|10\.|192\.168\.)/.test(ip)) {
@@ -2826,6 +2865,7 @@ wss.on('connection', (ws, req) => {
 
 (async () => {
   await load();
+  dedupeVisits();
   ensureAdmin();
   server.listen(PORT, () => {
     console.log('Tramites Venezolanos en Linea escuchando en el puerto ' + PORT);
