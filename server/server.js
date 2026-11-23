@@ -1245,6 +1245,22 @@ app.get('/version.json', (req, res) => {
   res.json({ version: version, cache: cache, ts: Date.now() });
 });
 
+/* Portada con la direccion real en las etiquetas de vista previa: WhatsApp y los
+   demas necesitan la URL completa de la imagen para mostrar el logo al compartir. */
+app.get(['/', '/index.html'], (req, res) => {
+  /* En Render la conexion llega por proxy: el protocolo real viene en la cabecera. */
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+  const base = (proto + '://' + req.get('host')).replace(/\/$/, '');
+  try {
+    const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8')
+      .replace(/__BASE__/g, base);
+    res.set('Cache-Control', 'no-cache');
+    res.type('html').send(html);
+  } catch (e) {
+    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  }
+});
+
 app.use(express.static(path.join(__dirname, '..', 'public')));
 /* archivos: solo con sesion valida (el cliente agrega ?token=) */
 app.get('/uploads/:file', async (req, res) => {
