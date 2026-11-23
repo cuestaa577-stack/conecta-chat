@@ -221,6 +221,8 @@ const App = (() => {
       showView('home', false);
       return;
     }
+    // El servidor publico no debe caer en la portada del cliente al retroceder
+    if (active && active.id === 'adminView' && !state.viewStack.length) return;
     const prev = state.viewStack.pop();
     if (prev) {
       $$('.view').forEach((v) => v.classList.remove('active'));
@@ -579,7 +581,7 @@ const App = (() => {
     // Si la cuenta aun no tiene la cedula verificada, se verifica sola.
     autoVerifyCedula();
     // El servidor publico entra directo a su panel.
-    if (state.me && state.me.role === 'admin') openAdmin();
+    if (state.me && state.me.role === 'admin') { state.viewStack = []; openAdmin(true); }
   }
 
   function logout(silent) {
@@ -1537,8 +1539,8 @@ const App = (() => {
     if (tab === 'ajustes') adminFillSubtypes();
   }
 
-  async function openAdmin() {
-    showView('admin');
+  async function openAdmin(desdeEntrada) {
+    showView('admin', !desdeEntrada);
     const box = $('#adminContent');
     if (box) box.innerHTML = '<div class="empty">Cargando...</div>';
     try {
