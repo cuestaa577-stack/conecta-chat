@@ -547,7 +547,7 @@ const App = (() => {
   /* Al volver a la app desde el fondo el temporizador puede venir atrasado:
      se repinta el saludo en cuanto la pantalla vuelve a estar visible. */
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) pintarSaludo();
+    if (!document.hidden) { pintarSaludo(); refrescarPresencia(); }
   });
 
   async function enterApp() {
@@ -555,6 +555,7 @@ const App = (() => {
     $('#appScreen').classList.remove('hidden');
     pintarSaludo();
     if (!saludoTimer) saludoTimer = setInterval(pintarSaludo, 60000);
+    if (!presenciaTimer) presenciaTimer = setInterval(refrescarPresencia, 30000);
     pintarAvatar($('#myAvatarBtn'), state.me.avatar, state.me.name);
     const adminBtn = $('#adminBtn');
     if (adminBtn) adminBtn.style.display = state.me.role === 'admin' ? 'block' : 'none';
@@ -743,6 +744,52 @@ const App = (() => {
     return state.users[id] || null;
   }
 
+  /* Tiempo real desde que se desconecto: segundos, minutos, horas, dias,
+     meses o anios, con la hora del telefono. */
+  function haceCuanto(ts) {
+    const seg = Math.floor((Date.now() - Number(ts || 0)) / 1000);
+    if (!ts || seg < 0) return '';
+    if (seg < 60) return seg < 10 ? 'hace un momento' : 'hace ' + seg + ' segundos';
+    const min = Math.floor(seg / 60);
+    if (min < 60) return 'hace ' + min + (min === 1 ? ' minuto' : ' minutos');
+    const hor = Math.floor(min / 60);
+    if (hor < 24) return 'hace ' + hor + (hor === 1 ? ' hora' : ' horas');
+    const dia = Math.floor(hor / 24);
+    if (dia < 30) return 'hace ' + dia + (dia === 1 ? ' dia' : ' dias');
+    const mes = Math.floor(dia / 30);
+    if (mes < 12) return 'hace ' + mes + (mes === 1 ? ' mes' : ' meses');
+    const anio = Math.floor(dia / 365);
+    return 'hace ' + anio + (anio === 1 ? ' anio' : ' anios');
+  }
+
+  /* Punto verde si esta en linea; si no, desde cuando no aparece. */
+  function marcaPresencia(persona) {
+    if (!persona) return '';
+    if (persona.online) return '<span class="presencia on"><i class="punto"></i>En linea</span>';
+    const t = haceCuanto(persona.lastSeen);
+    return t ? '<span class="presencia">' + esc(t) + '</span>' : '';
+  }
+
+  /* La linea bajo el nombre en la cabecera del chat. */
+  function actualizarPresenciaCabecera() {
+    const el = $('#chatSubtitle');
+    if (!el) return;
+    const chat = state.chats.find((c) => c.id === state.currentChatId);
+    const other = chat ? otherOf(chat) : null;
+    if (!other) { el.textContent = 'En linea'; return; }
+    if (other.online) { el.innerHTML = '<i class="punto"></i>En linea'; return; }
+    const t = haceCuanto(other.lastSeen);
+    el.textContent = t ? 'Desconectado ' + t : 'Desconectado';
+  }
+
+  /* Cada medio minuto se recalcula el "hace X" mientras se mira la lista. */
+  function refrescarPresencia() {
+    const lista = $('#chatsView');
+    if (lista && lista.classList.contains('active')) renderChats();
+    if (state.currentChatId) actualizarPresenciaCabecera();
+  }
+  let presenciaTimer = null;
+
   function renderChats() {
     const list = $('#chatsList');
     if (!list) return;
@@ -762,7 +809,7 @@ const App = (() => {
       return `<button class="chat-row" onclick="App.openChat('${c.id}')">
         <div class="avatar" data-avatar="${esc(other && other.avatar ? other.avatar : '')}" data-nombre="${esc(name)}" style="width:46px;height:46px;font-size:16px">${other && other.avatar ? '' : initials(name)}</div>
         <div class="grow">
-          <div class="t">${esc(name)}${chulo}</div>
+          <div class="t">${esc(name)}${chulo}${marcaPresencia(other)}</div>
           <div class="s">${esc(tramite || last)}</div>
         </div>
         <div class="time">${lm ? clock(lm.ts) : ''}</div>
@@ -786,7 +833,7 @@ const App = (() => {
     const other = otherOf(chat);
     const title = state.me.role === 'admin' ? (other ? other.name : 'Persona') : 'Servidor publico';
     $('#chatTitle').textContent = title;
-    $('#chatSubtitle').textContent = 'En linea';
+    actualizarPresenciaCabecera();
     /* El chulo sale en la conversacion cuando el otro es el administrador. */
     const chuloChat = $('#chatVerified');
     if (chuloChat) chuloChat.hidden = !(other && other.role === 'admin');
@@ -2567,6 +2614,17 @@ const App = (() => {
           else list.push(msg);
           if (msg.chatId === state.currentChatId) { renderMessages(); markRead(msg.chatId); }
           loadChats();
+        } else if (m.type === 'presence') {
+          /* Se conecto o se desconecto: se actualiza la conversacion y la
+             cabecera sin recargar nada. */
+          state.chats.forEach((c) => {
+            if (c.other && c.other.id === m.userId) {
+              c.other.online = !!m.online;
+              if (!m.online) c.other.lastSeen = m.lastSeen || Date.now();
+            }
+          });
+          renderChats();
+          if (state.currentChatId) actualizarPresenciaCabecera();
         } else if (m.type === 'chat:new' || m.type === 'chat:updated') {
           loadChats();
         } else if (m.type === 'tramite:new' || m.type === 'tramite:updated') {

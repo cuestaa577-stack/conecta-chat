@@ -1575,6 +1575,7 @@ function chatView(chat, forUserId) {
     name: chat.type === 'group' ? chat.name : (other ? other.name : 'Chat'),
     members: members,
     other,
+    online: other ? estaEnLinea(other.id) : false,
     tramite: chat.tramite || null,
     lastMessage: last,
     unread,
@@ -2611,6 +2612,15 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 const sockets = new Map(); // userId -> Set(ws)
 
+/* Si la persona tiene al menos una pestaña abierta con el socket vivo, esta
+   en linea. Cuando cierra la ultima, lastSeen queda con la hora exacta. */
+function estaEnLinea(userId) {
+  const set = sockets.get(userId);
+  if (!set) return false;
+  for (const ws of set) if (ws.readyState === 1) return true;
+  return false;
+}
+
 function sendToUser(userId, payload) {
   const set = sockets.get(userId);
   if (!set) return;
@@ -2700,8 +2710,17 @@ wss.on('connection', (ws, req) => {
       if (!set.size) sockets.delete(userId);
     }
     if (db.users[userId]) {
-      db.users[userId].lastSeen = now();
+      const ts = now();
+      db.users[userId].lastSeen = ts;
       save();
+      /* Avisa a sus conversaciones que se desconecto y a que hora, para que
+         el otro lado vea "hace X" sin tener que recargar. */
+      Object.keys(db.chats).forEach((chatId) => {
+        const chat = db.chats[chatId];
+        if (chat && chat.members.includes(userId)) {
+          chat.members.forEach((m) => sendToUser(m, { type: 'presence', userId, online: false, lastSeen: ts }));
+        }
+      });
     }
   });
 });

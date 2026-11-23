@@ -338,6 +338,18 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .chat-row .t { font-size: 14.5px; font-weight: 700; }
 .chat-row .s { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-row .time { font-size: 11px; color: var(--muted); }
+
+/* En linea / hace cuanto se desconecto */
+.presencia {
+  display: inline-flex; align-items: center; gap: 5px; margin-left: 8px;
+  font-size: 11.5px; font-weight: 600; color: var(--muted); vertical-align: middle;
+}
+.presencia.on { color: #15803d; }
+.punto {
+  width: 8px; height: 8px; border-radius: 50%; background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, .18); flex: 0 0 auto;
+}
+.brand-sub .punto { margin-right: 6px; }
 .empty { text-align: center; padding: 40px 24px; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
 
 /* Chat */
