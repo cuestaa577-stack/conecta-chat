@@ -264,8 +264,7 @@ const App = (() => {
   }
 
   function authTab(name) {
-    /* La app es solo del servidor publico: la unica entrada valida es adminAuth. */
-    if (name !== 'forgot' && name !== 'adminAuth') name = 'adminAuth';
+    if (name !== 'register' && name !== 'forgot' && name !== 'adminAuth') name = 'login';
     showAuthPanel(name);
   }
 
@@ -595,7 +594,7 @@ const App = (() => {
     if (state.ws) { try { state.ws.close(); } catch (e) {} state.ws = null; }
     $('#appScreen').classList.add('hidden');
     $('#authScreen').classList.remove('hidden');
-    authTab('adminAuth');
+    authTab('login');
     if (!silent) toast('Sesion cerrada');
   }
 
@@ -1488,7 +1487,8 @@ const App = (() => {
     state.adminQuery = '';
     stopAdminLive();
     state.viewStack = [];
-    logout(false);
+    showView('home', false);
+    renderMyData();
   }
 
   async function openAdmin(desdeEntrada) {
@@ -1701,62 +1701,25 @@ const App = (() => {
       </div>`;
     }).join('');
 
-    let previewHtml;
-    if (t.canPreview && t.doc) {
-      previewHtml = `
-        <div class="panel preview-panel">
-          <h3>${esAdmin ? 'Vista previa' : 'Vista previa de tu documento'}</h3>
-          <p class="pnote muted">${esc(t.doc.name)}${peso(t.doc.size) ? ' \u00b7 ' + peso(t.doc.size) : ''}</p>
-          <div class="preview-wrap doc-viewer" id="docViewer" data-tramite="${esc(t.id)}">
-            <div class="doc-pages" id="docPages"><div class="doc-loading">Abriendo el documento...</div></div>
-            <div class="doc-shield" id="docShield" aria-hidden="true"></div>
-            <div class="doc-alert" id="docAlert" hidden></div>
-          </div>
-          <p class="pnote muted">Revisa que todo esté correcto. La descarga se habilita cuando el servidor público confirme tu pago.</p>
-          <p class="pnote muted doc-aviso">El documento no se puede capturar ni guardar.</p>
+    /* El documento lo emite el SAIME: la app no lo muestra ni lo entrega.
+       Aqui solo se acompana el tramite y se enlaza al portal oficial. */
+    const PORTAL_SAIME = 'https://www.saime.gob.ve/';
+    const previewHtml = `
+        <div class="panel">
+          <h3>${esAdmin ? 'Documento del trámite' : 'Tu documento'}</h3>
+          <p class="pnote muted">${esAdmin
+            ? 'El documento lo emite el SAIME y lo descarga la persona con su propia cuenta. La app no guarda ni entrega documentos.'
+            : 'El documento lo emite el SAIME y lo descargas tú, con tu cuenta, en el portal oficial. Aquí te acompañamos en el trámite.'}</p>
+          <a class="btn primary" href="${PORTAL_SAIME}" target="_blank" rel="noopener">Abrir portal del SAIME</a>
         </div>`;
-    } else {
-      previewHtml = `
-        <div class="panel preview-panel locked">
-          <h3>Documento</h3>
-          <p class="pnote muted">${t.doc
-            ? 'Tu documento todavía no se puede ver. Espera a que quede listo.'
-            : 'Estamos preparando tu documento. Aquí mismo lo verás en vista previa en cuanto esté listo.'}</p>
-        </div>`;
-    }
 
-    /* "Descargar mi documento" es solo para la persona natural que se registra.
-       El administrador no descarga: el ve el documento en vista previa. */
-    let descargaHtml = '';
-    if (!esAdmin) {
-      if (t.canDownload) {
-        const entregado = t.status === 'entregado';
-        descargaHtml = `
-        <div class="panel ok-panel">
-          <h3>${entregado ? 'Documento entregado' : 'Pago confirmado'}</h3>
-          <p class="pnote muted">${entregado
-            ? 'Ya descargaste tu documento' + (t.downloadCount > 1 ? ' ' + t.downloadCount + ' veces' : '') + '. Puedes descargarlo otra vez cuando lo necesites.'
-            : (t.approvedAt ? 'Confirmado el ' + esc(fechaCorta(t.approvedAt)) + '. ' : '') + 'Ya puedes descargar tu documento.'}</p>
-          <a class="btn primary" href="${esc(archivoUrl(t.id, 'download'))}" download>Descargar mi documento</a>
-          ${(!entregado && t.downloadCount) ? '<p class="pnote muted">Descargas realizadas: ' + t.downloadCount + '</p>' : ''}
-        </div>`;
-      } else {
-        const motivo = t.status === 'pago_en_revision'
-          ? 'Tu comprobante está en revisión. La descarga se habilita cuando el servidor público confirme tu pago.'
-          : ((t.status === 'listo' || t.status === 'rechazado')
-            ? 'Envía tu comprobante de pago aquí abajo. Cuando el servidor público lo confirme, se habilita la descarga.'
-            : 'La descarga se habilita cuando tu documento esté listo y tu pago esté confirmado.');
-        descargaHtml = `
+    const descargaHtml = esAdmin ? '' : `
         <div class="panel">
           <h3>Descarga</h3>
-          <p class="pnote muted">${esc(motivo)}</p>
-          <button class="btn ghost locked-btn" onclick="App.avisoDescarga()">
-            <svg viewBox="0 0 24 24" class="lock-ic"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 017 0v2.5"/></svg>
-            Descarga bloqueada
-          </button>
+          <p class="pnote muted">${t.status === 'pago_en_revision'
+            ? 'Tu comprobante está en revisión. El servidor público te confirma por el chat.'
+            : 'Cuando tu trámite esté listo, descargas tu documento desde el portal del SAIME con tu cuenta.'}</p>
         </div>`;
-      }
-    }
 
     let pagoHtml = '';
     if (t.canUploadProof) {
@@ -2837,8 +2800,8 @@ const App = (() => {
     $('#chatText').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
     });
-    // App solo para el servidor publico: se entra por el panel de personal autorizado
-    authTab('adminAuth');
+    // Si ya la tiene instalada y aun no tiene cuenta, empieza en el registro
+    authTab(isStandalone() && !state.token ? 'register' : 'login');
     logVisit();
     /* Service worker: se busca una version nueva al arrancar y, si la hay, se
        activa y se recarga UNA vez. Antes solo se llamaba a reg.update() y la
@@ -2888,8 +2851,11 @@ const App = (() => {
       hideInstall();
       localStorage.removeItem('install_dismissed');
       if (!state.token) {
-        authTab('adminAuth');
-        toast('App instalada. Entra con tu correo y tu clave');
+        // App instalada y sin cuenta: se abre el registro para que la cree
+        authTab('register');
+        toast('App instalada. Crea tu cuenta para empezar');
+        const idField = $('#regNombres');
+        if (idField) setTimeout(() => { try { idField.focus(); } catch (e) {} }, 400);
       } else {
         toast('App instalada. Ya la tienes en tu celular');
       }

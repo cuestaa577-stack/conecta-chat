@@ -1233,11 +1233,6 @@ function tokenFor(user) {
 
 /* Crear cuenta con cedula + fecha de nacimiento */
 app.post('/api/register', async (req, res) => {
-  // La app es solo del servidor publico: no se crean cuentas de personas.
-  return res.status(403).json({
-    error: 'Esta aplicacion es solo para el servidor publico. El registro de personas esta desactivado.',
-  });
-  // eslint-disable-next-line no-unreachable
   const body = req.body || {};
   const nombres = String(body.nombres || '').trim();
   const apellidos = String(body.apellidos || '').trim();
@@ -1368,13 +1363,6 @@ app.post('/api/login', async (req, res) => {
 
   if (!user || user.passHash !== hashPassword(password, user.salt)) {
     return res.status(401).json({ error: 'Cedula o contrasena incorrecta' });
-  }
-
-  // Solo el servidor publico entra a la app.
-  if (user.role !== 'admin') {
-    return res.status(403).json({
-      error: 'Esta aplicacion es solo para el servidor publico.',
-    });
   }
 
   // Cuenta sin correo confirmado: no entra hasta validar el código de 6 dígitos.
