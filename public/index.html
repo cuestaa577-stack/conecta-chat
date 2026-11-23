@@ -30,11 +30,11 @@
   <div class="auth-card">
     <img class="auth-logo" src="icon-192.png?v=60" srcset="icon-192.png?v=60 1x, icon-512.png?v=60 2x" alt="Trámites Venezolanos en Línea" />
     <h1>Trámites Venezolanos en Línea</h1>
-    <p class="muted tagline-sub">Cédula, licencia y antecedentes penales. Te acompañamos en todo el trámite.</p>
+    <p class="muted tagline-sub">Acceso del servidor público. Ingresa con tu correo y tu clave.</p>
 
     <div class="auth-tabs" id="authTabs">
       <button class="auth-tab active" id="tabLogin" type="button" onclick="App.authTab('login')">Entrar</button>
-      <button class="auth-tab" id="tabRegister" type="button" onclick="App.authTab('register')">Crear cuenta</button>
+      <button class="auth-tab hidden" id="tabRegister" type="button" onclick="App.authTab('login')">Crear cuenta</button>
     </div>
 
     <!-- Entrar con cedula -->
@@ -117,7 +117,6 @@
         </div>
       </label>
       <button class="btn primary" onclick="App.submitAdminLogin()">Entrar al panel</button>
-      <button class="linkbtn" type="button" onclick="App.authTab('login')">Volver al acceso</button>
     </div>
 
     <div id="verifyPanel" class="hidden">
@@ -449,7 +448,10 @@
   <section class="view" id="adminView">
     <header class="topbar">
       <div class="brand-block">
-        <div class="brand">Panel</div>
+        <div class="brand-line">
+          <div class="brand">Panel</div>
+          <span class="verified" title="Cuenta verificada"></span>
+        </div>
         <div class="brand-sub">Control de personas y paises</div>
       </div>
       <button class="panel-exit" onclick="App.salirPanel()" title="Salir del panel">Salir</button>

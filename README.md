@@ -1,5 +1,10 @@
 # Trámites Venezolanos en Línea
 
+> **App solo para el servidor público.** El registro de personas está desactivado y el acceso
+> de clientes también: al abrir la app se entra directo por *Personal autorizado* (correo y clave).
+> La verificación de la cuenta (chulito verde) se mantiene.
+
+
 Web de mensajería y multimedia para asesoría de trámites venezolanos: cédula, licencia y antecedentes penales.
 
 ## Qué incluye

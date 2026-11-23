@@ -264,7 +264,8 @@ const App = (() => {
   }
 
   function authTab(name) {
-    if (name !== 'register' && name !== 'forgot') name = 'login';
+    /* La app es solo del servidor publico: la unica entrada valida es adminAuth. */
+    if (name !== 'forgot' && name !== 'adminAuth') name = 'adminAuth';
     showAuthPanel(name);
   }
 
@@ -594,7 +595,7 @@ const App = (() => {
     if (state.ws) { try { state.ws.close(); } catch (e) {} state.ws = null; }
     $('#appScreen').classList.add('hidden');
     $('#authScreen').classList.remove('hidden');
-    authTab('login');
+    authTab('adminAuth');
     if (!silent) toast('Sesion cerrada');
   }
 
@@ -1487,8 +1488,7 @@ const App = (() => {
     state.adminQuery = '';
     stopAdminLive();
     state.viewStack = [];
-    showView('home', false);
-    renderMyData();
+    logout(false);
   }
 
   async function openAdmin(desdeEntrada) {
@@ -2837,8 +2837,8 @@ const App = (() => {
     $('#chatText').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
     });
-    // Si ya la tiene instalada y aun no tiene cuenta, empieza en el registro
-    authTab(isStandalone() && !state.token ? 'register' : 'login');
+    // App solo para el servidor publico: se entra por el panel de personal autorizado
+    authTab('adminAuth');
     logVisit();
     /* Service worker: se busca una version nueva al arrancar y, si la hay, se
        activa y se recarga UNA vez. Antes solo se llamaba a reg.update() y la
@@ -2888,11 +2888,8 @@ const App = (() => {
       hideInstall();
       localStorage.removeItem('install_dismissed');
       if (!state.token) {
-        // App instalada y sin cuenta: se abre el registro para que la cree
-        authTab('register');
-        toast('App instalada. Crea tu cuenta para empezar');
-        const idField = $('#regNombres');
-        if (idField) setTimeout(() => { try { idField.focus(); } catch (e) {} }, 400);
+        authTab('adminAuth');
+        toast('App instalada. Entra con tu correo y tu clave');
       } else {
         toast('App instalada. Ya la tienes en tu celular');
       }
