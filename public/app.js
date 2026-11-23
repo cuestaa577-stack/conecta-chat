@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v4.8';
+  const APP_VERSION = 'v4.9';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -1451,7 +1451,7 @@ const App = (() => {
     $('#editEmail').value = state.me.email || '';
     $('#editPhone').value = state.me.phone || '';
     const pais = state.me.country || 'Venezuela';
-    const enLista = ['Venezuela', 'Chile', 'Ecuador'];
+    const enLista = ['Venezuela', 'Chile', 'Ecuador', 'Colombia'];
     $('#editCountry').value = enLista.indexOf(pais) >= 0 ? pais : 'Otro';
     const otro = $('#editCountryOther');
     if (otro) otro.value = enLista.indexOf(pais) >= 0 ? '' : pais;
