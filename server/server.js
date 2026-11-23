@@ -74,7 +74,7 @@ async function sendViaApi(to, subject, text, html) {
       res = await fetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
         headers: { 'api-key': MAIL_API_KEY, 'Content-Type': 'application/json', accept: 'application/json' },
-        body: JSON.stringify({ sender: from, to: [{ email: to }], subject, textContent: text })
+        body: JSON.stringify({ sender: from, to: [{ email: to }], subject, textContent: text, htmlContent: html || undefined })
       });
     } else if (provider === 'resend') {
       res = await fetch('https://api.resend.com/emails', {
