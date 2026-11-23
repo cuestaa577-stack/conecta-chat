@@ -246,7 +246,38 @@ const App = (() => {
   const AUTH_PANELS = ['login', 'register', 'forgot', 'reset', 'code', 'verify', 'adminAuth'];
   let authPending = { cedula: '' };
 
+  /* Recordar los datos del acceso (casilla pequena bajo el boton Entrar).
+     Solo se guarda en este dispositivo: la cedula del acceso de personas y el
+     correo del personal autorizado. La clave nunca se guarda. */
+  const REC_CEDULA = 'tve_rec_cedula';
+  const REC_ADMIN = 'tve_rec_admin';
+
+  function recordado(clave) {
+    try { return localStorage.getItem(clave) || ''; } catch (e) { return ''; }
+  }
+
+  function guardarRecordado(clave, casilla, valor) {
+    try {
+      if (casilla && casilla.checked) localStorage.setItem(clave, String(valor || ''));
+      else localStorage.removeItem(clave);
+    } catch (e) {}
+  }
+
+  function pintarRecordados() {
+    try {
+      const ced = recordado(REC_CEDULA);
+      const elC = $('#loginCedula');
+      const chC = $('#rememberLogin');
+      if (elC && ced) { elC.value = ced; if (chC) chC.checked = true; }
+      const adm = recordado(REC_ADMIN);
+      const elA = $('#adminEmail');
+      const chA = $('#rememberAdmin');
+      if (elA && adm) { elA.value = adm; if (chA) chA.checked = true; }
+    } catch (e) {}
+  }
+
   function showAuthPanel(name) {
+    if (name === 'login' || name === 'adminAuth') pintarRecordados();
     AUTH_PANELS.forEach((key) => {
       const el = document.getElementById(key + 'Panel');
       if (el) el.classList.toggle('hidden', key !== name);
@@ -349,6 +380,7 @@ const App = (() => {
         method: 'POST',
         body: JSON.stringify({ cedula, password }),
       });
+      guardarRecordado(REC_CEDULA, $('#rememberLogin'), cedula);
       await finishAuth(data, false);
     } catch (e) {
       if (e.data && e.data.needVerify) {
@@ -457,6 +489,7 @@ const App = (() => {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       });
+      guardarRecordado(REC_ADMIN, $('#rememberAdmin'), email);
       await finishAuth(data, false);
       toast('Bienvenido, personal autorizado');
     } catch (e) { toast(e.message); }

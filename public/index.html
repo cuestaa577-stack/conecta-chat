@@ -47,6 +47,7 @@
         </div>
       </label>
       <button class="btn primary" id="loginBtn" onclick="App.submitLogin()">Entrar</button>
+      <label class="remember-row"><input type="checkbox" id="rememberLogin" /><span>Recordar datos personales</span></label>
       <button class="linkbtn" type="button" onclick="App.authTab('forgot')">Olvidé mi contraseña</button>
     </div>
 
@@ -117,6 +118,7 @@
         </div>
       </label>
       <button class="btn primary" onclick="App.submitAdminLogin()">Entrar al panel</button>
+      <label class="remember-row"><input type="checkbox" id="rememberAdmin" /><span>Recordar datos personales</span></label>
       <button class="linkbtn" type="button" onclick="App.authTab('login')">Volver al acceso</button>
     </div>
 
