@@ -1225,6 +1225,26 @@ function adminOnly(req, res, next) {
 const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '25mb' }));
+/* Version publicada: se calcula del propio codigo (APP_VERSION y CACHE), de modo
+   que el aviso de "hay una actualizacion" nunca queda pegado por un archivo viejo. */
+app.get('/version.json', (req, res) => {
+  let version = '';
+  let cache = '';
+  try {
+    const appJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+    const m = /APP_VERSION\s*=\s*'([^']+)'/.exec(appJs);
+    if (m) version = m[1];
+  } catch (e) {}
+  try {
+    const swJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'sw.js'), 'utf8');
+    const m = /CACHE\s*=\s*'([^']+)'/.exec(swJs);
+    if (m) cache = m[1];
+  } catch (e) {}
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.set('Pragma', 'no-cache');
+  res.json({ version: version, cache: cache, ts: Date.now() });
+});
+
 app.use(express.static(path.join(__dirname, '..', 'public')));
 /* archivos: solo con sesion valida (el cliente agrega ?token=) */
 app.get('/uploads/:file', async (req, res) => {

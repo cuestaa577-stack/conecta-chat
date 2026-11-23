@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v4.7';
+  const APP_VERSION = 'v4.8';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -1204,8 +1204,11 @@ const App = (() => {
       const res = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
-      const publicada = String((data && data.version) || '');
-      if (!publicada || publicada === APP_VERSION) {
+      const publicada = String((data && data.version) || '').trim();
+      const limpia = (v) => String(v || '').trim().toLowerCase().replace(/^v/, '');
+      if (!publicada || limpia(publicada) === limpia(APP_VERSION)) {
+        /* Ya estamos en la ultima: el aviso se quita de una vez. */
+        versionNueva = '';
         ocultarBarraActualizacion();
         return;
       }
@@ -1234,6 +1237,10 @@ const App = (() => {
   /* Aplica la version nueva: pide al service worker que active lo ultimo,
      limpia la cache vieja y recarga. Si algo falla, recarga igual. */
   async function aplicarActualizacion() {
+    /* El aviso se quita de inmediato: si la recarga tarda, la persona ve que si
+       paso algo. Al volver, la version ya es la nueva y no reaparece. */
+    ocultarBarraActualizacion();
+    versionRevisada = 0;
     try {
       if ('caches' in window) {
         const llaves = await caches.keys();
@@ -1250,7 +1257,13 @@ const App = (() => {
         }
       }
     } catch (e) {}
-    location.reload();
+    try {
+      const u = new URL(location.href);
+      u.searchParams.set('v', String(Date.now()));
+      location.replace(u.toString());
+    } catch (e) {
+      location.reload();
+    }
   }
 
   async function actualizarApp() {
