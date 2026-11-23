@@ -526,16 +526,22 @@ const App = (() => {
     if (!el) return;
     const nombre = String((state.me && state.me.name) || '').trim();
     if (!nombre) { el.style.display = 'none'; return; }
+    /* Franjas del dia (hora local del telefono):
+       05:00 a 11:59 buenos dias | 12:00 a 18:59 buenas tardes | resto buenas noches */
     const hora = new Date().getHours();
-    const saludo = hora < 12 ? 'Buenos días' : (hora < 19 ? 'Buenas tardes' : 'Buenas noches');
+    let saludo = 'Buenas noches';
+    if (hora >= 5 && hora < 12) saludo = 'Buenos días';
+    else if (hora >= 12 && hora < 19) saludo = 'Buenas tardes';
     el.textContent = saludo + ', ' + nombre.split(/\s+/)[0];
     el.style.display = 'block';
   }
+  let saludoTimer = null;
 
   async function enterApp() {
     $('#authScreen').classList.add('hidden');
     $('#appScreen').classList.remove('hidden');
     pintarSaludo();
+    if (!saludoTimer) saludoTimer = setInterval(pintarSaludo, 60000);
     pintarAvatar($('#myAvatarBtn'), state.me.avatar, state.me.name);
     const adminBtn = $('#adminBtn');
     if (adminBtn) adminBtn.style.display = state.me.role === 'admin' ? 'block' : 'none';

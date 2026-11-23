@@ -179,9 +179,13 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 
 .scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 22px; }
 .hero {
-  margin: 14px 14px 4px; padding: 18px 16px 16px;
+  margin: 6px 14px 6px; padding: 20px 16px 28px;
   background: var(--navy); border-radius: 15px;
   box-shadow: var(--shadow);
+}
+.home-greeting {
+  margin: 16px 16px 12px; font-size: 19px; font-weight: 800;
+  color: var(--navy); letter-spacing: -.01em; line-height: 1.25;
 }
 .hero h2 { font-size: 21px; margin: 0 0 5px; color: #fff; }
 .hero p { margin: 0; font-size: 13.5px; color: rgba(255, 255, 255, .9); }
