@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v4.0';
+  const APP_VERSION = 'v4.1';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -527,15 +527,22 @@ const App = (() => {
     const nombre = String((state.me && state.me.name) || '').trim();
     if (!nombre) { el.style.display = 'none'; return; }
     /* Franjas del dia (hora local del telefono):
-       05:00 a 11:59 buenos dias | 12:00 a 18:59 buenas tardes | resto buenas noches */
+       00:00 a 11:59 buenos dias | 12:00 a 18:59 buenas tardes | 19:00 a 23:59 buenas noches.
+       La madrugada cuenta como dia nuevo: a la 1:00 AM ya dice "Buenos dias". */
     const hora = new Date().getHours();
     let saludo = 'Buenas noches';
-    if (hora >= 5 && hora < 12) saludo = 'Buenos días';
-    else if (hora >= 12 && hora < 19) saludo = 'Buenas tardes';
+    if (hora < 12) saludo = 'Buenos días';
+    else if (hora < 19) saludo = 'Buenas tardes';
     el.textContent = saludo + ', ' + nombre.split(/\s+/)[0];
     el.style.display = 'block';
   }
   let saludoTimer = null;
+
+  /* Al volver a la app desde el fondo el temporizador puede venir atrasado:
+     se repinta el saludo en cuanto la pantalla vuelve a estar visible. */
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) pintarSaludo();
+  });
 
   async function enterApp() {
     $('#authScreen').classList.add('hidden');

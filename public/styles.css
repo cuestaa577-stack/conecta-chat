@@ -12,6 +12,7 @@
   --border: #d7e4f2;
   --ok: #12805c;
   --shadow: 0 10px 30px rgba(11, 27, 58, .12);
+  --primary: #1f5f9e;   /* azul de marca: fondo del pie y acentos */
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -668,12 +669,15 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .site-footer {
   margin: 22px 14px 30px;
   padding: 18px 16px 16px;
-  background: var(--primary);
+  /* Antes decia var(--primary) y esa variable no existia: el fondo quedaba
+     transparente y el texto blanco casi no se leia. */
+  background: var(--primary, #1f5f9e);
   color: #fff;
   border-radius: 15px;
   text-align: center;
 }
 .site-footer .footer-brand { font-size: 16px; font-weight: 800; letter-spacing: .3px; }
-.site-footer .footer-note { margin: 8px 0 12px; font-size: 12px; line-height: 1.5; color: rgba(255,255,255,.85); }
-.site-footer .footer-info { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: rgba(255,255,255,.92); }
-.site-footer .footer-legal { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.2); font-size: 11px; color: rgba(255,255,255,.7); }
+.site-footer .footer-note { margin: 8px 0 12px; font-size: 12.5px; line-height: 1.55; color: #fff; }
+.site-footer .footer-info { display: flex; flex-direction: column; gap: 7px; font-size: 13px; color: #fff; }
+.site-footer .footer-info b { font-weight: 800; }
+.site-footer .footer-legal { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.3); font-size: 12px; color: rgba(255,255,255,.92); }
