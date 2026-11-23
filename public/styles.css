@@ -158,9 +158,13 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 }
 
 .scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 22px; }
-.hero { padding: 20px 18px 8px; }
-.hero h2 { font-size: 21px; margin: 0 0 5px; }
-.hero p { margin: 0; font-size: 13.5px; }
+.hero {
+  margin: 14px 14px 4px; padding: 18px 16px 16px;
+  background: var(--navy); border-radius: 15px;
+  box-shadow: var(--shadow);
+}
+.hero h2 { font-size: 21px; margin: 0 0 5px; color: #fff; }
+.hero p { margin: 0; font-size: 13.5px; color: rgba(255, 255, 255, .9); }
 
 .services { padding: 10px 14px 4px; display: flex; flex-direction: column; gap: 10px; }
 .service {

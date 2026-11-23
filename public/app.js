@@ -519,9 +519,23 @@ const App = (() => {
     } catch (e) { toast(e.message); }
   }
 
+  /* Saludo de la portada: "Buenos dias, Carlos" con el primer nombre real
+     de la persona registrada y la franja del dia segun su hora local. */
+  function pintarSaludo() {
+    const el = $('#homeGreeting');
+    if (!el) return;
+    const nombre = String((state.me && state.me.name) || '').trim();
+    if (!nombre) { el.style.display = 'none'; return; }
+    const hora = new Date().getHours();
+    const saludo = hora < 12 ? 'Buenos días' : (hora < 19 ? 'Buenas tardes' : 'Buenas noches');
+    el.textContent = saludo + ', ' + nombre.split(/\s+/)[0];
+    el.style.display = 'block';
+  }
+
   async function enterApp() {
     $('#authScreen').classList.add('hidden');
     $('#appScreen').classList.remove('hidden');
+    pintarSaludo();
     pintarAvatar($('#myAvatarBtn'), state.me.avatar, state.me.name);
     const adminBtn = $('#adminBtn');
     if (adminBtn) adminBtn.style.display = state.me.role === 'admin' ? 'block' : 'none';
