@@ -1532,8 +1532,17 @@ app.post('/api/profile', auth, (req, res) => {
 /* --- verificar la cedula con api.cedula.com.ve (consulta en el servidor) --- */
 
 
-/* --- eliminar cuenta --- */
+/* --- eliminar cuenta ---
+   Regla de oro: NINGUNA cuenta se borra sola. Ni la persona desde su perfil ni
+   la app al sincronizar. Las cuentas quedan guardadas en la base privada
+   (Supabase, tabla de registros) y solo el administrador puede tocar algo. */
 app.delete('/api/account', auth, (req, res) => {
+  return res.status(403).json({
+    error: 'Las cuentas no se pueden eliminar. Tu registro queda guardado; si necesitas un cambio escribe al servidor publico.',
+  });
+});
+
+app.delete('/api/account-borrado-anterior', auth, (req, res) => {
   const me = req.user;
   if (me.role === 'admin') return res.status(400).json({ error: 'La cuenta del administrador no se puede eliminar' });
 
@@ -1854,7 +1863,7 @@ app.post('/api/upload', auth, async (req, res) => {
    El nombre real viaja en la cabecera X-File-Name. */
 /* Tope de tamano de un documento (PDF). El mismo valor que usa el cliente.
    Las FOTOS tienen su propio tope mas alto porque se reducen antes de subir. */
-const MAX_DOC_BYTES = Math.floor(10 * 1024 * 1024);
+const MAX_DOC_BYTES = Math.floor(25 * 1024 * 1024);
 const MAX_IMG_BYTES = 12 * 1024 * 1024;
 
 app.post('/api/upload-raw', auth, (req, res) => {

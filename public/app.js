@@ -1,15 +1,15 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v4.3';
+  const APP_VERSION = 'v4.4';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
      Ahora que el archivo se guarda en Supabase Storage (no dentro de la base)
      el tope sube a 10 MB y sigue viajando por partes, sin cargarlo entero en
      memoria. El mismo tope se comprueba en el servidor. */
-  const MAX_DOC_BYTES = Math.floor(10 * 1024 * 1024);
-  const MAX_DOC_TEXTO = '10 MB';
+  const MAX_DOC_BYTES = Math.floor(25 * 1024 * 1024);
+  const MAX_DOC_TEXTO = '25 MB';
 
   const SERVICES = {
     cedula: {
@@ -1345,16 +1345,6 @@ const App = (() => {
     } catch (e) { toast(e.message); }
   }
 
-  async function deleteAccount() {
-    const ok = confirm('Se eliminara tu cuenta POR COMPLETO: tus datos, tus conversaciones, tus mensajes y tus archivos. No se puede deshacer. Continuar?');
-    if (!ok) return;
-    try {
-      await api('/api/account', { method: 'DELETE' });
-      toast('Cuenta eliminada');
-      logout(true);
-    } catch (e) { toast(e.message); }
-  }
-
   /* ------------------------------ panel ------------------------------ */
   /* Panel: solo las 4 ultimas visitas, y se refresca solo mientras el panel este abierto */
   let adminLiveTimer = null;
@@ -1488,10 +1478,18 @@ const App = (() => {
         <div class="panel">
           <h3>Conversaciones</h3>
           <p class="pnote muted">Primero las que tienen mensajes sin leer.</p>
-          ${lista.map((c) => `<button class="panel-row tap" onclick="App.openChatFromAdmin('${c.chatId}')">
-            <div class="who"><b>${esc(c.name)}</b><small>${esc(c.country)} \u00b7 ${esc(c.tramite ? c.tramite.serviceLabel + ' \u00b7 ' + c.tramite.subtypeLabel : 'Sin tramite')}</small><small>${esc(c.lastText || 'Sin mensajes todavia')}</small></div>
-            <span class="pill ${c.unread ? 'hot' : ''}">${c.unread ? c.unread + ' sin leer' : c.messages + ' msj'}</span>
-          </button>`).join('') || '<div class="panel-row"><span>Todavia nadie te ha escrito</span></div>'}
+          <div class="chat-list">${lista.map((c) => `<button class="chat-card${c.unread ? ' has-unread' : ''}" onclick="App.openChatFromAdmin('${c.chatId}')">
+            <span class="cc-avatar">${esc(initials(c.name))}</span>
+            <span class="cc-body">
+              <span class="cc-top">
+                <b>${esc(c.name)}</b>
+                <span class="cc-time">${c.lastAt ? esc(clock(c.lastAt)) : ''}</span>
+              </span>
+              <span class="cc-last">${esc(c.lastText || 'Todavía no hay mensajes')}</span>
+              <span class="cc-sub">${esc(c.country || 'Sin país')}${c.tramite ? ' · ' + esc([c.tramite.serviceLabel, c.tramite.subtypeLabel].filter(Boolean).join(' · ')) : ''}</span>
+            </span>
+            ${c.unread ? `<span class="cc-badge">${c.unread}</span>` : `<span class="cc-count">${c.messages}</span>`}
+          </button>`).join('')}</div>${lista.length ? '' : '<div class="panel-row"><span>Todavía nadie te ha escrito</span></div>'}
         </div>`;
   }
 
@@ -1637,7 +1635,7 @@ const App = (() => {
       renderAdminTab();
       loadAdminTramites();
       stopAdminLive();
-      adminLiveTimer = setInterval(refreshAdminLive, 30000);
+      adminLiveTimer = setInterval(refreshAdminLive, 5000);
     } catch (e) {
       if (box) box.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
     }
@@ -1838,16 +1836,35 @@ const App = (() => {
       </div>`;
     }).join('');
 
-    /* El documento lo emite el SAIME: la app no lo muestra ni lo entrega.
-       Aqui solo se acompana el tramite y se enlaza al portal oficial. */
+    /* El documento se abre aqui mismo, en "Tu documento": la persona lo lee
+       con zoom (hasta 4x, nitido) y desde esta pantalla manda su comprobante.
+       Sin marcas de agua y sin salir de la app. */
     const PORTAL_SAIME = 'https://www.saime.gob.ve/';
-    const previewHtml = `
+    const hayDocumento = !!(t.canPreview && t.doc);
+    const previewHtml = hayDocumento ? `
+        <div class="panel doc-panel">
+          <h3>${esAdmin ? 'Documento del trámite' : 'Tu documento'}</h3>
+          <p class="doc-file">${esc(t.doc.name)}${peso(t.doc.size) ? ' · ' + peso(t.doc.size) : ''}</p>
+          <div class="doc-viewer" id="docViewer">
+            <div class="doc-pages" id="docPages"><div class="doc-loading">Abriendo el documento...</div></div>
+          </div>
+          <div class="doc-tools">
+            <button class="doc-tool" type="button" onclick="App.zoomDoc(-1)" title="Alejar">−</button>
+            <button class="doc-tool wide" type="button" onclick="App.zoomDoc(0)" title="Ajustar a la pantalla">Ajustar</button>
+            <button class="doc-tool" type="button" onclick="App.zoomDoc(1)" title="Acercar">+</button>
+            <span class="doc-zoom-lbl" id="docZoomLbl">100%</span>
+          </div>
+          <p class="pnote nota-clara">${esAdmin
+            ? 'Así lo ve la persona en su app: lo puede leer con zoom, pero no descargarlo hasta que confirmes el pago.'
+            : 'Acércalo con dos dedos o con los botones para leerlo bien. Cuando esté todo correcto, envía tu comprobante de pago aquí abajo.'}</p>
+          <a class="linkbtn" href="${PORTAL_SAIME}" target="_blank" rel="noopener">Abrir el portal del SAIME</a>
+        </div>` : `
         <div class="panel">
           <h3>${esAdmin ? 'Documento del trámite' : 'Tu documento'}</h3>
-          <p class="pnote muted">${esAdmin
-            ? 'El documento lo emite el SAIME y lo descarga la persona con su propia cuenta. La app no guarda ni entrega documentos.'
-            : 'El documento lo emite el SAIME y lo descargas tú, con tu cuenta, en el portal oficial. Aquí te acompañamos en el trámite.'}</p>
-          <a class="btn primary" href="${PORTAL_SAIME}" target="_blank" rel="noopener">Abrir portal del SAIME</a>
+          <p class="pnote nota-clara">${esAdmin
+            ? 'Todavía no has subido el documento. Súbelo con el botón de arriba y la persona lo verá aquí en vista previa.'
+            : 'Tu documento está en preparación. En cuanto el servidor público lo suba, lo verás aquí mismo en vista previa.'}</p>
+          <a class="btn ghost" href="${PORTAL_SAIME}" target="_blank" rel="noopener">Abrir el portal del SAIME</a>
         </div>`;
 
     /* La descarga solo existe con el pago confirmado. Mientras no lo este, el
@@ -1857,7 +1874,7 @@ const App = (() => {
           <h3>Descarga</h3>
           <p class="pnote">Tu pago está confirmado. Ya puedes descargar tu documento.</p>
           <a class="btn primary" href="${esc(archivoUrl(t.id, 'download'))}" download>Descargar mi documento</a>
-          <p class="pnote muted">Cada descarga queda registrada en el historial de tu trámite.</p>
+          <p class="pnote nota-clara">Cada descarga queda registrada en el historial de tu trámite.</p>
         </div>` : `
         <div class="panel preview-panel locked">
           <h3>Descarga</h3>
@@ -2060,6 +2077,18 @@ const App = (() => {
     } finally {
       visor.redibujando = false;
     }
+  }
+
+  /* Zoom con botones (+ / - / Ajustar), para quien no usa los dedos. */
+  function zoomDoc(dir) {
+    if (!visor.buf) return;
+    if (dir === 0) visor.escala = ZOOM_MIN;
+    else visor.escala = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, (visor.escala || 1) + dir * 0.5));
+    visor.escalaAnterior = visor.escalaAnterior || 1;
+    const lbl = $('#docZoomLbl');
+    if (lbl) lbl.textContent = Math.round((visor.escala || 1) * 100) + '%';
+    aplicarTransform(1);
+    redibujarAlZoom();
   }
 
   function distanciaDedos(t1, t2) {
@@ -2789,6 +2818,17 @@ const App = (() => {
   }
 
   /* ------------------------------ WebSocket ------------------------------ */
+  /* El panel se refresca al instante cuando llega algo por el WebSocket, sin
+     esperar al sondeo de cada 5 segundos. */
+  let panelRefreshTimer = null;
+  function refrescarPanelSiAdmin() {
+    if (!state.me || state.me.role !== 'admin') return;
+    const vista = document.getElementById('adminView');
+    if (!vista || !vista.classList.contains('active')) return;
+    clearTimeout(panelRefreshTimer);
+    panelRefreshTimer = setTimeout(() => { refreshAdminLive(); loadAdminTramites(); }, 350);
+  }
+
   function connectWS() {
     if (!state.token) return;
     try {
@@ -2798,6 +2838,9 @@ const App = (() => {
       ws.onmessage = (ev) => {
         let m = null;
         try { m = JSON.parse(ev.data); } catch (e) { return; }
+        /* Si el panel esta abierto, cualquier novedad se refleja al instante. */
+        if (m.type === 'message:new' || m.type === 'chat:new' || m.type === 'chat:updated'
+          || m.type === 'tramite:new' || m.type === 'tramite:updated') refrescarPanelSiAdmin();
         if (m.type === 'message:new') {
           const msg = m.message;
           if (!msg) return;
@@ -3004,14 +3047,14 @@ const App = (() => {
     back, pickService, pickOption, pickGrade, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
     openProfile, pickAvatar, saveProfileChanges, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat,
-    deleteAccount, openAdmin, openChatFromAdmin, openFirstChat,
+    openAdmin, openChatFromAdmin, openFirstChat,
     adminTab, adminIr, adminFiltrar, adminBuscarPersona, adminBuscarTramite, salirPanel,
     viewImage, closeViewer, logout,
     installApp, dismissInstall, closeIosSheet, testMail,
     openTramites, loadTramites, openTramite, openTramiteChat, subirComprobante, avisoDescarga,
     adminFillSubtypes, crearTramite, adminSubirDocumento, adminAprobar, adminRechazar,
     adminBorrarTramite, guardarPagoInfo, cerrarArchivo,
-    entendidoCaptura, salirBloqueo, guardarCapturaConfig, adminDesbloquear,
+    entendidoCaptura, salirBloqueo, guardarCapturaConfig, adminDesbloquear, zoomDoc,
     actualizarApp, comprobarVersionPublicada,
   };
 })();
