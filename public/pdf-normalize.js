@@ -201,6 +201,8 @@
     }
 
     if (!fixes.length) {
+      /* Nada que reparar: se suelta el documento y se devuelve el original. */
+      doc = null;
       return { bytes: bytes, changed: false, fixes: fixes };
     }
 
@@ -209,6 +211,11 @@
       salida = await doc.save({ useObjectStreams: false, addDefaultPage: false });
     } catch (e) {
       return null;
+    } finally {
+      /* MEMORIA: el documento de pdf-lib (con todo el arbol de objetos del PDF)
+         se suelta en cuanto se guarda. Antes quedaba vivo hasta que el recolector
+         de basura decidiera, y al procesar varios PDFs seguidos se acumulaba. */
+      try { doc = null; } catch (e) {}
     }
     return { bytes: salida, changed: true, fixes: fixes };
   }

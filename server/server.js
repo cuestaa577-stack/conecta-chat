@@ -281,19 +281,261 @@ async function attachCedulaData(user) {
 
 let db = { users: {}, chats: {}, messages: {}, visits: [], files: {} };
 
+/* ---------------- persistencia POR REGISTRO (Supabase) ----------------
+   Antes TODO el estado (cuentas, chats, mensajes, tramites, archivos) vivia
+   en UNA sola fila de conecta_state, en la columna data. Al reiniciarse el
+   servicio por limite de memoria, esa unica escritura se perdia y con ella
+   una cuenta entera.
+
+   Ahora cada registro va en SU PROPIA fila de conecta_records:
+     users:u_xxx   chats:c_xxx   messages:c_xxx   tramites:t_xxx
+     files:f_xxx   uploads:f_xxx settings:main    secret:main   visits:all
+
+   Cada alta o cambio se escribe a Supabase EN EL ACTO (sin esperar al guardado
+   periodico), asi un reinicio solo puede perder el ultimo cambio, nunca la
+   cuenta completa. La fila vieja de conecta_state se conserva como respaldo y,
+   antes de sobrescribirla, su contenido anterior se copia a
+   conecta_state_backup. */
+const RECORDS_TABLE = process.env.SUPABASE_RECORDS_TABLE || 'conecta_records';
+const BACKUP_TABLE = process.env.SUPABASE_BACKUP_TABLE || 'conecta_state_backup';
+const BACKUP_MAX = 20;
+
+/* Firma de cada registro ya guardado: id -> sha1 del contenido. Solo se sube
+   lo que cambio, asi un guardado no reescribe cientos de filas iguales. */
+const firmas = new Map();
+/* Ultimo valor conocido de cada registro: es lo que se guarda en prev_data
+   antes de sobrescribir la fila, para poder recuperar el estado anterior. */
+const ultimos = new Map();
+let recordsOk = true;
+let guardandoRegistros = false;
+let registrosSucios = false;
+
+function firmaDe(valor) {
+  return crypto.createHash('sha1').update(JSON.stringify(valor)).digest('hex');
+}
+
+/* Aplana db en la lista de registros que van a Supabase. */
+function registrosDeDb() {
+  const out = [];
+  const push = (kind, key, valor) => {
+    if (valor === undefined) return;
+    out.push({ id: kind + ':' + key, kind: kind, key: String(key), data: valor });
+  };
+  const mapa = (k) => (db[k] && typeof db[k] === 'object' && !Array.isArray(db[k])) ? db[k] : {};
+  Object.keys(mapa('users')).forEach((k) => push('users', k, db.users[k]));
+  Object.keys(mapa('chats')).forEach((k) => push('chats', k, db.chats[k]));
+  Object.keys(mapa('messages')).forEach((k) => push('messages', k, db.messages[k]));
+  Object.keys(mapa('tramites')).forEach((k) => push('tramites', k, db.tramites[k]));
+  Object.keys(mapa('files')).forEach((k) => push('files', k, db.files[k]));
+  Object.keys(mapa('uploads')).forEach((k) => push('uploads', k, db.uploads[k]));
+  if (db.settings !== undefined) push('settings', 'main', db.settings);
+  if (db.secret !== undefined) push('secret', 'main', db.secret);
+  if (Array.isArray(db.visits)) push('visits', 'all', db.visits);
+  return out;
+}
+
+function esTablaFaltante(msg) {
+  return /does not exist|no existe|schema|relation .* not found/i.test(String(msg || ''));
+}
+
+/* Sube a Supabase solo los registros que cambiaron. Se llama en cada save(),
+   sin temporizador: la escritura es inmediata. */
+async function guardarRegistros() {
+  if (!supabase || !recordsOk) return;
+  if (guardandoRegistros) { registrosSucios = true; return; }
+  guardandoRegistros = true;
+  try {
+    do {
+      registrosSucios = false;
+      const lista = registrosDeDb();
+      const filas = [];
+      for (let i = 0; i < lista.length; i++) {
+        const r = lista[i];
+        const f = firmaDe(r.data);
+        if (firmas.get(r.id) === f) continue;
+        r._firma = f;
+        filas.push(r);
+      }
+      /* Registros que ya no existen (cuenta borrada, chat eliminado). */
+      const vivos = new Set(lista.map((r) => r.id));
+      const borrar = [];
+      firmas.forEach((_f, id) => { if (!vivos.has(id)) borrar.push(id); });
+
+      for (let i = 0; i < filas.length; i += 50) {
+        const lote = filas.slice(i, i + 50);
+        const { error } = await supabase.from(RECORDS_TABLE).upsert(lote.map((r) => ({
+          id: r.id, kind: r.kind, key: r.key, data: r.data,
+          /* Respaldo: el valor ANTERIOR de esta fila queda guardado en la
+             misma fila antes de que data se sobrescriba. */
+          prev_data: ultimos.has(r.id) ? ultimos.get(r.id) : null,
+          updated_at: new Date().toISOString()
+        })));
+        if (error) {
+          if (esTablaFaltante(error.message)) {
+            recordsOk = false;
+            console.error('[aviso] Falta la tabla ' + RECORDS_TABLE + '. Ejecuta el SQL de SUPABASE-PASOS.md.');
+            console.error('   Mientras tanto se sigue guardando en la fila unica de ' + SUPABASE_TABLE + '.');
+            return;
+          }
+          console.error('Supabase registros error:', error.message);
+          const tip = explainSupabaseError(error.message);
+          if (tip) console.error('   →', tip);
+          return;
+        }
+        lote.forEach((r) => { firmas.set(r.id, r._firma); ultimos.set(r.id, r.data); });
+        if (!nubeOk) {
+          nubeOk = true;
+          console.log('Supabase funcionando: cada registro se guarda en su propia fila');
+        }
+      }
+
+      if (borrar.length) {
+        for (let i = 0; i < borrar.length; i += 50) {
+          const lote = borrar.slice(i, i + 50);
+          const { error } = await supabase.from(RECORDS_TABLE).delete().in('id', lote);
+          if (error) { console.error('Supabase borrado error:', error.message); break; }
+          lote.forEach((id) => { firmas.delete(id); ultimos.delete(id); });
+        }
+      }
+    } while (registrosSucios);
+  } catch (e) {
+    console.error('Supabase registros exception:', e.message);
+  } finally {
+    guardandoRegistros = false;
+  }
+}
+
+/* Reconstruye db a partir de las filas de conecta_records. */
+function aplicarRegistros(filas) {
+  db = { users: {}, chats: {}, messages: {}, visits: [], files: {}, uploads: {}, tramites: {}, settings: {} };
+  for (let i = 0; i < filas.length; i++) {
+    const f = filas[i];
+    const k = String(f.kind || '');
+    const key = String(f.key || '');
+    const v = f.data;
+    if (k === 'visits') { db.visits = Array.isArray(v) ? v : []; continue; }
+    if (k === 'settings') { db.settings = (v && typeof v === 'object') ? v : {}; continue; }
+    if (k === 'secret') { db.secret = v; continue; }
+    if (!db[k] || typeof db[k] !== 'object' || Array.isArray(db[k])) db[k] = {};
+    db[k][key] = v;
+  }
+  firmas.clear();
+  ultimos.clear();
+  registrosDeDb().forEach((r) => { firmas.set(r.id, firmaDe(r.data)); ultimos.set(r.id, r.data); });
+}
+
+/* Respaldo: copia el data ANTERIOR antes de sobrescribir la fila unica. */
+async function respaldarSnapshot(previo) {
+  if (!previo) return;
+  try {
+    const { error } = await supabase.from(BACKUP_TABLE).insert({
+      id: STATE_ID + '-' + Date.now(),
+      data: previo,
+      created_at: new Date().toISOString()
+    });
+    if (error) {
+      if (!esTablaFaltante(error.message)) console.error('Supabase respaldo error:', error.message);
+      return;
+    }
+    /* Se conservan solo los ultimos BACKUP_MAX respaldos. */
+    const { data: viejos } = await supabase.from(BACKUP_TABLE)
+      .select('id').like('id', STATE_ID + '-%').order('id', { ascending: false }).range(BACKUP_MAX, BACKUP_MAX + 200);
+    if (viejos && viejos.length) {
+      await supabase.from(BACKUP_TABLE).delete().in('id', viejos.map((r) => r.id));
+    }
+  } catch (e) { /* el respaldo nunca debe romper el guardado */ }
+}
+
+/* Fusiona un estado completo (el de la fila unica o el db.json) dentro de db
+   SIN sobrescribir lo que ya vino de conecta_records. Devuelve cuantos
+   registros se recuperaron. Asi, si la migracion quedo a medias o una fila se
+   perdio, la cuenta vuelve a aparecer en vez de desaparecer. */
+function fusionarEstado(origen) {
+  if (!origen || typeof origen !== 'object') return 0;
+  let recuperados = 0;
+  const mapas = ['users', 'chats', 'messages', 'tramites', 'files', 'uploads'];
+  for (let i = 0; i < mapas.length; i++) {
+    const k = mapas[i];
+    const src = origen[k];
+    if (!src || typeof src !== 'object' || Array.isArray(src)) continue;
+    if (!db[k] || typeof db[k] !== 'object' || Array.isArray(db[k])) db[k] = {};
+    Object.keys(src).forEach((id) => {
+      if (db[k][id] === undefined) { db[k][id] = src[id]; recuperados++; }
+    });
+  }
+  if (origen.settings && typeof origen.settings === 'object') {
+    if (!db.settings || typeof db.settings !== 'object') db.settings = {};
+    Object.keys(origen.settings).forEach((k) => {
+      if (db.settings[k] === undefined) { db.settings[k] = origen.settings[k]; recuperados++; }
+    });
+  }
+  if (!db.secret && typeof origen.secret === 'string') { db.secret = origen.secret; recuperados++; }
+  /* Visitas: se unen por id, sin duplicar. */
+  if (Array.isArray(origen.visits) && origen.visits.length) {
+    if (!Array.isArray(db.visits)) db.visits = [];
+    const vistos = new Set(db.visits.map((v) => v && v.id));
+    origen.visits.forEach((v) => {
+      if (v && v.id && !vistos.has(v.id)) { db.visits.push(v); vistos.add(v.id); recuperados++; }
+    });
+    if (db.visits.length > 5000) db.visits = db.visits.slice(-5000);
+  }
+  return recuperados;
+}
+
 async function load() {
   let desdeNube = false;
+  let migrar = false;
+  let filasNuevas = 0;
   if (supabase) {
+    /* 1) Registros por fila (formato nuevo). */
+    try {
+      const { data, error } = await supabase.from(RECORDS_TABLE).select('id,kind,key,data');
+      if (error) {
+        if (esTablaFaltante(error.message)) {
+          recordsOk = false;
+          console.error('[aviso] Falta la tabla ' + RECORDS_TABLE + '. Ejecuta el SQL de SUPABASE-PASOS.md.');
+          console.error('   Mientras tanto se usa la fila unica de ' + SUPABASE_TABLE + '.');
+        } else {
+          console.error('Supabase load error:', error.message);
+          const tip = explainSupabaseError(error.message);
+          if (tip) console.error('   →', tip);
+        }
+      } else if (data && data.length) {
+        aplicarRegistros(data);
+        desdeNube = true;
+        filasNuevas = data.length;
+        console.log('Datos cargados desde Supabase por registro (' + Object.keys(db.users).length + ' cuentas, ' + data.length + ' filas)');
+      }
+    } catch (e) {
+      console.error('Supabase load exception:', e.message);
+    }
+
+    /* 2) SIEMPRE se lee tambien la fila unica antigua y se FUSIONA. Antes solo
+       se leia cuando conecta_records estaba vacia: si la migracion habia
+       quedado a medias, las cuentas que solo estaban en conecta_state se
+       ignoraban y parecian borradas. Ahora se recuperan, y lo que ya vino por
+       registro NUNCA se sobrescribe. */
     try {
       const { data, error } = await supabase.from(SUPABASE_TABLE).select('data').eq('id', STATE_ID).maybeSingle();
       if (error) {
-        console.error('Supabase load error:', error.message);
-        const tip = explainSupabaseError(error.message);
-        if (tip) console.error('   →', tip);
+        if (!esTablaFaltante(error.message)) {
+          console.error('Supabase load error:', error.message);
+          const tip = explainSupabaseError(error.message);
+          if (tip) console.error('   →', tip);
+        }
       } else if (data && data.data) {
-        db = { users: {}, chats: {}, messages: {}, visits: [], files: {}, ...data.data };
-        desdeNube = true;
-        console.log('Datos cargados desde Supabase (' + Object.keys(db.users).length + ' cuentas)');
+        if (!desdeNube) {
+          db = { users: {}, chats: {}, messages: {}, visits: [], files: {}, ...data.data };
+          desdeNube = true;
+          migrar = true;
+          console.log('Datos cargados desde la fila unica de Supabase (' + Object.keys(db.users).length + ' cuentas)');
+        } else {
+          const recuperados = fusionarEstado(data.data);
+          if (recuperados) {
+            console.log('Recuperados ' + recuperados + ' registros que solo estaban en ' + SUPABASE_TABLE + ' (no se sobrescribio nada)');
+            migrar = true;
+          }
+        }
       }
     } catch (e) {
       console.error('Supabase load exception:', e.message);
@@ -304,11 +546,25 @@ async function load() {
       if (fs.existsSync(DB_FILE)) {
         const parsed = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
         db = { users: {}, chats: {}, messages: {}, visits: [], ...parsed };
+        desdeNube = true;
         console.log('Datos cargados del respaldo local (' + Object.keys(db.users).length + ' cuentas)');
       }
     } catch (e) {
       console.error('No se pudo leer la base de datos:', e.message);
     }
+  } else {
+    /* Tambien se fusiona el db.json local: puede tener la unica copia de una
+       cuenta creada justo antes de un reinicio. */
+    try {
+      if (fs.existsSync(DB_FILE)) {
+        const parsed = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        const recuperados = fusionarEstado(parsed);
+        if (recuperados) {
+          console.log('Recuperados ' + recuperados + ' registros del respaldo local (no se sobrescribio nada)');
+          migrar = true;
+        }
+      }
+    } catch (e) { /* el respaldo local es opcional */ }
   }
 
   // Clave de sesiones: variable de entorno, o la guardada, o una nueva.
@@ -321,23 +577,38 @@ async function load() {
       save();
     }
   }
+
+  /* Se sube a sus filas lo que falte (primera vez, o lo recuperado arriba).
+     guardarRegistros() solo escribe lo que cambio, asi que esto no reescribe
+     ni pisa nada de lo que ya estaba. */
+  if (migrar && supabase && recordsOk) {
+    console.log('Sincronizando el estado a una fila por registro...');
+    await guardarRegistros();
+  }
+  if (filasNuevas) console.log('Registros en ' + RECORDS_TABLE + ': ' + filasNuevas);
 }
 
 let saveTimer = null;
 let nubeOk = false;
+
 function save() {
+  /* 1) Registros: a Supabase EN EL ACTO, sin esperar al temporizador. */
+  if (supabase && recordsOk) guardarRegistros();
+
+  /* 2) Respaldo local y fila unica de respaldo, con un pequeno retardo para no
+        reescribir el archivo entero en cada cambio. */
   if (saveTimer) return;
   saveTimer = setTimeout(async () => {
     saveTimer = null;
-    // 1) Respaldo local siempre (nunca se pierde nada si la nube falla)
     try {
       fs.writeFileSync(DB_FILE, JSON.stringify(db));
     } catch (e) {
       console.error('No se pudo guardar local:', e.message);
     }
-    // 2) Nube (Supabase)
     if (!supabase) return;
     try {
+      const { data: previo } = await supabase.from(SUPABASE_TABLE).select('data').eq('id', STATE_ID).maybeSingle();
+      await respaldarSnapshot(previo && previo.data);
       const { error } = await supabase.from(SUPABASE_TABLE)
         .upsert({ id: STATE_ID, data: db, updated_at: new Date().toISOString() });
       if (error) {
@@ -345,9 +616,6 @@ function save() {
         const tip = explainSupabaseError(error.message);
         if (tip) console.error('   →', tip);
         console.error('   (Los datos siguen guardandose en el archivo local)');
-      } else if (!nubeOk) {
-        nubeOk = true;
-        console.log('Supabase funcionando: los datos se guardan en la nube');
       }
     } catch (e) {
       console.error('Supabase save exception:', e.message);
@@ -1608,12 +1876,32 @@ function tipoPorBytes(buf, mimeSugerido, nombre) {
    original (f_xxx.pdf -> f_xxx.norm.pdf). Las siguientes visitas sirven la
    copia sin volver a procesar. Si algo falla, se devuelve el original: la
    normalizacion nunca debe impedir que la persona vea su documento. */
-const pdfNormCache = new Map(); // sha1 -> Buffer (tope de 12 entradas)
-const PDF_NORM_CACHE_MAX = 12;
+/* Cache de PDFs ya reparados.
+   MEMORIA: por defecto NO se guarda NADA en RAM. La copia reparada ya queda en
+   disco (f_xxx.norm.pdf), asi que el cache en memoria solo servia para retener
+   buffers que nunca se soltaban: con PDFs de 1.7 MB eran ~20 MB fijos y en el
+   plan free de Render eso empujaba al reinicio por falta de RAM. Si algun dia
+   se quiere activar, se pone PDF_NORM_CACHE_MB en el entorno. */
+const pdfNormCache = new Map(); // sha1 -> Buffer
+const PDF_NORM_CACHE_MAX = 6;
+const PDF_NORM_CACHE_BYTES = Math.max(0, Number(process.env.PDF_NORM_CACHE_MB || 0)) * 1024 * 1024;
+/* Por encima de este tamano el PDF NO se repara en memoria: se entrega tal
+   cual. Reparar exige tener el archivo entero (original + copia) y en el plan
+   free de Render eso basta para agotar la RAM. */
+const PDF_NORMALIZAR_MAX = 8 * 1024 * 1024;
+let pdfNormCacheBytes = 0;
+
+function pdfCacheLimpiar() {
+  pdfNormCache.clear();
+  pdfNormCacheBytes = 0;
+}
 
 async function pdfNormalizado(buf) {
   if (!PDFLib || !buf || !buf.length) return buf;
   if (buf.slice(0, 5).toString('latin1') !== '%PDF-') return buf;
+  /* Un PDF grande se entrega sin reparar: tenerlo dos veces en memoria es lo
+     que agotaba la RAM del servicio. */
+  if (buf.length > PDF_NORMALIZAR_MAX) return buf;
   const clave = crypto.createHash('sha1').update(buf).digest('hex');
   if (pdfNormCache.has(clave)) return pdfNormCache.get(clave);
   try {
@@ -1623,10 +1911,20 @@ async function pdfNormalizado(buf) {
     if (r.changed) {
       console.log('[pdf] geometria reparada (' + r.fixes.join('; ') + ')');
     }
-    if (pdfNormCache.size >= PDF_NORM_CACHE_MAX) {
-      pdfNormCache.delete(pdfNormCache.keys().next().value);
+    /* Solo se cachea si hay presupuesto configurado y cabe; por defecto el
+       presupuesto es 0, asi que el buffer se entrega y se suelta al terminar
+       la respuesta. */
+    if (PDF_NORM_CACHE_BYTES > 0 && salida.length <= PDF_NORM_CACHE_BYTES) {
+      while (pdfNormCache.size >= PDF_NORM_CACHE_MAX || (pdfNormCacheBytes + salida.length) > PDF_NORM_CACHE_BYTES) {
+        const primera = pdfNormCache.keys().next().value;
+        if (primera === undefined) break;
+        const viejo = pdfNormCache.get(primera);
+        pdfNormCacheBytes -= (viejo && viejo.length) || 0;
+        pdfNormCache.delete(primera);
+      }
+      pdfNormCache.set(clave, salida);
+      pdfNormCacheBytes += salida.length;
     }
-    pdfNormCache.set(clave, salida);
     return salida;
   } catch (e) {
     console.error('[pdf] no se pudo normalizar:', e.message);
@@ -1662,9 +1960,26 @@ async function servirArchivoTramite(f, res, modo) {
       if (!r.ok) return res.status(404).json({ error: 'El archivo no esta disponible' });
       /* Se reenvia el archivo por partes (streaming) en vez de cargarlo entero
          en memoria. Antes se hacia arrayBuffer() y se cortaba en 30 MB: un
-         documento grande devolvia 413 y la vista previa se quedaba en blanco. */
+         documento grande devolvia 413 y la vista previa se quedaba en blanco.
+
+         MEMORIA: un PDF hay que tenerlo entero para repararlo, pero solo si es
+         pequeno. Por encima de PDF_NORMALIZAR_MAX se manda tal cual en
+         streaming: reparar un archivo enorme costaria mas RAM que el propio
+         archivo y volveria a tumbar el servicio. */
+      const largo = Number(r.headers.get('content-length') || 0);
+      const tipoRemoto = String(r.headers.get('content-type') || '');
+      const esPdfRemoto = /pdf/i.test(tipoRemoto) || /\.pdf($|\?)/i.test(url);
+      if (esPdfRemoto && largo > PDF_NORMALIZAR_MAX) {
+        res.setHeader('Content-Type', 'application/pdf');
+        if (largo) res.setHeader('Content-Length', String(largo));
+        res.setHeader('Content-Disposition', disp);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cache-Control', 'private, no-store');
+        const { Readable } = require('stream');
+        return Readable.fromWeb(r.body).pipe(res);
+      }
       let buf = Buffer.from(await r.arrayBuffer());
-      const tipo = tipoPorBytes(buf, (f && f.mime) || r.headers.get('content-type'), nombre);
+      const tipo = tipoPorBytes(buf, (f && f.mime) || tipoRemoto, nombre);
       if (tipo === 'application/pdf') buf = await pdfNormalizado(buf);
       res.setHeader('Content-Type', tipo);
       res.setHeader('Content-Length', String(buf.length));

@@ -1675,10 +1675,10 @@ const App = (() => {
 
   function capaZoom() { return $('#docPages'); }
 
-  function aplicarTransform(escalaRel) {
+  function aplicarTransform(escalaRel, origen) {
     const capa = capaZoom();
     if (!capa) return;
-    capa.style.transformOrigin = '0 0';
+    capa.style.transformOrigin = origen || '0 0';
     capa.style.transform = escalaRel === 1 ? '' : 'scale(' + escalaRel + ')';
   }
 
@@ -1704,6 +1704,7 @@ const App = (() => {
     visor.redibujando = true;
     const v = $('#docViewer');
     const scrollAntes = v ? v.scrollTop : 0;
+    const scrollXIzq = v ? v.scrollLeft : 0;
     const factorAntes = visor.escalaAnterior || 1;
     try {
       const ancho = Math.min(ZOOM_ANCHO_MAX, Math.round(anchoVisor() * visor.escala));
@@ -1711,8 +1712,13 @@ const App = (() => {
       pages.innerHTML = '';
       if (/pdf/i.test(visor.tipo)) await pintarPdf(visor.buf, pages, ancho, dpr);
       else await pintarFoto(visor.buf, visor.tipo, pages, ancho, dpr);
-      /* Se mantiene mas o menos el punto donde estaba leyendo. */
-      if (v) v.scrollTop = Math.round(scrollAntes * (visor.escala / factorAntes));
+      /* Se mantiene mas o menos el punto donde estaba leyendo, en vertical Y en
+         horizontal: el zoom es libre, asi que tambien se puede estar mirando el
+         borde derecho de la cedula. */
+      if (v) {
+        v.scrollTop = Math.round(scrollAntes * (visor.escala / factorAntes));
+        v.scrollLeft = Math.round(scrollXIzq * (visor.escala / factorAntes));
+      }
       visor.escalaAnterior = visor.escala;
     } catch (e) {
       console.warn('No se pudo redibujar al zoom:', e && e.message);
@@ -1734,6 +1740,18 @@ const App = (() => {
     visor.pinchEscala = visor.escala;
     const v = $('#docViewer');
     if (v) v.classList.add('zooming');
+    /* El zoom crece desde el punto entre los dos dedos, no desde la esquina:
+       asi la persona acerca justo lo que esta mirando y puede moverse luego
+       libremente en cualquier direccion. */
+    const capa = capaZoom();
+    if (v && capa) {
+      const r = capa.getBoundingClientRect();
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      visor.pinchOrigen = Math.round(cx - r.left) + 'px ' + Math.round(cy - r.top) + 'px';
+    } else {
+      visor.pinchOrigen = '0 0';
+    }
     clearTimeout(visor.touchTimer);
   }
 
@@ -1744,7 +1762,7 @@ const App = (() => {
     const rel = dist / visor.pinchDist;
     const objetivo = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, visor.pinchEscala * rel));
     visor.escalaTmp = objetivo;
-    aplicarTransform(objetivo / visor.escala);
+    aplicarTransform(objetivo / visor.escala, visor.pinchOrigen);
   }
 
   function onPinchEnd() {
@@ -1847,39 +1865,57 @@ const App = (() => {
     return { width: Math.max(1, Math.floor(w * escala)), height: Math.max(1, Math.floor(h * escala)) };
   }
 
-  /* Dibuja un PDF en el contenedor. Devuelve cuantas paginas pinto. */
+  /* Dibuja un PDF en el contenedor. Devuelve cuantas paginas pinto.
+     MEMORIA: el documento pdf.js se destruye SIEMPRE al terminar (exito o
+     error). Antes quedaba vivo con todas sus paginas y fuentes en memoria, y
+     al abrir/cerrar el visor varias veces el proceso de Render se quedaba sin
+     RAM y se reiniciaba. */
   async function pintarPdf(buf, pages, ancho, dpr) {
     const lib = await cargarPdfJs();
     const datos = await normalizarPdf(buf);
-    const pdf = await lib.getDocument({ data: new Uint8Array(datos), isEvalSupported: false }).promise;
-    const total = Math.min(pdf.numPages, 25);
-    let pintadas = 0;
-    for (let i = 1; i <= total; i++) {
-      /* Una pagina rota no debe tumbar el documento entero: se salta y sigue. */
-      try {
-        const page = await pdf.getPage(i);
-        const vp = viewportSeguro(page, ancho, dpr);
-        const cv = document.createElement('canvas');
-        cv.width = Math.max(1, Math.floor(vp.width));
-        cv.height = Math.max(1, Math.floor(vp.height));
-        cv.className = 'doc-page';
-        pages.appendChild(cv);
-        const ctx = cv.getContext('2d');
-        await page.render({ canvasContext: ctx, viewport: vp }).promise;
-        pintarMarca(ctx, cv.width, cv.height);
-        pintadas++;
-      } catch (e) {
-        console.warn('Pagina ' + i + ' no se pudo dibujar:', e && e.message);
+    let pdf = null;
+    try {
+      pdf = await lib.getDocument({ data: new Uint8Array(datos), isEvalSupported: false }).promise;
+      const total = Math.min(pdf.numPages, 25);
+      let pintadas = 0;
+      for (let i = 1; i <= total; i++) {
+        /* Una pagina rota no debe tumbar el documento entero: se salta y sigue. */
+        try {
+          const page = await pdf.getPage(i);
+          const vp = viewportSeguro(page, ancho, dpr);
+          const cv = document.createElement('canvas');
+          cv.width = Math.max(1, Math.floor(vp.width));
+          cv.height = Math.max(1, Math.floor(vp.height));
+          /* El canvas se dibuja en pixeles de dispositivo (dpr) pero se muestra
+             en pixeles CSS: asi el zoom se ve nitido y el ancho real del
+             documento crece, que es lo que permite desplazarse a los lados. */
+          cv.style.width = Math.max(1, Math.round(vp.width / dpr)) + 'px';
+          cv.style.height = Math.max(1, Math.round(vp.height / dpr)) + 'px';
+          cv.className = 'doc-page';
+          pages.appendChild(cv);
+          const ctx = cv.getContext('2d');
+          await page.render({ canvasContext: ctx, viewport: vp }).promise;
+          pintarMarca(ctx, cv.width, cv.height);
+          /* La pagina ya esta en el canvas: se suelta para no retener su
+             contenido en memoria. */
+          try { page.cleanup(); } catch (e) {}
+          pintadas++;
+        } catch (e) {
+          console.warn('Pagina ' + i + ' no se pudo dibujar:', e && e.message);
+        }
       }
+      if (!pintadas) throw new Error('ninguna pagina se pudo dibujar');
+      if (pdf.numPages > total) {
+        const av = document.createElement('div');
+        av.className = 'doc-more';
+        av.textContent = 'Documento de ' + pdf.numPages + ' páginas: aquí se ven las primeras ' + total + '.';
+        pages.appendChild(av);
+      }
+      return pintadas;
+    } finally {
+      /* Libera el documento y su buffer de trabajo al instante. */
+      if (pdf) { try { await pdf.destroy(); } catch (e) {} }
     }
-    if (!pintadas) throw new Error('ninguna pagina se pudo dibujar');
-    if (pdf.numPages > total) {
-      const av = document.createElement('div');
-      av.className = 'doc-more';
-      av.textContent = 'Documento de ' + pdf.numPages + ' páginas: aquí se ven las primeras ' + total + '.';
-      pages.appendChild(av);
-    }
-    return pintadas;
   }
 
   /* Dibuja una foto en el contenedor. Las fotos de celular llegan a 4000 px de
@@ -1892,6 +1928,8 @@ const App = (() => {
       const cv = document.createElement('canvas');
       cv.width = Math.floor(ancho * dpr);
       cv.height = Math.max(1, Math.floor((ancho * (img.height / img.width)) * dpr));
+      cv.style.width = Math.max(1, Math.round(ancho)) + 'px';
+      cv.style.height = Math.max(1, Math.round(ancho * (img.height / img.width))) + 'px';
       cv.className = 'doc-page';
       pages.appendChild(cv);
       const ctx = cv.getContext('2d');
@@ -1966,10 +2004,11 @@ const App = (() => {
      nuevo con opciones relajadas (sin fuentes del sistema, sin eval) porque el
      fallo típico viene de un formulario con geometría incompleta. */
   async function vistaPreviaImagen(buf, pages, ancho, dpr) {
+    let pdf = null;
     try {
       const lib = await cargarPdfJs();
       const datos = await normalizarPdf(buf);
-      const pdf = await lib.getDocument({
+      pdf = await lib.getDocument({
         data: new Uint8Array(datos),
         isEvalSupported: false,
         useSystemFonts: false,
@@ -1981,11 +2020,14 @@ const App = (() => {
       const cv = document.createElement('canvas');
       cv.width = Math.max(1, Math.floor(vp.width));
       cv.height = Math.max(1, Math.floor(vp.height));
+      cv.style.width = Math.max(1, Math.round(vp.width / dpr)) + 'px';
+      cv.style.height = Math.max(1, Math.round(vp.height / dpr)) + 'px';
       cv.className = 'doc-page';
       pages.appendChild(cv);
       const ctx = cv.getContext('2d');
       await page.render({ canvasContext: ctx, viewport: vp, intent: 'print' }).promise;
       pintarMarca(ctx, cv.width, cv.height);
+      try { page.cleanup(); } catch (e) {}
       if (pdf.numPages > 1) {
         const av = document.createElement('div');
         av.className = 'doc-more';
@@ -1996,6 +2038,8 @@ const App = (() => {
     } catch (e) {
       console.warn('Vista previa en imagen no disponible:', e && e.message);
       return false;
+    } finally {
+      if (pdf) { try { await pdf.destroy(); } catch (e) {} }
     }
   }
 
