@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v5.1';
+  const APP_VERSION = 'v5.2';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -3086,6 +3086,32 @@ const App = (() => {
     toast('Puedes instalarla despues desde Mi perfil');
   }
 
+  /* Enlace para compartir: usa la direccion /tramites, que es la que muestra
+     la tarjeta con el escudo en WhatsApp (la raiz quedo guardada sin foto). */
+  function enlaceParaCompartir() {
+    const base = location.origin;
+    return base + '/tramites';
+  }
+
+  async function shareApp() {
+    const url = enlaceParaCompartir();
+    const texto = 'Trámites Venezolanos en Línea: cédula, licencia y antecedentes penales sin colas ni vueltas. Regístrate gratis:';
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Trámites Venezolanos en Línea', text: texto, url: url });
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('Enlace copiado. Pégalo en WhatsApp');
+    } catch (e) {
+      toast(url);
+    }
+  }
+
   async function installApp() {
     if (isStandalone()) return toast('La app ya esta instalada en tu celular');
 
@@ -3213,7 +3239,7 @@ const App = (() => {
     openAdmin, openChatFromAdmin, openFirstChat,
     adminTab, adminIr, adminFiltrar, adminBuscarPersona, adminBuscarTramite, salirPanel,
     viewImage, closeViewer, logout,
-    installApp, dismissInstall, closeIosSheet, testMail, countryChanged, cargarPaisDetectado, editCountryChanged,
+    installApp, dismissInstall, closeIosSheet, testMail, shareApp, countryChanged, cargarPaisDetectado, editCountryChanged,
     openTramites, loadTramites, openTramite, openTramiteChat, subirComprobante, avisoDescarga,
     adminFillSubtypes, crearTramite, adminSubirDocumento, adminAprobar, adminRechazar,
     adminBorrarTramite, guardarPagoInfo, cerrarArchivo,
