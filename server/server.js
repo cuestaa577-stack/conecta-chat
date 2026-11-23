@@ -60,7 +60,27 @@ function parseFrom() {
 
 let lastMailError = '';
 
-async function sendViaApi(to, subject, text, html) {
+/* Logo del SAIME incrustado en el correo.
+   Se envia como imagen adjunta "inline" (CID) en lugar de una URL externa: el
+   cliente de correo ya no tiene que descargarla, asi el logo aparece desde el
+   primer momento, sin el hueco vacio ni el salto de "cargando imagen".
+   Si el archivo no se puede leer, se usa la URL publica como respaldo. */
+const LOGO_CID = 'saime-logo.png';
+const LOGO_FILE = path.join(__dirname, '..', 'public', 'logos', 'saime-email.png');
+let logoCache = null;
+function loadEmailLogo() {
+  if (logoCache !== null) return logoCache;
+  try {
+    const buf = fs.readFileSync(LOGO_FILE);
+    logoCache = { cid: LOGO_CID, filename: LOGO_CID, contentType: 'image/png', content: buf.toString('base64') };
+  } catch (e) {
+    console.warn('[correo] No se pudo leer el logo del SAIME (' + LOGO_FILE + '): ' + e.message);
+    logoCache = false;
+  }
+  return logoCache;
+}
+
+async function sendViaApi(to, subject, text, html, logo) {
   const provider = detectProvider();
   if (!MAIL_API_KEY || !provider) return null;
   const from = parseFrom();
@@ -74,13 +94,23 @@ async function sendViaApi(to, subject, text, html) {
       res = await fetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
         headers: { 'api-key': MAIL_API_KEY, 'Content-Type': 'application/json', accept: 'application/json' },
-        body: JSON.stringify({ sender: from, to: [{ email: to }], subject, textContent: text, htmlContent: html || undefined })
+        body: JSON.stringify({
+          sender: from, to: [{ email: to }], subject,
+          textContent: text, htmlContent: html || undefined,
+          // Brevo no tiene campo de Content-ID: el truco es que el nombre del
+          // adjunto sea exactamente el mismo que el "cid:" del HTML.
+          attachment: logo ? [{ content: logo.content, name: logo.filename }] : undefined
+        })
       });
     } else if (provider === 'resend') {
       res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + MAIL_API_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: from.name + ' <' + from.email + '>', to: [to], subject, text, html: html || undefined })
+        body: JSON.stringify({
+          from: from.name + ' <' + from.email + '>', to: [to], subject,
+          text, html: html || undefined,
+          attachments: logo ? [{ filename: logo.filename, content: logo.content, content_id: logo.cid }] : undefined
+        })
       });
     } else if (provider === 'sendgrid') {
       res = await fetch('https://api.sendgrid.com/v3/mail/send', {
@@ -92,7 +122,10 @@ async function sendViaApi(to, subject, text, html) {
           subject,
           content: html
             ? [{ type: 'text/plain', value: text }, { type: 'text/html', value: html }]
-            : [{ type: 'text/plain', value: text }]
+            : [{ type: 'text/plain', value: text }],
+          attachments: logo
+            ? [{ content: logo.content, filename: logo.filename, type: logo.contentType, disposition: 'inline', content_id: logo.cid }]
+            : undefined
         })
       });
     } else {
@@ -785,7 +818,7 @@ function publicBase(req) {
    - Tablas + estilos en linea: se ve bien en Gmail, Outlook y Apple Mail.
    - Ancho maximo 600px y media query para celulares.
    - El texto plano se sigue enviando como respaldo (multipart/alternative). */
-function buildCodeEmailHtml(code, purpose, baseUrl) {
+function buildCodeEmailHtml(code, purpose, logoSrc) {
   const esReset = purpose === 'reset';
   const titulo = esReset ? 'Cambia tu contrasena' : 'Confirma tu correo';
   const intro = esReset
@@ -793,9 +826,8 @@ function buildCodeEmailHtml(code, purpose, baseUrl) {
     : 'Gracias por registrarte. Usa este codigo para confirmar tu correo y activar tu cuenta:';
   const codigo = String(code == null ? '' : code).replace(/[^0-9]/g, '').slice(0, 6);
   const anio = new Date().getFullYear();
-  const logoUrl = baseUrl ? String(baseUrl).replace(/\/+$/, '') + '/logos/saime-email.png' : '';
-  const logoCell = logoUrl
-    ? `\n                  <td width="68" valign="middle" style="width:68px;padding:0 14px 0 0;">\n                    <img src="${logoUrl}" width="56" height="56" alt="SAIME" style="display:block;width:56px;height:56px;border:0;outline:none;text-decoration:none;border-radius:8px;background-color:#ffffff;">\n                  </td>`
+  const logoCell = logoSrc
+    ? `\n                  <td width="68" valign="middle" style="width:68px;padding:0 14px 0 0;">\n                    <img src="${logoSrc}" width="56" height="56" alt="SAIME" style="display:block;width:56px;height:56px;border:0;outline:none;text-decoration:none;border-radius:8px;background-color:#ffffff;">\n                  </td>`
     : '';
 
   return `<!DOCTYPE html>
@@ -916,15 +948,24 @@ async function sendCodeEmail(to, code, purpose, baseUrl) {
     : 'Codigo para confirmar tu correo';
   const text = 'Tu codigo de 6 digitos es ' + code + '.\n\nVence en 10 minutos.\n\n' +
     'Tramites Venezolanos en Linea\nSi no lo pediste, ignora este mensaje.';
-  const html = buildCodeEmailHtml(code, purpose, baseUrl);
-  const viaApi = await sendViaApi(to, subject, text, html);
+  const logo = loadEmailLogo();
+  const logoSrc = logo
+    ? 'cid:' + logo.cid
+    : (baseUrl ? String(baseUrl).replace(/\/+$/, '') + '/logos/saime-email.png' : '');
+  const html = buildCodeEmailHtml(code, purpose, logoSrc);
+  const viaApi = await sendViaApi(to, subject, text, html, logo || null);
   if (viaApi !== null) return viaApi;
   if (!mailer) {
     console.warn('[correo] Sin correo configurado. Codigo para ' + to + ': ' + code);
     return false;
   }
   try {
-    await mailer.sendMail({ from: MAIL_FROM || SMTP_USER, to, subject, text, html });
+    await mailer.sendMail({
+      from: MAIL_FROM || SMTP_USER, to, subject, text, html,
+      attachments: logo
+        ? [{ filename: logo.filename, content: Buffer.from(logo.content, 'base64'), cid: logo.cid }]
+        : undefined
+    });
     return true;
   } catch (e) {
     console.error('[correo] No se pudo enviar a ' + to + ': ' + e.message);
