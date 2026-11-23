@@ -1326,19 +1326,27 @@ const App = (() => {
       const countries = d.byCountry || [];
       box.innerHTML = `
         <div class="stats" id="adminStats">${adminStatsHtml(d.totals)}</div>
-        <div class="panel">
-          <h3>Correo de la app</h3>
-          <p class="muted" style="font-size:12px;margin:0 0 8px">Envia un codigo de prueba para confirmar que los registros llegan.</p>
-          <input id="mailTestTo" class="mail-input" type="email" placeholder="tucorreo@ejemplo.com" value="${esc((d.mail && d.mail.to) || '')}" />
-          <button class="btn primary" id="mailTestBtn" onclick="App.testMail()">Enviar prueba</button>
-          <p id="mailTestResult" class="mail-test"></p>
+
+        <div class="admin-sec">
+          <h2>Trámites</h2>
+          <p>Lo que tienes entre manos: crear, revisar y entregar documentos.</p>
+        </div>
+        <div class="admin-tramites" id="adminTramites"></div>
+
+        <div class="admin-sec">
+          <h2>Conversaciones</h2>
+          <p>Las personas que te escribieron.</p>
         </div>
         <div class="panel">
-          <h3>Conversaciones</h3>
+          <h3>Bandeja</h3>
           ${(d.conversations || []).map((c) => `<button class="panel-row tap" onclick="App.openChatFromAdmin('${c.chatId}')">
             <div class="who"><b>${esc(c.name)}</b><small>${esc(c.country)} \u00b7 ${esc(c.tramite ? c.tramite.serviceLabel + ' \u00b7 ' + c.tramite.subtypeLabel : 'Sin tramite')}</small><small>${esc(c.lastText || 'Sin mensajes todavia')}</small></div>
             <span class="pill ${c.unread ? 'hot' : ''}">${c.unread ? c.unread + ' sin leer' : c.messages + ' msj'}</span>
           </button>`).join('') || '<div class="panel-row"><span>Todavia nadie te ha escrito</span></div>'}
+        </div>
+        <div class="admin-sec">
+          <h2>Personas y países</h2>
+          <p>Quiénes están registrados y desde dónde.</p>
         </div>
         <div class="panel">
           <h3>Por pais</h3>
@@ -1351,14 +1359,26 @@ const App = (() => {
             <span class="pill">${p.messages} msj</span>
           </div>`).join('') || '<div class="panel-row"><span>Todavia no hay personas</span></div>'}
         </div>
+        <div class="admin-sec">
+          <h2>Actividad</h2>
+          <p>Quién entró y desde qué aparato.</p>
+        </div>
         <div class="panel">
           <h3>Ultimas visitas</h3>
           <div id="visitasList">${adminVisitasHtml(d.visits)}</div>
+        </div>
+
+        <div class="admin-sec">
+          <h2>Configuración</h2>
+          <p>Cosas que se ajustan una vez y casi nunca se vuelven a tocar.</p>
+        </div>
+        <div class="panel">
+          <h3>Correo de la app</h3>
+          <p class="muted" style="font-size:12px;margin:0 0 8px">Envia un codigo de prueba para confirmar que los registros llegan.</p>
+          <input id="mailTestTo" class="mail-input" type="email" placeholder="tucorreo@ejemplo.com" value="${esc((d.mail && d.mail.to) || '')}" />
+          <button class="btn primary" id="mailTestBtn" onclick="App.testMail()">Enviar prueba</button>
+          <p id="mailTestResult" class="mail-test"></p>
         </div>`;
-      const trBox = document.createElement('div');
-      trBox.className = 'admin-tramites';
-      trBox.id = 'adminTramites';
-      box.appendChild(trBox);
       loadAdminTramites();
       stopAdminLive();
       adminLiveTimer = setInterval(refreshAdminLive, 30000);
@@ -2403,28 +2423,6 @@ const App = (() => {
 
     box.innerHTML = `
       <div class="panel">
-        <h3>Trámites y documentos</h3>
-        <div class="pills-row">
-          <span class="chip st-listo">${conteo.listo || 0} listos</span>
-          <span class="chip st-revision">${conteo.pago_en_revision || 0} por confirmar</span>
-          <span class="chip st-aprobado">${conteo.aprobado || 0} aprobados</span>
-        </div>
-        <label class="field"><span>Datos para el pago (los ve la persona en su trámite)</span>
-          <textarea id="pagoInfoInput" rows="3" placeholder="Banco, cuenta, Pago Móvil, monto...">${esc(d.pagoInfo || '')}</textarea>
-        </label>
-        <button class="btn ghost" onclick="App.guardarPagoInfo()">Guardar datos de pago</button>
-      </div>
-      <div class="panel">
-        <h3>Seguridad del documento</h3>
-        <p class="pnote muted">El documento se ve dentro de la app y no se puede descargar hasta que confirmes el pago. Si la persona intenta capturarlo (menú del teléfono, guardar, imprimir, pulsación larga), queda registrado y al tercer intento la cuenta se bloquea ${esc(String((d.captura && d.captura.horas) || 3))} horas.</p>
-        <label class="check">
-          <input type="checkbox" ${d.captura && d.captura.salirCuenta ? 'checked' : ''} onchange="App.guardarCapturaConfig(this.checked)">
-          <span>Contar “salir de la app con el documento abierto” como intento</span>
-        </label>
-        <p class="pnote muted">Déjalo apagado si no quieres que cambiar a WhatsApp cuente como intento.</p>
-        ${bloqueados.length ? bloqueados.map((p) => `<div class="panel-row"><div class="who"><b>${esc(p.name)}</b><small>${esc(p.cedula || p.phone || '')} · bloqueada ${esc(String(p.bloqueo.restanteMin))} min más</small></div><button class="mini" onclick="App.adminDesbloquear('${esc(p.id)}')">Desbloquear</button></div>`).join('') : '<div class="panel-row"><span>Nadie está bloqueado ahora</span></div>'}
-      </div>
-      <div class="panel">
         <h3>Nuevo trámite para una persona</h3>
         <label class="field"><span>Persona</span><select id="newTramiteUser">${opcionesPersona}</select></label>
         <label class="field"><span>Servicio</span>
@@ -2441,8 +2439,32 @@ const App = (() => {
       </div>
       <div class="panel">
         <h3>Todos los trámites</h3>
+        <div class="pills-row">
+          <span class="chip st-listo">${conteo.listo || 0} listos</span>
+          <span class="chip st-revision">${conteo.pago_en_revision || 0} por confirmar</span>
+          <span class="chip st-aprobado">${conteo.aprobado || 0} aprobados</span>
+        </div>
         ${filas}
-      </div>`;
+      </div>
+      <div class="panel">
+        <h3>Datos para el pago</h3>
+        <p class="pnote muted">Los ve la persona en su trámite, justo antes de enviar el comprobante.</p>
+        <label class="field"><span>Banco, cuenta, Pago Móvil, monto...</span>
+          <textarea id="pagoInfoInput" rows="3" placeholder="Banco, cuenta, Pago Móvil, monto...">${esc(d.pagoInfo || '')}</textarea>
+        </label>
+        <button class="btn ghost" onclick="App.guardarPagoInfo()">Guardar datos de pago</button>
+      </div>
+      <div class="panel">
+        <h3>Seguridad del documento</h3>
+        <p class="pnote muted">El documento se ve dentro de la app y no se puede descargar hasta que confirmes el pago. Si la persona intenta capturarlo (menú del teléfono, guardar, imprimir, pulsación larga), queda registrado y al tercer intento la cuenta se bloquea ${esc(String((d.captura && d.captura.horas) || 3))} horas.</p>
+        <label class="check">
+          <input type="checkbox" ${d.captura && d.captura.salirCuenta ? 'checked' : ''} onchange="App.guardarCapturaConfig(this.checked)">
+          <span>Contar “salir de la app con el documento abierto” como intento</span>
+        </label>
+        <p class="pnote muted">Déjalo apagado si no quieres que cambiar a WhatsApp cuente como intento.</p>
+        ${bloqueados.length ? bloqueados.map((p) => `<div class="panel-row"><div class="who"><b>${esc(p.name)}</b><small>${esc(p.cedula || p.phone || '')} · bloqueada ${esc(String(p.bloqueo.restanteMin))} min más</small></div><button class="mini" onclick="App.adminDesbloquear('${esc(p.id)}')">Desbloquear</button></div>`).join('') : '<div class="panel-row"><span>Nadie está bloqueado ahora</span></div>'}
+      </div>
+      `;
     adminFillSubtypes();
   }
 
