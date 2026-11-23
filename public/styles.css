@@ -635,3 +635,17 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 }
 .fv-other { padding: 28px 16px; text-align: center; }
 .fv-other p { font-size: 13.5px; color: var(--muted); margin: 0 0 14px; }
+
+/* ---------------- Pie del sitio ---------------- */
+.site-footer {
+  margin: 22px 14px 30px;
+  padding: 18px 16px 16px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 15px;
+  text-align: center;
+}
+.site-footer .footer-brand { font-size: 16px; font-weight: 800; letter-spacing: .3px; }
+.site-footer .footer-note { margin: 8px 0 12px; font-size: 12px; line-height: 1.5; color: rgba(255,255,255,.85); }
+.site-footer .footer-info { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: rgba(255,255,255,.92); }
+.site-footer .footer-legal { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.2); font-size: 11px; color: rgba(255,255,255,.7); }
