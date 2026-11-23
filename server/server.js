@@ -653,6 +653,8 @@ function publicUser(u) {
   return {
     id: u.id,
     name: u.name,
+    nombres: u.nombres || '',
+    apellidos: u.apellidos || '',
     phone: u.phone,
     email: u.email || '',
     cedula: u.cedula || '',
@@ -983,7 +985,9 @@ function tokenFor(user) {
 /* Crear cuenta con cedula + fecha de nacimiento */
 app.post('/api/register', async (req, res) => {
   const body = req.body || {};
-  const name = String(body.name || '').trim();
+  const nombres = String(body.nombres || '').trim();
+  const apellidos = String(body.apellidos || '').trim();
+  const name = (String(body.name || '').trim() || [nombres, apellidos].filter(Boolean).join(' ')).trim();
   const cedula = normalizeCedula(body.cedula);
   const birthDate = String(body.birthDate || '').trim();
   const email = String(body.email || '').trim().toLowerCase();
@@ -1019,6 +1023,10 @@ app.post('/api/register', async (req, res) => {
   const user = makeUser(name, '', password, { country, email });
   user.cedula = cedula;
   user.birthDate = birthDate;
+  /* Nombres y apellidos se guardan por separado: el perfil los muestra tal
+     como los escribio la persona, aunque el nombre completo siga en `name`. */
+  if (nombres) user.nombres = nombres.slice(0, 80);
+  if (apellidos) user.apellidos = apellidos.slice(0, 80);
   user.emailVerified = false;
   db.users[user.id] = user;
   save();
@@ -1212,7 +1220,29 @@ app.post('/api/profile', auth, (req, res) => {
   if (typeof country === 'string' && country.trim()) req.user.country = country.trim().slice(0, 40);
 
   if (typeof about === 'string') req.user.about = about.slice(0, 160);
-  if (typeof avatar === 'string') req.user.avatar = avatar.slice(0, 500);
+  /* La foto SOLO cambia cuando llega una direccion nueva y valida. Un valor
+     vacio o ausente ya no la borra: antes cualquier guardado del perfil podia
+     dejar la cuenta sin foto, como si se hubiera quitado sola. */
+  if (typeof avatar === 'string' && avatar.trim()) {
+    req.user.avatar = avatar.trim().slice(0, 500);
+    /* Respaldo dentro de la base: si la foto vive en /uploads y todavia no
+       esta guardada ahi, se copia ahora. Asi sobrevive a un reinicio del
+       servicio (el disco de Render es efimero) y la foto no desaparece. */
+    const mfoto = /^\/uploads\/([A-Za-z0-9_.-]+)$/.exec(req.user.avatar);
+    if (mfoto && !(db.files && db.files[mfoto[1]])) {
+      try {
+        const rutaFoto = path.join(UPLOAD_DIR, mfoto[1]);
+        if (fs.existsSync(rutaFoto)) {
+          if (!db.files) db.files = {};
+          db.files[mfoto[1]] = {
+            mime: '',
+            size: fs.statSync(rutaFoto).size,
+            data: fs.readFileSync(rutaFoto).toString('base64'),
+          };
+        }
+      } catch (e) { /* si no se puede respaldar, la foto se queda como esta */ }
+    }
+  }
   save();
   res.json({ user: publicUser(req.user) });
 });

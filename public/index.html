@@ -51,7 +51,8 @@
 
     <!-- Crear cuenta con cedula -->
     <div id="registerPanel" class="hidden">
-      <label class="field"><span>Nombre y apellido</span><input id="regName" type="text" autocomplete="name" placeholder="Tu nombre" /></label>
+      <label class="field"><span>Nombres</span><input id="regNombres" type="text" autocomplete="given-name" placeholder="Tus nombres" /></label>
+      <label class="field"><span>Apellidos</span><input id="regApellidos" type="text" autocomplete="family-name" placeholder="Tus apellidos" /></label>
       <label class="field"><span>Cedula de identidad</span><input id="regCedula" type="text" inputmode="numeric" placeholder="V-12345678" /></label>
       <label class="field"><span>Fecha de nacimiento</span><input id="regBirth" type="date" autocomplete="bday" /></label>
       <label class="field"><span>Correo electronico</span><input id="regEmail" type="email" autocomplete="email" placeholder="tucorreo@ejemplo.com" /></label>
@@ -144,7 +145,7 @@
       </div>
       <div class="top-actions">
         <button class="iconbtn" onclick="App.openChats()" title="Conversaciones" id="chatsBtn">
-          <svg viewBox="0 0 24 24" class="ico"><path d="M21 12a8 8 0 01-8 8H7l-4 3v-5.6A8 8 0 1121 12z"/></svg>
+          <svg viewBox="0 0 24 24" class="ico"><path d="M20.5 14.4a3 3 0 01-3 3H8.2L3.5 21V6.6a3 3 0 013-3h11a3 3 0 013 3z"/><path d="M8.3 9.3h.01M12 9.3h.01M15.7 9.3h.01"/></svg>
           <span class="badge" id="chatsBadge" hidden></span>
         </button>
         <button class="iconbtn avatar-btn" onclick="App.openProfile()" title="Mi perfil" id="myAvatarBtn">A</button>
@@ -199,6 +200,17 @@
           <span class="service-txt">
             <span class="service-title">Antecedentes penales</span>
             <span class="service-sub">Sin apostillar o apostillado</span>
+          </span>
+          <span class="chev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
+        </button>
+
+        <button class="service" id="adminServiceCard" style="display:none" onclick="App.openAdmin()">
+          <span class="service-ic">
+            <svg viewBox="0 0 24 24"><path d="M12 3l7 3v5.4c0 4.2-2.9 7.7-7 8.6-4.1-.9-7-4.4-7-8.6V6z"/><path d="M9.2 11.8l1.9 1.9 3.7-3.9"/></svg>
+          </span>
+          <span class="service-txt">
+            <span class="service-title">Panel del servidor público</span>
+            <span class="service-sub">Solo para el administrador</span>
           </span>
           <span class="chev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
         </button>
@@ -362,6 +374,8 @@
       </div>
       <div class="pad">
         <label class="field"><span>Nombre (no se puede cambiar)</span><input id="profileName" disabled /></label>
+        <label class="field"><span>Cedula de identidad</span><input id="profileCedula" disabled /></label>
+        <label class="field"><span>Fecha de nacimiento</span><input id="profileBirth" disabled /></label>
         <label class="field"><span>Telefono</span><input id="profilePhone" type="tel" inputmode="tel" placeholder="04141234567" /></label>
         <label class="field"><span>Correo</span><input id="profileEmail" type="email" placeholder="tucorreo@ejemplo.com" /></label>
         <label class="field"><span>Pais</span><input id="profileCountry" placeholder="Venezuela" /></label>

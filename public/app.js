@@ -133,8 +133,17 @@ const App = (() => {
     const src = media(u);
     el.textContent = '';
     el.style.backgroundImage = 'url("' + src + '")';
+    /* Un solo reintento con la direccion sin cache antes de rendirse: si el
+       servidor acaba de recuperar el archivo, la foto vuelve sola en vez de
+       quedarse en iniciales. */
+    let intentos = 0;
     const probe = new Image();
     probe.onerror = () => {
+      if (intentos === 0) {
+        intentos = 1;
+        probe.src = src + (src.indexOf('?') === -1 ? '?' : '&') + 'r=' + Date.now();
+        return;
+      }
       el.style.backgroundImage = '';
       el.textContent = initials(nombre);
     };
@@ -343,14 +352,17 @@ const App = (() => {
   let enviandoRegistro = false;
   async function submitRegister() {
     if (enviandoRegistro) return;
-    const name = ($('#regName').value || '').trim();
+    const nombres = ($('#regNombres').value || '').trim();
+    const apellidos = ($('#regApellidos').value || '').trim();
+    const name = (nombres + ' ' + apellidos).trim();
     const cedula = cedulaText($('#regCedula').value);
     const birthDate = $('#regBirth').value || '';
     const email = ($('#regEmail').value || '').trim();
     const password = ($('#regPassword').value || '');
     const country = $('#authCountry').value;
 
-    if (name.length < 2) return toast('Escribe tu nombre y apellido');
+    if (nombres.length < 2) return toast('Escribe tus nombres');
+    if (apellidos.length < 2) return toast('Escribe tus apellidos');
     if (!cedulaOk(cedula)) return toast('La cedula debe tener al menos 8 digitos');
     if (!birthDate) return toast('Escribe tu fecha de nacimiento');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return toast('Escribe un correo valido');
@@ -360,7 +372,7 @@ const App = (() => {
     try {
       const data = await api('/api/register', {
         method: 'POST',
-        body: JSON.stringify({ name, cedula, birthDate, email, password, country }),
+        body: JSON.stringify({ name, nombres, apellidos, cedula, birthDate, email, password, country }),
       });
       // La cuenta queda SIN verificar: primero debe escribir el c\u00f3digo del correo.
       showVerifyPanel(data.cedula || cedula, data.email, data.codeSent);
@@ -513,6 +525,10 @@ const App = (() => {
     pintarAvatar($('#myAvatarBtn'), state.me.avatar, state.me.name);
     const adminBtn = $('#adminBtn');
     if (adminBtn) adminBtn.style.display = state.me.role === 'admin' ? 'block' : 'none';
+    /* La opcion del panel en la portada solo existe para el administrador:
+       las personas normales siguen viendo exactamente lo de siempre. */
+    const adminCard = $('#adminServiceCard');
+    if (adminCard) adminCard.style.display = state.me.role === 'admin' ? 'flex' : 'none';
     /* Chulo de verificacion junto al nombre de la app: solo en la cuenta del
        administrador. */
     const marca = $('#brandVerified');
@@ -931,6 +947,14 @@ const App = (() => {
     showView('profile');
     pintarAvatar($('#profileAvatar'), state.me.avatar, state.me.name);
     $('#profileName').value = state.me.name || '';
+    const cedEl = $('#profileCedula');
+    if (cedEl) cedEl.value = state.me.cedula || '';
+    const naceEl = $('#profileBirth');
+    if (naceEl) {
+      const b = String(state.me.birthDate || '');
+      const mf = /^(\d{4})-(\d{2})-(\d{2})$/.exec(b);
+      naceEl.value = mf ? (mf[3] + '/' + mf[2] + '/' + mf[1]) : b;
+    }
     $('#profilePhone').value = state.me.phone || '';
     $('#profileEmail').value = state.me.email || '';
     $('#profileCountry').value = state.me.country || '';
@@ -938,6 +962,10 @@ const App = (() => {
     $('#appVersion').textContent = 'Tramites Venezolanos en Linea ' + APP_VERSION;
     const adminBtn = $('#adminBtn');
     if (adminBtn) adminBtn.style.display = state.me.role === 'admin' ? 'block' : 'none';
+    /* La opcion del panel en la portada solo existe para el administrador:
+       las personas normales siguen viendo exactamente lo de siempre. */
+    const adminCard = $('#adminServiceCard');
+    if (adminCard) adminCard.style.display = state.me.role === 'admin' ? 'flex' : 'none';
   }
 
   /* Reduce la foto ANTES de subirla.
@@ -1442,7 +1470,11 @@ const App = (() => {
 
     const pasos = ['Solicitud', 'Documento listo', 'Pago en revisión', 'Descarga'];
     const orden = { recibido: 1, en_proceso: 1, listo: 2, pago_en_revision: 3, rechazado: 3, aprobado: 4, entregado: 4 };
-    const actual = orden[t.status] || 1;
+    /* Con el pago confirmado, la cuarta casilla (Descarga) tambien queda
+       marcada como completada: el administrador ya habilito la descarga. */
+    const actual = (t.status === 'aprobado' || t.status === 'entregado')
+      ? pasos.length + 1
+      : (orden[t.status] || 1);
     const pasosHtml = pasos.map((txt, i) => {
       const n = i + 1;
       return `<div class="step${actual > n ? ' done' : ''}${actual === n ? ' now' : ''}">
@@ -2607,7 +2639,8 @@ const App = (() => {
        pestana seguia con el app.js viejo en memoria: por eso un arreglo ya
        publicado no llegaba a la app que la persona tenia abierta. */
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').then((reg) => {
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+        state.swReg = reg;
         reg.update().catch(() => {});
         reg.addEventListener('updatefound', () => {
           const nuevo = reg.installing;
@@ -2625,6 +2658,17 @@ const App = (() => {
         recargado = true;
         location.reload();
       });
+      /* Busca version nueva al volver a la app, al recuperar internet y cada
+         15 minutos. Asi una actualizacion del administrador llega sola a los
+         telefonos que ya tienen la app instalada, sin reinstalar nada. */
+      const buscarVersion = () => {
+        if (!state.swReg) return;
+        state.swReg.update().catch(() => {});
+      };
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) buscarVersion(); });
+      window.addEventListener('online', buscarVersion);
+      window.addEventListener('focus', buscarVersion);
+      setInterval(buscarVersion, 15 * 60 * 1000);
     }
 
     // Instalacion en un toque
@@ -2641,7 +2685,7 @@ const App = (() => {
         // App instalada y sin cuenta: se abre el registro para que la cree
         authTab('register');
         toast('App instalada. Crea tu cuenta para empezar');
-        const idField = $('#regName');
+        const idField = $('#regNombres');
         if (idField) setTimeout(() => { try { idField.focus(); } catch (e) {} }, 400);
       } else {
         toast('App instalada. Ya la tienes en tu celular');
