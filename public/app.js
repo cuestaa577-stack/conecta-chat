@@ -1539,6 +1539,17 @@ const App = (() => {
     if (tab === 'ajustes') adminFillSubtypes();
   }
 
+  /* Sale del panel y vuelve a la app como cliente. Desde el perfil se cierra la sesion. */
+  function salirPanel() {
+    state.adminTab = 'resumen';
+    state.adminFilter = 'todos';
+    state.adminQuery = '';
+    stopAdminLive();
+    state.viewStack = [];
+    showView('home', false);
+    renderMyData();
+  }
+
   async function openAdmin(desdeEntrada) {
     showView('admin', !desdeEntrada);
     const box = $('#adminContent');
@@ -2961,7 +2972,7 @@ const App = (() => {
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
     openProfile, pickAvatar, saveProfileChanges, verifyCedula, renderCedulaData, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat,
     deleteAccount, openAdmin, openChatFromAdmin, openFirstChat,
-    adminTab, adminIr, adminFiltrar, adminBuscarPersona, adminBuscarTramite,
+    adminTab, adminIr, adminFiltrar, adminBuscarPersona, adminBuscarTramite, salirPanel,
     viewImage, closeViewer, logout,
     installApp, dismissInstall, closeIosSheet, testMail,
     openTramites, loadTramites, openTramite, openTramiteChat, subirComprobante, avisoDescarga,

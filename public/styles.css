@@ -791,3 +791,11 @@ body.has-install #chatMessages { padding-bottom: 96px; }
   font: inherit; font-size: 14px; background: var(--card); color: var(--text);
 }
 .search-input:focus { outline: none; border-color: var(--blue); }
+
+/* Boton para salir del panel del servidor publico */
+.panel-exit {
+  margin-left: auto; border: 1px solid rgba(255, 255, 255, .45); background: rgba(255, 255, 255, .12);
+  color: #fff; font: inherit; font-size: 12.5px; font-weight: 700;
+  padding: 7px 14px; border-radius: 999px; cursor: pointer;
+}
+.panel-exit:active { background: rgba(255, 255, 255, .22); }
