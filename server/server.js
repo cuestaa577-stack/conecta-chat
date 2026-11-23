@@ -264,6 +264,19 @@ async function fetchSupabase(input, init = {}) {
   throw ultimoError || new Error('Supabase no respondio');
 }
 
+/* Nombre de la tabla de registros en Supabase y bandera de lectura exitosa.
+   Estas dos se perdieron en la limpieza de la verificacion de cedula y el
+   servidor se caia al arrancar con Supabase configurado (Render). */
+const RECORDS_TABLE = process.env.SUPABASE_RECORDS_TABLE || 'conecta_records';
+const BACKUP_TABLE = process.env.SUPABASE_BACKUP_TABLE || 'conecta_state_backup';
+let nubeLeida = false;
+let recordsOk = true;
+let registrosSucios = false;
+let guardandoRegistros = false;
+let reintentoNube = null;
+const firmas = new Map();
+const ultimos = new Map();
+
 let supabase = null;
 if (createClient && SUPABASE_URL && SUPABASE_KEY) {
   try {
