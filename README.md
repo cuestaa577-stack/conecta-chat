@@ -19,7 +19,8 @@ Web de mensajería y multimedia para asesoría de trámites venezolanos: cédula
   - Personas registradas, conversaciones y mensajes.
   - Control por país (Chile, Ecuador y los demás) con datos reales.
   - Quién entró al enlace y cuándo.
-- Instalable como app en el teléfono (PWA) con el logo del Ministerio como icono.
+- Instalable como app en el teléfono (PWA) con la bandera de Venezuela como icono.
+- Icono generado desde una sola imagen de origen con `scripts/make-icon.py` (ver más abajo).
 
 ## Acceso del administrador
 
@@ -304,3 +305,17 @@ Licencia: primera vez o renovacion, y luego grado 2, 3, 4 o 5.
 Antecedentes penales: sin apostillar o apostillado.
 
 El chat se abre al confirmar el tramite y queda guardado en la conversacion.
+
+## El icono
+
+Todos los tamanos del icono (`icon-1024.png`, `icon-512.png`, `icon-192.png`, los
+`maskable`, `apple-touch-icon.png` y `favicon-32.png`) salen de una sola imagen:
+`scripts/icono-fuente.png`.
+
+```
+python3 scripts/make-icon.py
+```
+
+Para cambiarlo, reemplaza esa imagen y vuelve a correr el script. Despues sube el
+numero de version (`?v=`) en `index.html` y `manifest.json`, y el nombre de la cache
+en `sw.js`, para que el icono nuevo llegue a los telefonos que ya tienen la app instalada.
