@@ -519,9 +519,9 @@ async function respaldarSnapshot(previo) {
       if (!esTablaFaltante(error.message)) console.error('Supabase respaldo error:', error.message);
       return;
     }
-    /* Se conservan solo los ultimos BACKUP_MAX respaldos. */
+    /* Se conservan solo los ultimos 5 respaldos para ahorrar I/O. */
     const { data: viejos } = await supabase.from(BACKUP_TABLE)
-      .select('id').like('id', STATE_ID + '-%').order('id', { ascending: false }).range(BACKUP_MAX, BACKUP_MAX + 200);
+      .select('id').like('id', STATE_ID + '-%').order('id', { ascending: false }).range(5, 5 + 50);
     if (viejos && viejos.length) {
       await supabase.from(BACKUP_TABLE).delete().in('id', viejos.map((r) => r.id));
     }
@@ -689,15 +689,15 @@ function save() {
     }
     if (!supabase) return;
     try {
-      const { data: previo } = await supabase.from(SUPABASE_TABLE).select('data').eq('id', STATE_ID).maybeSingle();
-      await respaldarSnapshot(previo && previo.data);
+      supabase.from(SUPABASE_TABLE).select('data').eq('id', STATE_ID).maybeSingle().then(({ data: previo }) => {
+        if (previo && previo.data) respaldarSnapshot(previo.data);
+      }).catch(() => {});
       const { error } = await supabase.from(SUPABASE_TABLE)
         .upsert({ id: STATE_ID, data: db, updated_at: new Date().toISOString() });
       if (error) {
         console.error('Supabase save error:', error.message);
         const tip = explainSupabaseError(error.message);
         if (tip) console.error('   →', tip);
-        console.error('   (Los datos siguen guardandose en el archivo local)');
       }
     } catch (e) {
       console.error('Supabase save exception:', e.message);
