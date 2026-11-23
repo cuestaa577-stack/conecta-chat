@@ -182,9 +182,11 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
   margin: 0 0 12px; background: var(--card); border: 1px solid var(--border);
   border-radius: 16px; overflow: hidden; box-shadow: 0 6px 18px rgba(11, 27, 58, .08);
 }
+/* Cada imagen se ve completa, con su propia proporcion: son afiches con texto
+   y recortarlos a 4/3 les borraba la mitad del mensaje. */
 .foto img {
-  display: block; width: 100%; height: auto; aspect-ratio: 4 / 3;
-  object-fit: cover; image-rendering: auto;
+  display: block; width: 100%; height: auto;
+  image-rendering: auto;
 }
 .foto figcaption {
   padding: 11px 14px 13px; font-size: 13px; line-height: 1.45; color: var(--text);
