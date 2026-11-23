@@ -1,5 +1,5 @@
 /* Conecta Chat - service worker (instalable + lo mas reciente primero) */
-const CACHE = 'tramites-ve-v30';
+const CACHE = 'tramites-ve-v31';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './fileviewer.js', './manifest.json', './bg.jpg', './logos/saime.png', './logos/saime-email.png', './galeria/01-identidad-un-clic.jpg', './galeria/02-servicios-saime.jpg', './galeria/03-pasos-tramite.jpg', './logos/intt.png', './logos/justicia.png', './icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -24,6 +24,12 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
   if (url.pathname.startsWith('/api') || url.pathname.startsWith('/ws')) return;
+
+  /* version.json nunca se guarda: es el que dice si hay una version nueva. */
+  if (url.pathname.endsWith('/version.json')) {
+    e.respondWith(fetch(e.request, { cache: 'no-store' }).catch(() => caches.match(e.request)));
+    return;
+  }
 
   const isCode = e.request.mode === 'navigate' || /\.(html|js|css|json)$/.test(url.pathname);
   if (isCode) {

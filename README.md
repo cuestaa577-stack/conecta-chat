@@ -302,6 +302,24 @@ Storage**, en un bucket privado, y la base solo guarda la ruta y el tipo.
 - Si la nube no responde, la app sigue funcionando y guarda un respaldo en la
   base solo hasta 4 MB, avisando en el log.
 
+## Actualizaciones: que le lleguen solas a la app instalada
+
+Cada vez que se publica un cambio, la app que la persona tiene instalada lo
+recibe sin reinstalar nada:
+
+1. `public/version.json` guarda el numero de version publicado.
+2. La app compara ese numero con el suyo (`APP_VERSION` en `app.js`). Si no
+   coincide, muestra arriba la barra **"Hay una actualización de la app lista"**
+   con el boton **Actualizar aplicación**, y si la app esta en segundo plano se
+   actualiza sola.
+3. El service worker (`sw.js`) pide el codigo nuevo a la red (no a la cache),
+   activa la version nueva y recarga. `version.json` nunca se guarda en cache.
+4. Tambien se busca version nueva al abrir la app, al volver a ella, al
+   recuperar internet y cada 15 minutos.
+
+Para publicar una version hay que subir tres numeros a la vez: `APP_VERSION` en
+`public/app.js`, `CACHE` en `public/sw.js` y `version` en `public/version.json`.
+
 ## Estructura
 
 ```

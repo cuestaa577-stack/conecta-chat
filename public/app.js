@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v4.2';
+  const APP_VERSION = 'v4.3';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -1056,6 +1056,74 @@ const App = (() => {
       }
     };
     inp.click();
+  }
+
+  /* ------------------- version publicada y actualizacion -------------------
+     version.json lo publica el servidor con cada cambio. Si el numero que trae
+     no es el que tiene la app abierta, hay una version nueva: se avisa con la
+     barra de arriba y, si la app esta en segundo plano, se aplica sola. */
+  let versionNueva = '';
+  let versionRevisada = 0;
+
+  async function comprobarVersionPublicada() {
+    if (Date.now() - versionRevisada < 20000) return;
+    versionRevisada = Date.now();
+    try {
+      const res = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      const publicada = String((data && data.version) || '');
+      if (!publicada || publicada === APP_VERSION) {
+        ocultarBarraActualizacion();
+        return;
+      }
+      versionNueva = publicada;
+      mostrarBarraActualizacion();
+      /* En segundo plano no se interrumpe nada: se aplica sin que la vea. */
+      if (document.hidden) aplicarActualizacion();
+    } catch (e) {}
+  }
+
+  function mostrarBarraActualizacion() {
+    const barra = $('#updateBar');
+    if (!barra) return;
+    const txt = barra.querySelector('.ub-txt');
+    if (txt) txt.textContent = 'Hay una actualización de la app lista (' + versionNueva + ')';
+    barra.hidden = false;
+    document.body.classList.add('con-actualizacion');
+  }
+
+  function ocultarBarraActualizacion() {
+    const barra = $('#updateBar');
+    if (barra) barra.hidden = true;
+    document.body.classList.remove('con-actualizacion');
+  }
+
+  /* Aplica la version nueva: pide al service worker que active lo ultimo,
+     limpia la cache vieja y recarga. Si algo falla, recarga igual. */
+  async function aplicarActualizacion() {
+    try {
+      if ('caches' in window) {
+        const llaves = await caches.keys();
+        await Promise.all(llaves.map((k) => caches.delete(k)));
+      }
+    } catch (e) {}
+    try {
+      if (state.swReg) {
+        await state.swReg.update().catch(() => {});
+        const esperando = state.swReg.waiting || state.swReg.installing;
+        if (esperando) {
+          esperando.postMessage({ type: 'SKIP_WAITING' });
+          await new Promise((r) => setTimeout(r, 800));
+        }
+      }
+    } catch (e) {}
+    location.reload();
+  }
+
+  async function actualizarApp() {
+    toast('Actualizando la app...');
+    await aplicarActualizacion();
   }
 
   function readFile(file) {
@@ -2859,6 +2927,12 @@ const App = (() => {
        activa y se recarga UNA vez. Antes solo se llamaba a reg.update() y la
        pestana seguia con el app.js viejo en memoria: por eso un arreglo ya
        publicado no llegaba a la app que la persona tenia abierta. */
+    /* --------------------- actualizacion de la app ---------------------
+       La app instalada tiene que recibir sola cada cambio. Se comprueba de dos
+       formas: el service worker (codigo nuevo) y version.json (numero de
+       version publicado). Si hay algo nuevo se muestra la barra con el boton
+       "Actualizar aplicación"; y si la app esta en segundo plano se aplica sola,
+       para que la persona no tenga que hacer nada. */
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
         state.swReg = reg;
@@ -2883,14 +2957,17 @@ const App = (() => {
          15 minutos. Asi una actualizacion del administrador llega sola a los
          telefonos que ya tienen la app instalada, sin reinstalar nada. */
       const buscarVersion = () => {
-        if (!state.swReg) return;
-        state.swReg.update().catch(() => {});
+        if (state.swReg) state.swReg.update().catch(() => {});
+        comprobarVersionPublicada();
       };
       document.addEventListener('visibilitychange', () => { if (!document.hidden) buscarVersion(); });
       window.addEventListener('online', buscarVersion);
       window.addEventListener('focus', buscarVersion);
       setInterval(buscarVersion, 15 * 60 * 1000);
     }
+
+    comprobarVersionPublicada();
+    setTimeout(comprobarVersionPublicada, 6000);
 
     // Instalacion en un toque
     window.addEventListener('beforeinstallprompt', (e) => {
@@ -2935,6 +3012,7 @@ const App = (() => {
     adminFillSubtypes, crearTramite, adminSubirDocumento, adminAprobar, adminRechazar,
     adminBorrarTramite, guardarPagoInfo, cerrarArchivo,
     entendidoCaptura, salirBloqueo, guardarCapturaConfig, adminDesbloquear,
+    actualizarApp, comprobarVersionPublicada,
   };
 })();
 window.App = App;
