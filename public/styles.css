@@ -34,46 +34,105 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .auth {
   position: relative; height: 100%; overflow-y: auto;
   display: flex; align-items: flex-start; justify-content: center;
-  padding: max(18px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+  padding: max(20px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
   background:
-    linear-gradient(180deg, rgba(6, 16, 38, .55), rgba(6, 16, 38, .72)),
+    linear-gradient(180deg, rgba(9, 24, 52, .46), rgba(9, 24, 52, .64)),
     url('bg.jpg') center/cover no-repeat,
     var(--navy);
 }
-.tricolor {
-  position: fixed; top: 0; left: 0; right: 0; height: 6px; z-index: 5;
-  background: linear-gradient(90deg, #f7d117 0 33.33%, #0033a0 33.33% 66.66%, #cf142b 66.66% 100%);
-}
 .auth-card {
-  width: 100%; max-width: 410px; background: var(--card); border-radius: 26px;
-  margin: auto; padding: 30px 20px 22px; box-shadow: 0 24px 60px rgba(4, 12, 30, .42);
-  border: 1px solid rgba(255, 255, 255, .65);
+  position: relative;
+  width: 100%; max-width: 420px; background: var(--card); border-radius: 28px;
+  margin: auto; padding: 26px 20px 18px;
+  box-shadow: 0 26px 60px rgba(4, 12, 30, .42);
+  border: 1px solid rgba(255, 255, 255, .7);
 }
 .auth-logo {
-  display: block; width: 72px; height: 72px; margin: 2px auto 12px;
-  border-radius: 22px; object-fit: cover;
-  box-shadow: 0 10px 26px rgba(11, 27, 58, .3);
+  display: block; width: 96px; height: 96px; margin: 0 auto 14px;
+  border-radius: 26px; object-fit: cover;
+  box-shadow: 0 12px 28px rgba(11, 27, 58, .26);
 }
-.auth-card h1 { font-size: 20px; text-align: center; margin: 4px 0 6px; line-height: 1.25; }
-/* Frase de gancho bajo el logo de la portada */
-.auth-card .tagline { text-align: center; font-size: 14.5px; font-weight: 800; color: var(--blue); letter-spacing: -.01em; margin: 0 0 4px; }
-.auth-card .tagline-sub { font-size: 12.5px; margin: 0 0 16px; }
+.auth-card h1 { font-size: 21px; text-align: center; margin: 0 0 6px; line-height: 1.22; letter-spacing: -.02em; }
+.auth-card .tagline-sub { font-size: 13px; line-height: 1.5; margin: 0 auto 18px; max-width: 310px; }
 .auth-card > p { text-align: center; font-size: 13px; margin: 0 0 16px; }
+
+/* Pestanas Entrar / Crear cuenta */
 .auth-tabs {
   display: flex; gap: 4px; background: #eef3fa; border-radius: 16px;
   padding: 5px; margin-bottom: 18px;
 }
 .auth-tab {
-  flex: 1; border: none; background: none; padding: 11px 6px; border-radius: 12px;
-  font-size: 14px; font-weight: 700; color: var(--muted); cursor: pointer;
+  flex: 1; border: none; background: none; padding: 12px 6px; border-radius: 12px;
+  font-size: 14.5px; font-weight: 700; color: #51617a; cursor: pointer;
   transition: background .18s ease, color .18s ease, box-shadow .18s ease;
 }
 .auth-tab.active {
   background: linear-gradient(180deg, var(--navy-2), var(--navy));
   color: #fff; box-shadow: 0 6px 16px rgba(31, 95, 158, .32);
 }
+
+/* Campos del acceso: etiqueta en minuscula, se lee mejor que el bloque en
+   mayusculas, y el campo a 16px para que el telefono no haga zoom al tocarlo. */
+.auth .field { margin-bottom: 15px; }
+.auth .field > span {
+  display: block; font-size: 13px; font-weight: 700; color: #33415c;
+  letter-spacing: 0; text-transform: none; margin-bottom: 6px;
+}
+.auth .field input, .auth .field select {
+  font-size: 16px; padding: 15px 15px; border-radius: 14px;
+  border: 1.5px solid #d7e4f2; background: #f7faff;
+}
+.auth .field input::placeholder { color: #94a3b8; }
+.auth .field input:focus, .auth .field select:focus {
+  border-color: var(--navy-2); background: #fff;
+  box-shadow: 0 0 0 4px rgba(43, 111, 174, .16);
+}
+.field-hint { display: block; font-size: 12px; line-height: 1.45; color: var(--muted); margin-top: 6px; }
+
+/* Ojo para mostrar u ocultar la contrasena */
+.pass-wrap { position: relative; display: block; }
+.pass-wrap input { padding-right: 56px; }
+.pass-toggle {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+  background: none; border: 0; border-radius: 12px; color: #64748b; cursor: pointer;
+  transition: background .16s ease, color .16s ease;
+}
+.pass-toggle svg { width: 21px; height: 21px; }
+.pass-toggle:active { background: #eef3fa; color: var(--navy); }
+.pass-toggle .eye-off { display: none; }
+.pass-toggle.is-visible .eye-on { display: none; }
+.pass-toggle.is-visible .eye-off { display: block; }
+
+/* Encabezado de los paneles internos (personal autorizado, codigos) */
+.auth-sec-head { text-align: center; margin: 2px 0 18px; }
+.auth-sec-ic {
+  width: 52px; height: 52px; margin: 0 auto 10px; border-radius: 16px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--blue-soft); color: var(--navy);
+}
+.auth-sec-ic svg { width: 26px; height: 26px; }
+.auth-sec-head h2 { font-size: 17px; margin: 0 0 5px; letter-spacing: -.01em; }
+.auth-sec-head p { font-size: 12.5px; line-height: 1.5; margin: 0; }
+
+/* Entrada del personal autorizado: discreta, con candado y separada del acceso */
+.auth-divider { margin: 18px 0 0; padding-top: 16px; border-top: 1px solid #e6eef8; }
+.auth-staff {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 13px 14px; border-radius: 14px; border: 1.5px solid #dbe6f3; background: #f8fbff;
+  color: #33415c; font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer;
+  transition: border-color .16s ease, background .16s ease;
+}
+.auth-staff svg { width: 18px; height: 18px; color: var(--navy); }
+.auth-staff:active { background: #eef4fc; border-color: #c3d6ea; }
+
+/* Foco visible para quien navega con teclado */
+.auth button:focus-visible, .auth input:focus-visible, .auth select:focus-visible {
+  outline: 3px solid rgba(29, 78, 216, .45); outline-offset: 2px;
+}
+
 .auth-note { font-size: 11.5px; text-align: center; margin: 12px 0 0; }
-.linkbtn { display: block; width: 100%; margin-top: 10px; background: none; border: 0; padding: 6px 0; color: var(--blue); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; text-align: center; }
+.linkbtn { display: block; width: 100%; margin-top: 10px; background: none; border: 0; padding: 8px 0; color: var(--blue); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; text-align: center; }
 .linkbtn:active { opacity: .7; }
 .auth-card .btn.primary {
   width: 100%; padding: 15px; border-radius: 15px; font-size: 15.5px;

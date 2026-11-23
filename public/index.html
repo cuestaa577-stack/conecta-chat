@@ -7,125 +7,131 @@
   <meta name="description" content="Cédula, licencia y antecedentes penales en línea. Tus trámites, sin colas ni vueltas." />
   <title>Tramites Venezolanos en Linea | Sin colas ni vueltas</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="icon" href="favicon-32.png?v=55" sizes="32x32" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=55" />
+  <link rel="icon" href="favicon-32.png?v=56" sizes="32x32" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=56" />
   <link rel="stylesheet" href="styles.css" />
-  <style>
-    .auth-card{position:relative}
-    .admin-corner{position:fixed;top:calc(8px + env(safe-area-inset-top));right:10px;z-index:20;background:rgba(255,255,255,.94);border:1px solid #d7dee9;border-radius:999px;color:#334155;font-size:11px;font-weight:600;padding:5px 10px;cursor:pointer;font-family:inherit;box-shadow:0 2px 8px rgba(6,16,38,.25)}
-    .pass-wrap{position:relative;display:block}
-    .pass-wrap input{padding-right:66px}
-    .pass-toggle{position:absolute;right:7px;top:50%;transform:translateY(-50%);background:none;border:0;color:var(--blue);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;padding:6px 8px;border-radius:8px}
-    .pass-toggle:active{opacity:.7}
-  </style>
 </head>
 <body>
 
 <!-- ============================ ACCESO ============================ -->
 <section class="auth" id="authScreen">
-  <div class="tricolor"></div>
   <div class="auth-card">
-    <button class="admin-corner" type="button" onclick="App.showAdminAuth()">Personal autorizado</button>
-    <img class="auth-logo" src="icon-192.png?v=55" srcset="icon-192.png?v=55 1x, icon-512.png?v=55 2x" alt="Tramites Venezolanos en Linea" />
-    <h1>Tramites Venezolanos en Linea</h1>
-    <p class="tagline">Tus trámites, sin colas ni vueltas</p>
+    <img class="auth-logo" src="icon-192.png?v=56" srcset="icon-192.png?v=56 1x, icon-512.png?v=56 2x" alt="Trámites Venezolanos en Línea" />
+    <h1>Trámites Venezolanos en Línea</h1>
     <p class="muted tagline-sub">Cédula, licencia y antecedentes penales. Te acompañamos en todo el trámite.</p>
 
     <div class="auth-tabs" id="authTabs">
-      <button class="auth-tab active" id="tabLogin" onclick="App.authTab('login')">Entrar</button>
-      <button class="auth-tab" id="tabRegister" onclick="App.authTab('register')">Crear cuenta</button>
+      <button class="auth-tab active" id="tabLogin" type="button" onclick="App.authTab('login')">Entrar</button>
+      <button class="auth-tab" id="tabRegister" type="button" onclick="App.authTab('register')">Crear cuenta</button>
     </div>
 
     <!-- Entrar con cedula -->
     <div id="loginPanel">
-      <label class="field"><span>Cedula de identidad</span><input id="loginCedula" type="text" inputmode="numeric" autocomplete="username" placeholder="V-12345678" /></label>
-      <label class="field"><span>Contrasena</span>
+      <label class="field"><span>Cédula de identidad</span><input id="loginCedula" type="text" inputmode="numeric" autocomplete="username" placeholder="V-12345678" /></label>
+      <label class="field"><span>Contraseña</span>
         <div class="pass-wrap">
-          <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Tu contrasena" />
-          <button type="button" class="pass-toggle" data-target="loginPassword" aria-label="Ver contrasena">Ver</button>
+          <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Tu contraseña" />
+          <button type="button" class="pass-toggle" data-target="loginPassword" aria-label="Mostrar contraseña" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.2 12S5.8 5.6 12 5.6 21.8 12 21.8 12 18.2 18.4 12 18.4 2.2 12 2.2 12z"/><circle cx="12" cy="12" r="3.1"/></svg><svg class="eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.2 3.2l17.6 17.6"/><path d="M10.6 6.2A9.9 9.9 0 0112 6.1c6.2 0 9.8 5.9 9.8 5.9a17.4 17.4 0 01-3.2 3.8"/><path d="M6.5 7.7A17.2 17.2 0 002.2 12s3.6 5.9 9.8 5.9a10 10 0 004-.8"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/></svg></button>
         </div>
       </label>
       <button class="btn primary" id="loginBtn" onclick="App.submitLogin()">Entrar</button>
-      <button class="linkbtn" type="button" onclick="App.authTab('forgot')">Olvide mi contrasena</button>
+      <button class="linkbtn" type="button" onclick="App.authTab('forgot')">Olvidé mi contraseña</button>
     </div>
 
     <!-- Crear cuenta con cedula -->
     <div id="registerPanel" class="hidden">
-      <label class="field"><span>Nombres</span><input id="regNombres" type="text" autocomplete="given-name" placeholder="Tus nombres" /></label>
-      <label class="field"><span>Apellidos</span><input id="regApellidos" type="text" autocomplete="family-name" placeholder="Tus apellidos" /></label>
-      <label class="field"><span>Cedula de identidad</span><input id="regCedula" type="text" inputmode="numeric" placeholder="V-12345678" /></label>
+      <label class="field"><span>Nombres</span><input id="regNombres" type="text" autocomplete="given-name" autocapitalize="words" placeholder="Tus nombres" /></label>
+      <label class="field"><span>Apellidos</span><input id="regApellidos" type="text" autocomplete="family-name" autocapitalize="words" placeholder="Tus apellidos" /></label>
+      <label class="field"><span>Cédula de identidad</span><input id="regCedula" type="text" inputmode="numeric" autocomplete="off" placeholder="V-12345678" /></label>
       <label class="field"><span>Fecha de nacimiento</span><input id="regBirth" type="date" autocomplete="bday" /></label>
-      <label class="field"><span>Correo electronico</span><input id="regEmail" type="email" autocomplete="email" placeholder="tucorreo@ejemplo.com" /></label>
-      <label class="field"><span>Contrasena</span>
+      <label class="field"><span>Correo electrónico</span><input id="regEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="off" placeholder="tucorreo@ejemplo.com" /></label>
+      <label class="field"><span>Contraseña</span>
         <div class="pass-wrap">
-          <input id="regPassword" type="password" autocomplete="new-password" placeholder="Minimo 8 caracteres" />
-          <button type="button" class="pass-toggle" data-target="regPassword" aria-label="Ver contrasena">Ver</button>
+          <input id="regPassword" type="password" autocomplete="new-password" minlength="8" placeholder="Mínimo 8 caracteres" />
+          <button type="button" class="pass-toggle" data-target="regPassword" aria-label="Mostrar contraseña" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.2 12S5.8 5.6 12 5.6 21.8 12 21.8 12 18.2 18.4 12 18.4 2.2 12 2.2 12z"/><circle cx="12" cy="12" r="3.1"/></svg><svg class="eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.2 3.2l17.6 17.6"/><path d="M10.6 6.2A9.9 9.9 0 0112 6.1c6.2 0 9.8 5.9 9.8 5.9a17.4 17.4 0 01-3.2 3.8"/><path d="M6.5 7.7A17.2 17.2 0 002.2 12s3.6 5.9 9.8 5.9a10 10 0 004-.8"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/></svg></button>
         </div>
+        <small class="field-hint">Mínimo 8 caracteres. Puedes usar letras, números y símbolos.</small>
       </label>
-      <label class="field"><span>Pais donde vives</span>
+      <label class="field"><span>País donde vives</span>
         <select id="authCountry">
           <option value="Venezuela">Venezuela</option>
           <option value="Chile">Chile</option>
           <option value="Ecuador">Ecuador</option>
           <option value="Colombia">Colombia</option>
-          <option value="Peru">Peru</option>
+          <option value="Peru">Perú</option>
           <option value="Argentina">Argentina</option>
           <option value="Otro">Otro</option>
         </select>
       </label>
       <button class="btn primary" id="registerBtn" onclick="App.submitRegister()">Crear cuenta</button>
-      <p class="auth-note muted">Te enviamos un codigo de 6 digitos al correo para confirmar tu cuenta.</p>
+      <p class="auth-note muted">Te enviamos un código de 6 dígitos al correo para confirmar tu cuenta.</p>
     </div>
 
-    <!-- Olvide mi contrasena -->
+    <!-- Olvide la contrasena -->
     <div id="forgotPanel" class="hidden">
-      <p class="muted">Escribe tu cedula y te enviamos un codigo de 6 digitos al correo con el que te registraste.</p>
-      <label class="field"><span>Cedula de identidad</span><input id="forgotCedula" type="text" inputmode="numeric" placeholder="V-12345678" /></label>
-      <button class="btn primary" onclick="App.sendForgot()">Enviar codigo</button>
+      <p class="muted">Escribe tu cédula y te enviamos un código de 6 dígitos al correo con el que te registraste.</p>
+      <label class="field"><span>Cédula de identidad</span><input id="forgotCedula" type="text" inputmode="numeric" autocomplete="off" placeholder="V-12345678" /></label>
+      <button class="btn primary" onclick="App.sendForgot()">Enviar código</button>
       <button class="linkbtn" type="button" onclick="App.authTab('login')">Volver</button>
     </div>
 
     <!-- Nueva contrasena con codigo -->
     <div id="resetPanel" class="hidden">
-      <p class="muted" id="resetHint">Escribe el codigo de 6 digitos que enviamos a tu correo y tu nueva contrasena.</p>
-      <label class="field"><span>Codigo del correo</span><input id="resetCode" type="text" inputmode="numeric" maxlength="6" placeholder="000000" /></label>
-      <label class="field"><span>Nueva contrasena</span>
+      <p class="muted" id="resetHint">Escribe el código de 6 dígitos que enviamos a tu correo y tu nueva contraseña.</p>
+      <label class="field"><span>Código del correo</span><input id="resetCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" /></label>
+      <label class="field"><span>Nueva contraseña</span>
         <div class="pass-wrap">
-          <input id="resetPassword" type="password" autocomplete="new-password" placeholder="Minimo 8 caracteres" />
-          <button type="button" class="pass-toggle" data-target="resetPassword" aria-label="Ver contrasena">Ver</button>
+          <input id="resetPassword" type="password" autocomplete="new-password" minlength="8" placeholder="Mínimo 8 caracteres" />
+          <button type="button" class="pass-toggle" data-target="resetPassword" aria-label="Mostrar contraseña" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.2 12S5.8 5.6 12 5.6 21.8 12 21.8 12 18.2 18.4 12 18.4 2.2 12 2.2 12z"/><circle cx="12" cy="12" r="3.1"/></svg><svg class="eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.2 3.2l17.6 17.6"/><path d="M10.6 6.2A9.9 9.9 0 0112 6.1c6.2 0 9.8 5.9 9.8 5.9a17.4 17.4 0 01-3.2 3.8"/><path d="M6.5 7.7A17.2 17.2 0 002.2 12s3.6 5.9 9.8 5.9a10 10 0 004-.8"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/></svg></button>
         </div>
       </label>
-      <button class="btn primary" onclick="App.submitReset()">Cambiar contrasena</button>
-      <button class="linkbtn" type="button" onclick="App.resendReset()">Reenviar codigo</button>
+      <button class="btn primary" onclick="App.submitReset()">Cambiar contraseña</button>
+      <button class="linkbtn" type="button" onclick="App.resendReset()">Reenviar código</button>
       <button class="linkbtn" type="button" onclick="App.authTab('login')">Volver</button>
     </div>
 
-    <!-- Confirmar correo con codigo -->
+    <!-- Acceso del personal autorizado -->
     <div id="adminAuthPanel" class="hidden">
-      <p class="muted">Acceso exclusivo del personal autorizado.</p>
-      <label class="field"><span>Correo del administrador</span><input id="adminEmail" type="email" placeholder="correo@ejemplo.com" autocomplete="username" /></label>
-      <label class="field"><span>Clave</span><input id="adminPassword" type="password" placeholder="Tu clave" autocomplete="current-password" /></label>
-      <button class="btn primary" onclick="App.submitAdminLogin()">Entrar como personal autorizado</button>
-      <button class="linkbtn" type="button" onclick="App.authTab('login')">Volver</button>
+      <div class="auth-sec-head">
+        <span class="auth-sec-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2l7 2.6v5.6c0 4.3-2.9 7.4-7 8.4-4.1-1-7-4.1-7-8.4V5.8z"/><path d="M9.2 12.1l2 2 3.6-3.9"/></svg></span>
+        <h2>Personal autorizado</h2>
+        <p class="muted">Acceso exclusivo del equipo de Trámites en Línea. Si eres usuario, vuelve al acceso normal.</p>
+      </div>
+      <label class="field"><span>Correo del administrador</span><input id="adminEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="off" placeholder="correo@ejemplo.com" /></label>
+      <label class="field"><span>Clave</span>
+        <div class="pass-wrap">
+          <input id="adminPassword" type="password" autocomplete="current-password" placeholder="Tu clave" />
+          <button type="button" class="pass-toggle" data-target="adminPassword" aria-label="Mostrar contraseña" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.2 12S5.8 5.6 12 5.6 21.8 12 21.8 12 18.2 18.4 12 18.4 2.2 12 2.2 12z"/><circle cx="12" cy="12" r="3.1"/></svg><svg class="eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.2 3.2l17.6 17.6"/><path d="M10.6 6.2A9.9 9.9 0 0112 6.1c6.2 0 9.8 5.9 9.8 5.9a17.4 17.4 0 01-3.2 3.8"/><path d="M6.5 7.7A17.2 17.2 0 002.2 12s3.6 5.9 9.8 5.9a10 10 0 004-.8"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/></svg></button>
+        </div>
+      </label>
+      <button class="btn primary" onclick="App.submitAdminLogin()">Entrar al panel</button>
+      <button class="linkbtn" type="button" onclick="App.authTab('login')">Volver al acceso</button>
     </div>
 
     <div id="verifyPanel" class="hidden">
-      <p class="muted" id="verifyHint">Enviamos un codigo de 6 digitos a tu correo. Escribelo para entrar.</p>
-      <label class="field"><span>Codigo del correo</span><input id="verifyCode" type="text" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" /></label>
+      <p class="muted" id="verifyHint">Enviamos un código de 6 dígitos a tu correo. Escríbelo para entrar.</p>
+      <label class="field"><span>Código del correo</span><input id="verifyCode" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" /></label>
       <button class="btn primary" onclick="App.submitVerify()">Verificar y entrar</button>
-      <button class="linkbtn" type="button" onclick="App.resendVerify()">Reenviar codigo</button>
+      <button class="linkbtn" type="button" onclick="App.resendVerify()">Reenviar código</button>
       <button class="linkbtn" type="button" onclick="App.authTab('login')">Volver</button>
     </div>
 
     <div id="codePanel" class="hidden">
-      <p class="muted" id="codeHint">Escribe el codigo de 6 digitos que enviamos a tu correo.</p>
-      <label class="field"><span>Cedula de identidad</span><input id="codeCedula" type="text" inputmode="numeric" placeholder="V-12345678" /></label>
-      <label class="field"><span>Codigo del correo</span><input id="codeInput" type="text" inputmode="numeric" maxlength="6" placeholder="000000" /></label>
+      <p class="muted" id="codeHint">Escribe el código de 6 dígitos que enviamos a tu correo.</p>
+      <label class="field"><span>Cédula de identidad</span><input id="codeCedula" type="text" inputmode="numeric" autocomplete="off" placeholder="V-12345678" /></label>
+      <label class="field"><span>Código del correo</span><input id="codeInput" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" /></label>
       <button class="btn primary" onclick="App.submitCode()">Confirmar correo</button>
       <button class="linkbtn" type="button" onclick="App.authTab('login')">Volver</button>
     </div>
 
-    <p class="auth-note muted">Tu sesion queda guardada en este dispositivo.</p>
+    <p class="auth-note muted">Tu sesión queda guardada en este dispositivo.</p>
+
+    <div class="auth-divider" id="staffEntry">
+      <button class="auth-staff" type="button" onclick="App.showAdminAuth()">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="9.5" rx="2.4"/><path d="M8.2 10.5V8a3.8 3.8 0 017.6 0v2.5"/></svg>
+        Personal autorizado
+      </button>
+    </div>
   </div>
 </section>
 
@@ -135,7 +141,7 @@
   <!-- Portada de servicios -->
   <section class="view active" id="homeView">
     <header class="topbar">
-      <img class="brand-logo" src="icon-192.png?v=55" srcset="icon-192.png?v=55 1x, icon-512.png?v=55 2x" alt="Trámites en Línea" />
+      <img class="brand-logo" src="icon-192.png?v=56" srcset="icon-192.png?v=56 1x, icon-512.png?v=56 2x" alt="Trámites en Línea" />
       <div class="brand-block">
         <div class="brand-line">
           <div class="brand">Trámites en Línea</div>
@@ -475,7 +481,7 @@
 
 <!-- Instalar la app -->
 <div class="install hidden" id="installBanner">
-  <img class="install-logo" src="icon-192.png?v=55" srcset="icon-192.png?v=55 1x, icon-512.png?v=55 2x" alt="" />
+  <img class="install-logo" src="icon-192.png?v=56" srcset="icon-192.png?v=56 1x, icon-512.png?v=56 2x" alt="" />
   <div class="install-txt">
     <div class="install-title">Instala la app</div>
     <div class="install-sub">Queda en tu celular, como una app</div>

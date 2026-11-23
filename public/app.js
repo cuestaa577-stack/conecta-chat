@@ -253,6 +253,9 @@ const App = (() => {
     const tr = $('#tabRegister');
     if (tl) tl.classList.toggle('active', name === 'login');
     if (tr) tr.classList.toggle('active', name === 'register');
+    /* La entrada del personal autorizado no se repite dentro de su propio panel. */
+    const staff = document.getElementById('staffEntry');
+    if (staff) staff.classList.toggle('hidden', name === 'adminAuth');
   }
 
   function authTab(name) {
@@ -313,8 +316,11 @@ const App = (() => {
       if (!input) return;
       const show = input.type === 'password';
       input.type = show ? 'text' : 'password';
-      btn.textContent = show ? 'Ocultar' : 'Ver';
-      btn.setAttribute('aria-label', show ? 'Ocultar contrasena' : 'Ver contrasena');
+      /* El boton lleva dos dibujos (ojo abierto y ojo tachado) y se cambia
+         la clase; antes se reemplazaba el texto y se perdia el icono. */
+      btn.classList.toggle('is-visible', show);
+      btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+      btn.setAttribute('aria-label', show ? 'Ocultar contrasena' : 'Mostrar contrasena');
     });
   }
 
