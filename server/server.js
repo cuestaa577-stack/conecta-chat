@@ -237,17 +237,24 @@ async function fetchSupabase(input, init = {}) {
       const esTimeout = res.status === 504 || res.status === 500;
       if (esTimeout && i < intentos) {
         console.warn('Supabase respondio ' + res.status + '; reintentando (' + i + '/' + intentos + ')...');
-        await esperar(i * 1500);
+        await esperar(1200);
         continue;
       }
       return res;
     } catch (e) {
       clearTimeout(timer);
       ultimoError = e;
-      if (i < intentos) {
-        console.warn('Supabase no respondio (' + (e.message || e) + '); reintentando (' + i + '/' + intentos + ')...');
-        await esperar(i * 1500);
-      }
+      /* Solo se reintenta cuando es tiempo de espera. Si el servidor no existe
+         o la red no resuelve, reintentar no sirve y retrasa el arranque. */
+      const texto = String(e && (e.message || e));
+      const causa = String((e && e.cause && (e.cause.code || e.cause.message)) || '');
+      const esTiempo = (e && e.name === 'AbortError') || /timeout|timed out|aborted/i.test(texto);
+      const sinServidor = /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ERR_INVALID_URL/i.test(texto + ' ' + causa);
+      /* Reintentar solo sirve si fue lentitud. Si el servidor no existe o la red
+         no resuelve, se corta de inmediato para no retrasar el arranque. */
+      if (!esTiempo || sinServidor || i === intentos) break;
+      console.warn('Supabase tardo demasiado (' + texto + '); reintentando (' + i + '/' + intentos + ')...');
+      await esperar(1200);
     }
   }
   throw ultimoError || new Error('Supabase no respondio');
@@ -424,6 +431,11 @@ const firmas = new Map();
    antes de sobrescribir la fila, para poder recuperar el estado anterior. */
 const ultimos = new Map();
 let recordsOk = true;
+/* Solo se escribe en Supabase cuando YA se pudo leer. Si el arranque no logra
+   leer (timeout, proyecto pausado), la app trabaja con lo local y NO toca la
+   nube: asi un reinicio nunca sobrescribe las cuentas guardadas. */
+let nubeLeida = false;
+let reintentoNube = null;
 let guardandoRegistros = false;
 let registrosSucios = false;
 
@@ -617,11 +629,15 @@ async function load() {
           const tip = explainSupabaseError(error.message);
           if (tip) console.error('   →', tip);
         }
-      } else if (data && data.length) {
-        aplicarRegistros(data);
-        desdeNube = true;
-        filasNuevas = data.length;
-        console.log('Datos cargados desde Supabase por registro (' + Object.keys(db.users).length + ' cuentas, ' + data.length + ' filas)');
+      } else {
+        /* Sin error: la nube respondio (aunque no haya filas todavia). */
+        nubeLeida = true;
+        if (data && data.length) {
+          aplicarRegistros(data);
+          desdeNube = true;
+          filasNuevas = data.length;
+          console.log('Datos cargados desde Supabase por registro (' + Object.keys(db.users).length + ' cuentas, ' + data.length + ' filas)');
+        }
       }
     } catch (e) {
       console.error('Supabase load exception:', e.message);
@@ -641,6 +657,7 @@ async function load() {
           if (tip) console.error('   →', tip);
         }
       } else if (data && data.data) {
+        nubeLeida = true;
         if (!desdeNube) {
           db = { users: {}, chats: {}, messages: {}, visits: [], files: {}, ...data.data };
           desdeNube = true;
@@ -703,14 +720,61 @@ async function load() {
     await guardarRegistros();
   }
   if (filasNuevas) console.log('Registros en ' + RECORDS_TABLE + ': ' + filasNuevas);
+
+  if (supabase && !nubeLeida) {
+    console.error('[modo seguro] No se pudo leer Supabase al arrancar. NO se escribira en la nube para no borrar datos; se reintenta cada 30 s.');
+    programarReintentoNube();
+  } else if (supabase && nubeLeida) {
+    console.log('Persistencia lista: los datos se leen y se guardan en Supabase.');
+  }
+}
+
+/* Reintenta leer la nube hasta lograrlo. Cuando responde, fusiona lo que ya
+   hay en memoria (por si alguien se registro mientras estaba caida) y desde
+   ahi se vuelve a guardar normal. */
+function programarReintentoNube() {
+  if (reintentoNube || !supabase) return;
+  reintentoNube = setInterval(async () => {
+    try {
+      const { data, error } = await supabase.from(RECORDS_TABLE).select('id,kind,key,data');
+      if (error) return;
+      nubeLeida = true;
+      clearInterval(reintentoNube);
+      reintentoNube = null;
+      if (data && data.length) {
+        const recuperados = fusionarEstado(estadoDeFilas(data));
+        console.log('Conexion con Supabase restablecida. Filas leidas: ' + data.length + ', datos recuperados: ' + recuperados);
+      } else {
+        console.log('Conexion con Supabase restablecida.');
+      }
+      save();
+    } catch (e) { /* se reintenta en el siguiente ciclo */ }
+  }, 30000);
+}
+
+/* Convierte las filas de conecta_records en un objeto de estado, sin tocar db. */
+function estadoDeFilas(filas) {
+  const out = { users: {}, chats: {}, messages: {}, visits: [], files: {}, uploads: {}, tramites: {}, settings: {} };
+  (filas || []).forEach((f) => {
+    const k = String(f.kind || '');
+    const key = String(f.key || '');
+    const v = f.data;
+    if (k === 'visits') { out.visits = Array.isArray(v) ? v : []; return; }
+    if (k === 'settings') { out.settings = (v && typeof v === 'object') ? v : {}; return; }
+    if (k === 'secret') { out.secret = v; return; }
+    if (!out[k] || typeof out[k] !== 'object' || Array.isArray(out[k])) out[k] = {};
+    out[k][key] = v;
+  });
+  return out;
 }
 
 let saveTimer = null;
 let nubeOk = false;
 
 function save() {
-  /* 1) Registros: a Supabase EN EL ACTO, sin esperar al temporizador. */
-  if (supabase && recordsOk) guardarRegistros();
+  /* 1) Registros: a Supabase EN EL ACTO, sin esperar al temporizador.
+     Nunca se escribe si al arrancar no se pudo leer la nube (modo seguro). */
+  if (supabase && recordsOk && nubeLeida) guardarRegistros();
 
   /* 2) Respaldo local y fila unica de respaldo, con un pequeno retardo para no
         reescribir el archivo entero en cada cambio. */
@@ -722,7 +786,7 @@ function save() {
     } catch (e) {
       console.error('No se pudo guardar local:', e.message);
     }
-    if (!supabase) return;
+    if (!supabase || !nubeLeida) return;
     try {
       supabase.from(SUPABASE_TABLE).select('data').eq('id', STATE_ID).maybeSingle().then(({ data: previo }) => {
         if (previo && previo.data) respaldarSnapshot(previo.data);
