@@ -2025,10 +2025,21 @@ const MAX_DOC_BYTES = Math.floor(25 * 1024 * 1024);
    Licencia: grado 2 35.000, grado 3 45.000, grado 4 50.000, grado 5 55.000. */
 const TARIFAS_CEDULA = { renovacion: 28000, extravio: 25000, deterioro: 24000, hurto: 23000 };
 const TARIFAS_LICENCIA = { '2': 35000, '3': 45000, '4': 50000, '5': 55000 };
+const TARIFAS_CEDULA_COLOMBIA = { renovacion: 35000, extravio: 32000, deterioro: 29000, hurto: 26000 };
+const PAISES_CON_TARIFA = ['Venezuela', 'Chile', 'Ecuador', 'Colombia'];
 
-function precioDeTramite(service, subtype, grade) {
+function paisConTarifa(country) {
+  return PAISES_CON_TARIFA.indexOf(String(country || '').trim()) >= 0;
+}
+
+function precioDeTramite(service, subtype, grade, country) {
+  const pais = String(country || '').trim();
+  if (!paisConTarifa(pais)) return 0;
   const s = String(service || '').toLowerCase();
-  if (s === 'cedula') return TARIFAS_CEDULA[String(subtype || '').toLowerCase()] || 0;
+  if (s === 'cedula') {
+    const tabla = pais === 'Colombia' ? TARIFAS_CEDULA_COLOMBIA : TARIFAS_CEDULA;
+    return tabla[String(subtype || '').toLowerCase()] || 0;
+  }
   if (s === 'licencia') {
     const g = String(grade || '').replace(/\D/g, '');
     return TARIFAS_LICENCIA[g] || 0;
@@ -2049,9 +2060,9 @@ function precioEtiqueta(monto, country) {
 }
 
 function precioDelTramite(t, owner) {
-  const monto = precioDeTramite(t && t.service, t && t.subtype, t && t.grade);
-  if (!monto) return null;
   const country = (owner && owner.country) || '';
+  const monto = precioDeTramite(t && t.service, t && t.subtype, t && t.grade, country);
+  if (!monto) return null;
   return { amount: monto, country: country, label: precioEtiqueta(monto, country) };
 }
 const MAX_IMG_BYTES = 12 * 1024 * 1024;

@@ -983,3 +983,9 @@ body.con-actualizacion .view.active { padding-top: 54px; }
   position: static; z-index: 0;
 }
 .valor-tramite { color: #1f5f9e; font-weight: 800; }
+
+.consulta-precio {
+  margin: 14px 0 6px; padding: 14px; border-radius: 14px;
+  background: #f2f7fd; border: 1px solid #d7e6f7;
+}
+.consulta-txt { font-size: 13px; color: #3a5a7a; margin: 0 0 10px; line-height: 1.45; }

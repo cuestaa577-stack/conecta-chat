@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v5.2';
+  const APP_VERSION = 'v5.3';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -19,9 +19,25 @@ const App = (() => {
   const TARIFAS_CEDULA = { renovacion: 28000, extravio: 25000, deterioro: 24000, hurto: 23000 };
   const TARIFAS_LICENCIA = { '2': 35000, '3': 45000, '4': 50000, '5': 55000 };
 
-  function precioDeTramite(service, subtype, grade) {
+  /* Colombia tiene su propia lista de cedula. El resto de los paises mantiene
+     los valores de arriba. En un pais sin tarifa (opcion "Otro") no se inventa
+     un precio: se ofrece "Consultar precio" por el chat del servidor publico. */
+  const TARIFAS_CEDULA_COLOMBIA = { renovacion: 35000, extravio: 32000, deterioro: 29000, hurto: 26000 };
+  const PAISES_CON_TARIFA = ['Venezuela', 'Chile', 'Ecuador', 'Colombia'];
+
+  function paisConTarifa(country) {
+    const p = String(country === undefined ? (state.me && state.me.country) : country || '').trim();
+    return PAISES_CON_TARIFA.indexOf(p) >= 0;
+  }
+
+  function precioDeTramite(service, subtype, grade, country) {
+    const pais = String(country === undefined ? (state.me && state.me.country) : country || '').trim();
+    if (!paisConTarifa(pais)) return 0;
     const s = String(service || '').toLowerCase();
-    if (s === 'cedula') return TARIFAS_CEDULA[String(subtype || '').toLowerCase()] || 0;
+    if (s === 'cedula') {
+      const tabla = pais === 'Colombia' ? TARIFAS_CEDULA_COLOMBIA : TARIFAS_CEDULA;
+      return tabla[String(subtype || '').toLowerCase()] || 0;
+    }
     if (s === 'licencia') return TARIFAS_LICENCIA[String(grade || '').replace(/\D/g, '')] || 0;
     return 0;
   }
@@ -40,6 +56,32 @@ const App = (() => {
     const monto = precioDeTramite(service, subtype, grade);
     if (!monto) return '';
     return precioEtiqueta(monto, state.me && state.me.country);
+  }
+
+  /* Abre el chat con el servidor publico para preguntar el precio del tramite
+     elegido cuando el pais de la persona no tiene tarifa en la app. */
+  async function consultarPrecio() {
+    const s = flowSummary();
+    const pais = (state.me && state.me.country) || '';
+    try {
+      const data = await api('/api/chats/start', {
+        method: 'POST',
+        body: JSON.stringify({ tramite: { service: s.service, serviceLabel: s.serviceLabel, subtype: s.subtype, subtypeLabel: s.subtypeLabel, grade: s.grade } }),
+      });
+      await loadChats();
+      state.viewStack = ['homeView'];
+      openChat(data.chat.id, false);
+      setTimeout(() => {
+        const caja = $('#chatText');
+        if (caja) {
+          caja.value = 'Hola, quiero consultar el precio de ' + s.subtypeLabel +
+            (s.grade ? ' (' + s.grade + ')' : '') + (pais ? ' en ' + pais : '') + '.';
+          try { caja.focus(); } catch (e) {}
+        }
+      }, 700);
+    } catch (e) {
+      toast(e.message);
+    }
   }
 
   const SERVICES = {
@@ -867,6 +909,10 @@ const App = (() => {
         <div class="summary-row"><span>Tramite</span><span>${esc(s.subtypeLabel)}</span></div>
         ${s.grade ? `<div class="summary-row"><span>Grado</span><span>${esc(s.grade)}</span></div>` : ''}
         ${precioDelTramite(s.service, s.subtype, s.grade) ? `<div class="summary-row"><span>Valor</span><span class="valor-tramite">${esc(precioDelTramite(s.service, s.subtype, s.grade))}</span></div>` : ''}
+        ${!precioDelTramite(s.service, s.subtype, s.grade) ? `<div class="consulta-precio">
+          <p class="consulta-txt">El valor de este tramite depende del pais donde vives. Consultalo con un servidor publico y te responde al momento.</p>
+          <button class="btn primary" onclick="App.consultarPrecio()">Consultar precio</button>
+        </div>` : ''}
         <p class="summary-note">Al continuar se abre el chat con un servidor publico, que te envia los requisitos, el costo y el paso a paso de tu caso.</p>
       </div>
       <button class="btn primary" onclick="App.startChat()">Continuar por el chat</button>`;
@@ -3239,7 +3285,7 @@ const App = (() => {
     openAdmin, openChatFromAdmin, openFirstChat,
     adminTab, adminIr, adminFiltrar, adminBuscarPersona, adminBuscarTramite, salirPanel,
     viewImage, closeViewer, logout,
-    installApp, dismissInstall, closeIosSheet, testMail, shareApp, countryChanged, cargarPaisDetectado, editCountryChanged,
+    installApp, dismissInstall, closeIosSheet, testMail, shareApp, consultarPrecio, countryChanged, cargarPaisDetectado, editCountryChanged,
     openTramites, loadTramites, openTramite, openTramiteChat, subirComprobante, avisoDescarga,
     adminFillSubtypes, crearTramite, adminSubirDocumento, adminAprobar, adminRechazar,
     adminBorrarTramite, guardarPagoInfo, cerrarArchivo,
