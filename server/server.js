@@ -2022,7 +2022,9 @@ app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const visits = db.visits.slice(-500);
+  // Las visitas del propio servidor publico no cuentan: interesan las de las personas
+  const visitasReales = db.visits.filter((v) => !v.userId || v.userId !== req.user.id);
+  const visits = visitasReales.slice(-500);
 
   const adminUser = Object.values(db.users).find((u) => u.role === 'admin');
   const conversations = adminUser
@@ -2057,8 +2059,8 @@ app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
       people: users.length,
       conversations: users.reduce((a, u) => a + u.conversations, 0),
       messages: users.reduce((a, u) => a + u.messages, 0),
-      visits: db.visits.length,
-      visitsToday: db.visits.filter((v) => v.ts >= today.getTime()).length
+      visits: visitasReales.length,
+      visitsToday: visitasReales.filter((v) => v.ts >= today.getTime()).length
     },
     byCountry: Object.values(byCountry).sort((a, b) => b.people - a.people),
     users,

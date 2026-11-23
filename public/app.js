@@ -1346,7 +1346,10 @@ const App = (() => {
     if (name === 'tramites' && !adminTramitesData) loadAdminTramites();
   }
 
-  function adminIr(name) { adminTab(name); }
+  function adminIr(name, filtro) {
+    if (filtro) state.adminFilter = filtro;
+    adminTab(name);
+  }
 
   function adminTabCount(key) {
     const conteo = (adminTramitesData && adminTramitesData.porEstado) || {};
@@ -1377,18 +1380,34 @@ const App = (() => {
         <div class="stats" id="adminStats">${adminStatsHtml(d.totals)}</div>
         <div class="panel">
           <h3>Lo que espera por ti</h3>
-          <button class="panel-row tap" onclick="App.adminIr('tramites')">
-            <div class="who"><b>${porConfirmar} pago${porConfirmar === 1 ? '' : 's'} por confirmar</b><small>Revisa el comprobante y confirma la descarga</small></div>
-            <span class="pill ${porConfirmar ? 'hot' : ''}">${porConfirmar ? 'Revisar' : 'Al dia'}</span>
+          <button class="wait-row" onclick="App.adminIr('tramites')">
+            <span class="wait-num${porConfirmar ? ' on' : ''}">${porConfirmar}</span>
+            <span class="wait-txt"><b>Pago${porConfirmar === 1 ? '' : 's'} por confirmar</b><small>Revisa el comprobante y confirma la descarga</small></span>
+            <span class="wait-go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
           </button>
-          <button class="panel-row tap" onclick="App.adminIr('chats')">
-            <div class="who"><b>${sinLeer} mensaje${sinLeer === 1 ? '' : 's'} sin leer</b><small>Conversaciones esperando respuesta</small></div>
-            <span class="pill ${sinLeer ? 'hot' : ''}">${sinLeer ? 'Responder' : 'Al dia'}</span>
+          <button class="wait-row" onclick="App.adminIr('chats')">
+            <span class="wait-num${sinLeer ? ' on' : ''}">${sinLeer}</span>
+            <span class="wait-txt"><b>Mensaje${sinLeer === 1 ? '' : 's'} sin leer</b><small>Conversaciones esperando respuesta</small></span>
+            <span class="wait-go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
           </button>
-          <button class="panel-row tap" onclick="App.adminIr('personas')">
-            <div class="who"><b>${d.totals.people} persona${d.totals.people === 1 ? '' : 's'} registrada${d.totals.people === 1 ? '' : 's'}</b><small>${d.totals.visitsToday} visita${d.totals.visitsToday === 1 ? '' : 's'} hoy al enlace</small></div>
-            <span class="pill">Ver</span>
+          <button class="wait-row" onclick="App.adminIr('personas')">
+            <span class="wait-num${d.totals.people ? ' on' : ''}">${d.totals.people}</span>
+            <span class="wait-txt"><b>Persona${d.totals.people === 1 ? '' : 's'} registrada${d.totals.people === 1 ? '' : 's'}</b><small>${d.totals.visitsToday} visita${d.totals.visitsToday === 1 ? '' : 's'} hoy al enlace</small></span>
+            <span class="wait-go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
           </button>
+        </div>
+        <div class="panel">
+          <h3>Acciones</h3>
+          <div class="quick-grid">
+            <button class="quick" onclick="App.adminIr('tramites','pago_en_revision')"><b>Confirmar pago</b><small>Comprobantes por revisar</small></button>
+            <button class="quick" onclick="App.adminIr('tramites')"><b>Subir documento</b><small>Enviar el PDF a una persona</small></button>
+            <button class="quick" onclick="App.adminIr('ajustes')"><b>Crear tramite</b><small>Para una persona registrada</small></button>
+            <button class="quick" onclick="App.adminIr('chats')"><b>Conversaciones</b><small>Responder mensajes</small></button>
+            <button class="quick" onclick="App.adminIr('personas')"><b>Personas</b><small>Buscar por cedula</small></button>
+            <button class="quick" onclick="App.adminIr('ajustes')"><b>Datos para el pago</b><small>Lo que ve la persona</small></button>
+            <button class="quick" onclick="App.adminIr('ajustes')"><b>Correo de prueba</b><small>Comprobar el envio</small></button>
+            <button class="quick" onclick="App.adminIr('ajustes')"><b>Seguridad</b><small>Intentos de captura</small></button>
+          </div>
         </div>
         <div class="panel">
           <h3>Ultimas visitas</h3>
