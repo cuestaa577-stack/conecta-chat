@@ -10,8 +10,20 @@
   <link rel="icon" href="favicon-32.png?v=60" sizes="32x32" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png?v=60" />
   <link rel="stylesheet" href="styles.css" />
+  <style>
+    /* Pantalla de inicio: texto en negro arriba y el icono debajo */
+    .splash{position:fixed;inset:0;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:9999;transition:opacity .35s ease}
+    .splash.oculto{opacity:0;pointer-events:none}
+    .splash-txt{color:#111;font-weight:800;font-size:clamp(20px,6vw,32px);letter-spacing:.2px;text-align:center;padding:0 16px}
+    .splash-logo{width:min(46vw,210px);height:auto;display:block}
+  </style>
 </head>
 <body>
+
+<div class="splash" id="splashInicio">
+  <div class="splash-txt">Trámites En Línea</div>
+  <img class="splash-logo" src="icon-512.png?v=60" alt="" />
+</div>
 
 <!-- ============================ ACCESO ============================ -->
 <section class="auth" id="authScreen">
@@ -529,5 +541,13 @@
 <script src="pdf-normalize.js"></script>
 <script src="app.js"></script>
 <script src="fileviewer.js"></script>
+<script>
+  (function(){
+    var s = document.getElementById('splashInicio');
+    function ocultar(){ if(!s) return; s.classList.add('oculto'); setTimeout(function(){ s.style.display = 'none'; }, 420); }
+    window.addEventListener('load', function(){ setTimeout(ocultar, 900); });
+    setTimeout(ocultar, 2500);
+  })();
+</script>
 </body>
 </html>
