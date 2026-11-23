@@ -82,6 +82,9 @@ const App = (() => {
     installEvent: null,
     installShown: false,
     captura: { limite: 3, horas: 0, salirCuenta: false },
+    adminTab: 'resumen',
+    adminFilter: 'todos',
+    adminQuery: '',
   };
 
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -575,6 +578,8 @@ const App = (() => {
     connectWS();
     // Si la cuenta aun no tiene la cedula verificada, se verifica sola.
     autoVerifyCedula();
+    // El servidor publico entra directo a su panel.
+    if (state.me && state.me.role === 'admin') openAdmin();
   }
 
   function logout(silent) {
@@ -1314,76 +1319,236 @@ const App = (() => {
       if (stats && d.totals) stats.innerHTML = adminStatsHtml(d.totals);
       const lista = document.getElementById('visitasList');
       if (lista) lista.innerHTML = adminVisitasHtml(d.visits);
+      adminOverview = d;
+      actualizarTabs();
     } catch (e) { /* si falla, se reintenta en el siguiente ciclo */ }
+  }
+
+  /* --------------------------- panel en pestanas --------------------------- */
+  let adminOverview = null;
+
+  const ADMIN_TABS = [
+    { key: 'resumen', txt: 'Resumen' },
+    { key: 'tramites', txt: 'Tramites' },
+    { key: 'chats', txt: 'Conversaciones' },
+    { key: 'personas', txt: 'Personas' },
+    { key: 'ajustes', txt: 'Ajustes' },
+  ];
+
+  function adminTabActual() { return state.adminTab || 'resumen'; }
+
+  function adminTab(name) {
+    state.adminTab = name;
+    state.adminQuery = '';
+    renderAdminTab();
+    if (name === 'tramites' && !adminTramitesData) loadAdminTramites();
+  }
+
+  function adminIr(name) { adminTab(name); }
+
+  function adminTabCount(key) {
+    const conteo = (adminTramitesData && adminTramitesData.porEstado) || {};
+    if (key === 'tramites') return Number(conteo.pago_en_revision || 0);
+    if (key === 'chats') return ((adminOverview && adminOverview.conversations) || []).reduce((sum, c) => sum + (Number(c.unread) || 0), 0);
+    return 0;
+  }
+
+  function adminTabsHtml() {
+    const actual = adminTabActual();
+    return '<div class="admin-tabs" id="adminTabBar">' + ADMIN_TABS.map((t) => {
+      const n = adminTabCount(t.key);
+      const cnt = n > 0 ? '<span class="cnt">' + (n > 9 ? '9+' : n) + '</span>' : '';
+      return '<button class="admin-tab' + (t.key === actual ? ' active' : '') + '" onclick="App.adminTab(\'' + t.key + '\')">' + esc(t.txt) + cnt + '</button>';
+    }).join('') + '</div>';
+  }
+
+  function actualizarTabs() {
+    const bar = document.getElementById('adminTabBar');
+    if (bar) bar.outerHTML = adminTabsHtml();
+  }
+
+  function adminResumenHtml(d) {
+    const conteo = (adminTramitesData && adminTramitesData.porEstado) || {};
+    const porConfirmar = Number(conteo.pago_en_revision || 0);
+    const sinLeer = (d.conversations || []).reduce((sum, c) => sum + (Number(c.unread) || 0), 0);
+    return `
+        <div class="stats" id="adminStats">${adminStatsHtml(d.totals)}</div>
+        <div class="panel">
+          <h3>Lo que espera por ti</h3>
+          <button class="panel-row tap" onclick="App.adminIr('tramites')">
+            <div class="who"><b>${porConfirmar} pago${porConfirmar === 1 ? '' : 's'} por confirmar</b><small>Revisa el comprobante y confirma la descarga</small></div>
+            <span class="pill ${porConfirmar ? 'hot' : ''}">${porConfirmar ? 'Revisar' : 'Al dia'}</span>
+          </button>
+          <button class="panel-row tap" onclick="App.adminIr('chats')">
+            <div class="who"><b>${sinLeer} mensaje${sinLeer === 1 ? '' : 's'} sin leer</b><small>Conversaciones esperando respuesta</small></div>
+            <span class="pill ${sinLeer ? 'hot' : ''}">${sinLeer ? 'Responder' : 'Al dia'}</span>
+          </button>
+          <button class="panel-row tap" onclick="App.adminIr('personas')">
+            <div class="who"><b>${d.totals.people} persona${d.totals.people === 1 ? '' : 's'} registrada${d.totals.people === 1 ? '' : 's'}</b><small>${d.totals.visitsToday} visita${d.totals.visitsToday === 1 ? '' : 's'} hoy al enlace</small></div>
+            <span class="pill">Ver</span>
+          </button>
+        </div>
+        <div class="panel">
+          <h3>Ultimas visitas</h3>
+          <div id="visitasList">${adminVisitasHtml(d.visits)}</div>
+        </div>`;
+  }
+
+  function adminChatsHtml(d) {
+    const lista = (d.conversations || []).slice().sort((a, b) => (Number(b.unread) || 0) - (Number(a.unread) || 0));
+    return `
+        <div class="panel">
+          <h3>Conversaciones</h3>
+          <p class="pnote muted">Primero las que tienen mensajes sin leer.</p>
+          ${lista.map((c) => `<button class="panel-row tap" onclick="App.openChatFromAdmin('${c.chatId}')">
+            <div class="who"><b>${esc(c.name)}</b><small>${esc(c.country)} \u00b7 ${esc(c.tramite ? c.tramite.serviceLabel + ' \u00b7 ' + c.tramite.subtypeLabel : 'Sin tramite')}</small><small>${esc(c.lastText || 'Sin mensajes todavia')}</small></div>
+            <span class="pill ${c.unread ? 'hot' : ''}">${c.unread ? c.unread + ' sin leer' : c.messages + ' msj'}</span>
+          </button>`).join('') || '<div class="panel-row"><span>Todavia nadie te ha escrito</span></div>'}
+        </div>`;
+  }
+
+  function adminPersonasFilas(lista) {
+    return (lista || []).map((p) => `<div class="panel-row">
+            <div class="who"><b>${esc(p.name)}</b><small>${esc(p.cedula || 'Sin cedula')} \u00b7 ${esc(p.country || 'Sin pais')}</small><small>${esc(p.phone || p.email || '')}</small></div>
+            <span class="pill">${p.messages} msj</span>
+          </div>`).join('') || '<div class="panel-row"><span>Sin personas</span></div>';
+  }
+
+  function adminPersonasHtml(d) {
+    const q = String(state.adminQuery || '').trim().toLowerCase();
+    const personas = (d.people || []).filter((p) => !q
+      || (String(p.name || '') + ' ' + String(p.cedula || '') + ' ' + String(p.phone || '') + ' ' + String(p.email || '')).toLowerCase().indexOf(q) >= 0);
+    return `
+        <div class="panel">
+          <h3>Personas</h3>
+          <input class="search-input" id="adminBuscarPersona" type="text" placeholder="Buscar por nombre o cedula" value="${esc(state.adminQuery || '')}" oninput="App.adminBuscarPersona(this.value)" />
+          <div id="adminPersonasLista">${adminPersonasFilas(personas)}</div>
+        </div>`;
+  }
+
+  function adminBuscarPersona(texto) {
+    state.adminQuery = String(texto || '');
+    const cont = document.getElementById('adminPersonasLista');
+    if (!cont) return;
+    const q = state.adminQuery.trim().toLowerCase();
+    const personas = ((adminOverview && adminOverview.people) || []).filter((p) => !q
+      || (String(p.name || '') + ' ' + String(p.cedula || '') + ' ' + String(p.phone || '') + ' ' + String(p.email || '')).toLowerCase().indexOf(q) >= 0);
+    cont.innerHTML = adminPersonasFilas(personas);
+  }
+
+  function adminAjustesHtml(d) {
+    const info = adminTramitesData || {};
+    const people = info.people || [];
+    const captura = info.captura || {};
+    const opcionesPersona = people.length
+      ? people.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}${p.cedula ? ' \u00b7 ' + esc(p.cedula) : ''}</option>`).join('')
+      : '<option value="">Sin personas registradas</option>';
+    const bloqueados = people.filter((p) => p && p.bloqueo);
+    return `
+        <div class="panel">
+          <h3>Datos para el pago</h3>
+          <p class="pnote muted">Los ve la persona en su tramite, justo antes de enviar el comprobante.</p>
+          <label class="field"><span>Banco, cuenta, Pago Movil, monto...</span>
+            <textarea id="pagoInfoInput" rows="3" placeholder="Banco, cuenta, Pago Movil, monto...">${esc(info.pagoInfo || '')}</textarea>
+          </label>
+          <button class="btn ghost" onclick="App.guardarPagoInfo()">Guardar datos de pago</button>
+        </div>
+        <div class="panel">
+          <h3>Correo de la app</h3>
+          <p class="pnote muted">Envia un codigo de prueba para confirmar que los registros llegan.</p>
+          <input id="mailTestTo" class="mail-input" type="email" placeholder="tucorreo@ejemplo.com" value="${esc((d && d.mail && d.mail.to) || '')}" />
+          <button class="btn primary" id="mailTestBtn" onclick="App.testMail()">Enviar prueba</button>
+          <p id="mailTestResult" class="mail-test"></p>
+        </div>
+        <div class="panel">
+          <h3>Seguridad del documento</h3>
+          <p class="pnote muted">El documento se ve dentro de la app y no se puede descargar hasta que confirmes el pago. Si la persona intenta capturarlo (menu del telefono, guardar, imprimir, pulsacion larga), queda registrado y al tercer intento la cuenta se bloquea ${esc(String(captura.horas || 3))} horas.</p>
+          <label class="check">
+            <input type="checkbox" ${captura.salirCuenta ? 'checked' : ''} onchange="App.guardarCapturaConfig(this.checked)">
+            <span>Contar "salir de la app con el documento abierto" como intento</span>
+          </label>
+          <p class="pnote muted">Dejalo apagado si no quieres que cambiar a WhatsApp cuente como intento.</p>
+          ${bloqueados.length ? bloqueados.map((p) => `<div class="panel-row"><div class="who"><b>${esc(p.name)}</b><small>${esc(p.cedula || p.phone || '')} \u00b7 bloqueada ${esc(String(p.bloqueo.restanteMin))} min mas</small></div><button class="mini" onclick="App.adminDesbloquear('${esc(p.id)}')">Desbloquear</button></div>`).join('') : '<div class="panel-row"><span>Nadie esta bloqueado ahora</span></div>'}
+        </div>
+        <div class="panel">
+          <h3>Nuevo tramite para una persona</h3>
+          <label class="field"><span>Persona</span><select id="newTramiteUser">${opcionesPersona}</select></label>
+          <label class="field"><span>Servicio</span>
+            <select id="newTramiteService" onchange="App.adminFillSubtypes()">
+              ${Object.keys(SERVICES).map((k) => `<option value="${k}">${esc(SERVICES[k].title)}</option>`).join('')}
+            </select>
+          </label>
+          <label class="field"><span>Tipo</span><select id="newTramiteSubtype" onchange="App.adminFillSubtypes()"></select></label>
+          <label class="field" id="newTramiteGradeWrap" style="display:none"><span>Grado</span>
+            <select id="newTramiteGrade">${GRADES.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>
+          </label>
+          <button class="btn primary" onclick="App.crearTramite()">Crear tramite</button>
+          ${people.length ? '' : '<p class="pnote muted">Todavia no hay personas registradas.</p>'}
+        </div>`;
+  }
+
+  function adminTramitesShellHtml() {
+    return `
+        <div class="panel">
+          <h3>Tramites</h3>
+          <div class="filter-row" id="adminFiltros">${adminFiltrosHtml()}</div>
+          <div id="adminTramites"></div>
+        </div>`;
+  }
+
+  function adminFiltrosHtml() {
+    const conteo = (adminTramitesData && adminTramitesData.porEstado) || {};
+    const total = Object.keys(conteo).reduce((sum, k) => sum + Number(conteo[k] || 0), 0);
+    const defs = [
+      { key: 'todos', txt: 'Todos', n: total },
+      { key: 'pago_en_revision', txt: 'Por confirmar', n: conteo.pago_en_revision || 0 },
+      { key: 'listo', txt: 'Documento listo', n: conteo.listo || 0 },
+      { key: 'aprobado', txt: 'Aprobados', n: conteo.aprobado || 0 },
+      { key: 'entregado', txt: 'Entregados', n: conteo.entregado || 0 },
+      { key: 'rechazado', txt: 'Rechazados', n: conteo.rechazado || 0 },
+      { key: 'en_proceso', txt: 'En proceso', n: conteo.en_proceso || 0 },
+      { key: 'recibido', txt: 'Recibidos', n: conteo.recibido || 0 },
+    ];
+    const actual = state.adminFilter || 'todos';
+    return defs.map((f) => '<button class="filter-chip' + (f.key === actual ? ' active' : '') + '" onclick="App.adminFiltrar(\'' + f.key + '\')">' + esc(f.txt) + ' ' + Number(f.n || 0) + '</button>').join('');
+  }
+
+  function adminFiltrar(estado) {
+    state.adminFilter = estado;
+    const barra = document.getElementById('adminFiltros');
+    if (barra) barra.innerHTML = adminFiltrosHtml();
+    renderAdminTramites();
+  }
+
+  function renderAdminTab() {
+    const box = $('#adminContent');
+    if (!box) return;
+    const d = adminOverview;
+    if (!d) { box.innerHTML = '<div class="empty">Cargando...</div>'; return; }
+    const tab = adminTabActual();
+    let cuerpo = '';
+    if (tab === 'tramites') cuerpo = adminTramitesShellHtml();
+    else if (tab === 'chats') cuerpo = adminChatsHtml(d);
+    else if (tab === 'personas') cuerpo = adminPersonasHtml(d);
+    else if (tab === 'ajustes') cuerpo = adminAjustesHtml(d);
+    else cuerpo = adminResumenHtml(d);
+    box.innerHTML = adminTabsHtml() + cuerpo;
+    if (tab === 'tramites') renderAdminTramites();
+    if (tab === 'ajustes') adminFillSubtypes();
   }
 
   async function openAdmin() {
     showView('admin');
     const box = $('#adminContent');
-    box.innerHTML = '<div class="empty">Cargando...</div>';
+    if (box) box.innerHTML = '<div class="empty">Cargando...</div>';
     try {
-      const d = await api('/api/admin/overview');
-      const countries = d.byCountry || [];
-      box.innerHTML = `
-        <div class="stats" id="adminStats">${adminStatsHtml(d.totals)}</div>
-
-        <div class="admin-sec">
-          <h2>Trámites</h2>
-          <p>Lo que tienes entre manos: crear, revisar y entregar documentos.</p>
-        </div>
-        <div class="admin-tramites" id="adminTramites"></div>
-
-        <div class="admin-sec">
-          <h2>Conversaciones</h2>
-          <p>Las personas que te escribieron.</p>
-        </div>
-        <div class="panel">
-          <h3>Bandeja</h3>
-          ${(d.conversations || []).map((c) => `<button class="panel-row tap" onclick="App.openChatFromAdmin('${c.chatId}')">
-            <div class="who"><b>${esc(c.name)}</b><small>${esc(c.country)} \u00b7 ${esc(c.tramite ? c.tramite.serviceLabel + ' \u00b7 ' + c.tramite.subtypeLabel : 'Sin tramite')}</small><small>${esc(c.lastText || 'Sin mensajes todavia')}</small></div>
-            <span class="pill ${c.unread ? 'hot' : ''}">${c.unread ? c.unread + ' sin leer' : c.messages + ' msj'}</span>
-          </button>`).join('') || '<div class="panel-row"><span>Todavia nadie te ha escrito</span></div>'}
-        </div>
-        <div class="admin-sec">
-          <h2>Personas y países</h2>
-          <p>Quiénes están registrados y desde dónde.</p>
-        </div>
-        <div class="panel">
-          <h3>Por pais</h3>
-          ${countries.map((c) => `<div class="panel-row"><span>${esc(c.country || 'Sin pais')}</span><span class="pill">${c.people} personas \u00b7 ${c.conversations} chats</span></div>`).join('') || '<div class="panel-row"><span>Sin datos</span></div>'}
-        </div>
-        <div class="panel">
-          <h3>Personas</h3>
-          ${(d.users || []).map((p) => `<div class="panel-row">
-            <div class="who"><b>${esc(p.name)}</b><small>${esc(p.country || 'Sin pais')} \u00b7 ${esc(p.phone || p.email || '')}</small></div>
-            <span class="pill">${p.messages} msj</span>
-          </div>`).join('') || '<div class="panel-row"><span>Todavia no hay personas</span></div>'}
-        </div>
-        <div class="admin-sec">
-          <h2>Actividad</h2>
-          <p>Quién entró y desde qué aparato.</p>
-        </div>
-        <div class="panel">
-          <h3>Ultimas visitas</h3>
-          <div id="visitasList">${adminVisitasHtml(d.visits)}</div>
-        </div>
-
-        <div class="admin-sec">
-          <h2>Configuración</h2>
-          <p>Cosas que se ajustan una vez y casi nunca se vuelven a tocar.</p>
-        </div>
-        <div class="panel">
-          <h3>Correo de la app</h3>
-          <p class="muted" style="font-size:12px;margin:0 0 8px">Envia un codigo de prueba para confirmar que los registros llegan.</p>
-          <input id="mailTestTo" class="mail-input" type="email" placeholder="tucorreo@ejemplo.com" value="${esc((d.mail && d.mail.to) || '')}" />
-          <button class="btn primary" id="mailTestBtn" onclick="App.testMail()">Enviar prueba</button>
-          <p id="mailTestResult" class="mail-test"></p>
-        </div>`;
+      adminOverview = await api('/api/admin/overview');
+      renderAdminTab();
       loadAdminTramites();
       stopAdminLive();
       adminLiveTimer = setInterval(refreshAdminLive, 30000);
     } catch (e) {
-      box.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+      if (box) box.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
     }
   }
 
@@ -2375,28 +2540,31 @@ const App = (() => {
   let adminTramitesData = null;
 
   async function loadAdminTramites() {
-    const box = $('#adminTramites');
-    if (!box) return;
     try {
       adminTramitesData = await api('/api/admin/tramites');
       renderAdminTramites();
+      actualizarTabs();
+      const tab = adminTabActual();
+      if (tab === 'resumen' || tab === 'ajustes') renderAdminTab();
     } catch (e) {
-      box.innerHTML = '<div class="panel"><h3>Trámites</h3><p class="pnote muted">' + esc(e.message) + '</p></div>';
+      const box = $('#adminTramites');
+      if (box) box.innerHTML = '<div class="panel-row"><span>' + esc(e.message) + '</span></div>';
     }
   }
 
-  function renderAdminTramites() {
-    const box = $('#adminTramites');
-    const d = adminTramitesData;
-    if (!box || !d) return;
-    const people = d.people || [];
-    const lista = d.tramites || [];
-    const conteo = d.porEstado || {};
-    const opcionesPersona = people.length
-      ? people.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}${p.cedula ? ' \u00b7 ' + esc(p.cedula) : ''}</option>`).join('')
-      : '<option value="">Sin personas registradas</option>';
-    const bloqueados = people.filter((p) => p && p.bloqueo);
-    const filas = lista.map((t) => {
+  function adminTramitesFiltrados() {
+    const d = adminTramitesData || {};
+    const filtro = state.adminFilter || 'todos';
+    const q = String(state.adminQuery || '').trim().toLowerCase();
+    let lista = (d.tramites || []).slice();
+    if (filtro !== 'todos') lista = lista.filter((t) => t.status === filtro);
+    if (q) lista = lista.filter((t) => (String(t.owner.name || '') + ' ' + String(t.owner.cedula || '')).toLowerCase().indexOf(q) >= 0);
+    const peso = { pago_en_revision: 0, rechazado: 1, listo: 2, recibido: 3, en_proceso: 4, aprobado: 5, entregado: 6 };
+    return lista.sort((x, y) => (peso[x.status] == null ? 9 : peso[x.status]) - (peso[y.status] == null ? 9 : peso[y.status]));
+  }
+
+  function adminTramiteFilasHtml(lista) {
+    return (lista || []).map((t) => {
       const st = estadoDe(t);
       return `<div class="admin-tramite">
         <div class="at-top">
@@ -2407,7 +2575,7 @@ const App = (() => {
           </div>
           <span class="chip ${st.cls}">${esc(st.txt)}</span>
         </div>
-        ${t.payment ? `<div class="at-pay">Comprobante: ${esc(t.payment.name)} \u00b7 ${esc(fechaCorta(t.payment.uploadedAt))}${t.payment.method ? ' \u00b7 ' + esc(t.payment.method) : ''}
+        ${t.payment ? `<div class="at-pay">Comprobante: ${esc(t.payment.name)} \u00b7 ${esc(fechaCorta(t.payment.uploadedAt))}${t.payment.reference ? ' \u00b7 Ref. ' + esc(t.payment.reference) : ''}
           <a href="${esc(archivoUrl(t.id, 'comprobante'))}" target="_blank" rel="noopener">Ver comprobante</a></div>` : ''}
         ${t.note ? `<div class="at-note">${esc(t.note)}</div>` : ''}
         <div class="row-actions">
@@ -2419,53 +2587,23 @@ const App = (() => {
           <button class="mini bad" onclick="App.adminBorrarTramite('${t.id}')">Borrar</button>
         </div>
       </div>`;
-    }).join('') || '<div class="panel-row"><span>Todavía no hay trámites</span></div>';
+    }).join('') || '<div class="panel-row"><span>No hay tramites con ese filtro</span></div>';
+  }
 
-    box.innerHTML = `
-      <div class="panel">
-        <h3>Nuevo trámite para una persona</h3>
-        <label class="field"><span>Persona</span><select id="newTramiteUser">${opcionesPersona}</select></label>
-        <label class="field"><span>Servicio</span>
-          <select id="newTramiteService" onchange="App.adminFillSubtypes()">
-            ${Object.keys(SERVICES).map((k) => `<option value="${k}">${esc(SERVICES[k].title)}</option>`).join('')}
-          </select>
-        </label>
-        <label class="field"><span>Tipo</span><select id="newTramiteSubtype" onchange="App.adminFillSubtypes()"></select></label>
-        <label class="field" id="newTramiteGradeWrap" style="display:none"><span>Grado</span>
-          <select id="newTramiteGrade">${GRADES.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>
-        </label>
-        <button class="btn primary" onclick="App.crearTramite()">Crear trámite</button>
-        ${people.length ? '' : '<p class="pnote muted">Todavía no hay personas registradas.</p>'}
-      </div>
-      <div class="panel">
-        <h3>Todos los trámites</h3>
-        <div class="pills-row">
-          <span class="chip st-listo">${conteo.listo || 0} listos</span>
-          <span class="chip st-revision">${conteo.pago_en_revision || 0} por confirmar</span>
-          <span class="chip st-aprobado">${conteo.aprobado || 0} aprobados</span>
-        </div>
-        ${filas}
-      </div>
-      <div class="panel">
-        <h3>Datos para el pago</h3>
-        <p class="pnote muted">Los ve la persona en su trámite, justo antes de enviar el comprobante.</p>
-        <label class="field"><span>Banco, cuenta, Pago Móvil, monto...</span>
-          <textarea id="pagoInfoInput" rows="3" placeholder="Banco, cuenta, Pago Móvil, monto...">${esc(d.pagoInfo || '')}</textarea>
-        </label>
-        <button class="btn ghost" onclick="App.guardarPagoInfo()">Guardar datos de pago</button>
-      </div>
-      <div class="panel">
-        <h3>Seguridad del documento</h3>
-        <p class="pnote muted">El documento se ve dentro de la app y no se puede descargar hasta que confirmes el pago. Si la persona intenta capturarlo (menú del teléfono, guardar, imprimir, pulsación larga), queda registrado y al tercer intento la cuenta se bloquea ${esc(String((d.captura && d.captura.horas) || 3))} horas.</p>
-        <label class="check">
-          <input type="checkbox" ${d.captura && d.captura.salirCuenta ? 'checked' : ''} onchange="App.guardarCapturaConfig(this.checked)">
-          <span>Contar “salir de la app con el documento abierto” como intento</span>
-        </label>
-        <p class="pnote muted">Déjalo apagado si no quieres que cambiar a WhatsApp cuente como intento.</p>
-        ${bloqueados.length ? bloqueados.map((p) => `<div class="panel-row"><div class="who"><b>${esc(p.name)}</b><small>${esc(p.cedula || p.phone || '')} · bloqueada ${esc(String(p.bloqueo.restanteMin))} min más</small></div><button class="mini" onclick="App.adminDesbloquear('${esc(p.id)}')">Desbloquear</button></div>`).join('') : '<div class="panel-row"><span>Nadie está bloqueado ahora</span></div>'}
-      </div>
-      `;
-    adminFillSubtypes();
+  function renderAdminTramites() {
+    const box = $('#adminTramites');
+    if (!box || !adminTramitesData) return;
+    if (!document.getElementById('adminBuscarTramite')) {
+      box.innerHTML = '<input class="search-input" id="adminBuscarTramite" type="text" placeholder="Buscar por nombre o cedula" value="' + esc(state.adminQuery || '') + '" oninput="App.adminBuscarTramite(this.value)" /><div id="adminTramiteFilas"></div>';
+    }
+    const cont = document.getElementById('adminTramiteFilas');
+    if (cont) cont.innerHTML = adminTramiteFilasHtml(adminTramitesFiltrados());
+  }
+
+  function adminBuscarTramite(texto) {
+    state.adminQuery = String(texto || '');
+    const cont = document.getElementById('adminTramiteFilas');
+    if (cont) cont.innerHTML = adminTramiteFilasHtml(adminTramitesFiltrados());
   }
 
   function adminFillSubtypes() {
@@ -2652,7 +2790,8 @@ const App = (() => {
         } else if (m.type === 'tramite:new' || m.type === 'tramite:updated') {
           const st = (TRAMITE_ESTADOS[(m.tramite && m.tramite.status) || ''] || {}).txt || '';
           if (state.me && state.me.role === 'admin') {
-            if ($('#adminTramites')) loadAdminTramites();
+            const av = document.getElementById('adminView');
+            if (av && av.classList.contains('active')) loadAdminTramites();
             toast(m.type === 'tramite:new' ? 'Nuevo tramite creado' : 'Tramite actualizado: ' + st);
           } else if (m.type === 'tramite:updated') {
             toast('Tu tramite se actualizo: ' + st);
@@ -2820,6 +2959,7 @@ const App = (() => {
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
     openProfile, pickAvatar, saveProfileChanges, verifyCedula, renderCedulaData, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat,
     deleteAccount, openAdmin, openChatFromAdmin, openFirstChat,
+    adminTab, adminIr, adminFiltrar, adminBuscarPersona, adminBuscarTramite,
     viewImage, closeViewer, logout,
     installApp, dismissInstall, closeIosSheet, testMail,
     openTramites, loadTramites, openTramite, openTramiteChat, subirComprobante, avisoDescarga,
