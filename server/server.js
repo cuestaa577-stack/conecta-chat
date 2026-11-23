@@ -220,12 +220,46 @@ const SUPABASE_KEY = cleanEnv(process.env.SUPABASE_KEY);
 const SUPABASE_TABLE = process.env.SUPABASE_TABLE || 'conecta_state';
 const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || 'media';
 const STATE_ID = 'main';
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* Supabase a veces responde "upstream request timeout" (504/500) cuando esta
+   lento o el proyecto estuvo inactivo. En vez de fallar al primer intento,
+   se reintenta con espera creciente: 25s por intento, 3 intentos. */
+async function fetchSupabase(input, init = {}) {
+  const intentos = 3;
+  let ultimoError = null;
+  for (let i = 1; i <= intentos; i++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
+    try {
+      const res = await fetch(input, { ...init, signal: ctrl.signal });
+      clearTimeout(timer);
+      const esTimeout = res.status === 504 || res.status === 500;
+      if (esTimeout && i < intentos) {
+        console.warn('Supabase respondio ' + res.status + '; reintentando (' + i + '/' + intentos + ')...');
+        await esperar(i * 1500);
+        continue;
+      }
+      return res;
+    } catch (e) {
+      clearTimeout(timer);
+      ultimoError = e;
+      if (i < intentos) {
+        console.warn('Supabase no respondio (' + (e.message || e) + '); reintentando (' + i + '/' + intentos + ')...');
+        await esperar(i * 1500);
+      }
+    }
+  }
+  throw ultimoError || new Error('Supabase no respondio');
+}
+
 let supabase = null;
 if (createClient && SUPABASE_URL && SUPABASE_KEY) {
   try {
     supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
       realtime: { transport: require('ws') },
+      global: { fetch: fetchSupabase },
     });
   } catch (e) {
     console.error('[aviso] Supabase no pudo iniciarse:', e.message);
@@ -241,6 +275,7 @@ function explainSupabaseError(msg) {
   if (/row-level security|rls/i.test(m)) return 'La tabla tiene RLS bloqueando el acceso. Usa la secret key (sb_secret_...) en SUPABASE_KEY.';
   if (/permission denied|violat|jwt/i.test(m)) return 'Clave incorrecta: en SUPABASE_KEY va la secret key del proyecto.';
   if (/fetch failed|ENOTFOUND|ECONNREFUSED|getaddrinfo/i.test(m)) return 'No se pudo conectar: revisa SUPABASE_URL (https://xxxx.supabase.co).';
+  if (/upstream request timeout|timeout|ETIMEDOUT|aborted/i.test(m)) return 'Supabase esta lento o el proyecto esta pausado. Revisa en el panel de Supabase que el proyecto este activo (los gratuitos se pausan por inactividad).';
   return '';
 }
 
