@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v4.6';
+  const APP_VERSION = 'v4.7';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -1437,8 +1437,25 @@ const App = (() => {
     if (!state.me) return;
     $('#editEmail').value = state.me.email || '';
     $('#editPhone').value = state.me.phone || '';
-    $('#editCountry').value = state.me.country || 'Venezuela';
+    const pais = state.me.country || 'Venezuela';
+    const enLista = ['Venezuela', 'Chile', 'Ecuador'];
+    $('#editCountry').value = enLista.indexOf(pais) >= 0 ? pais : 'Otro';
+    const otro = $('#editCountryOther');
+    if (otro) otro.value = enLista.indexOf(pais) >= 0 ? '' : pais;
+    editCountryChanged();
     $('#editDataSheet').classList.remove('hidden');
+  }
+
+  function editCountryChanged() {
+    const sel = $('#editCountry');
+    const wrap = $('#editCountryOtherWrap');
+    if (!sel || !wrap) return;
+    const esOtro = sel.value === 'Otro';
+    wrap.classList.toggle('hidden', !esOtro);
+    if (esOtro) {
+      const otro = $('#editCountryOther');
+      if (otro) setTimeout(() => { try { otro.focus(); } catch (e) {} }, 60);
+    }
   }
 
   function closeEditData() { $('#editDataSheet').classList.add('hidden'); }
@@ -1446,7 +1463,9 @@ const App = (() => {
   async function savePersonalData() {
     const email = ($('#editEmail').value || '').trim();
     const phone = ($('#editPhone').value || '').trim();
-    const country = $('#editCountry').value;
+    const selPais = $('#editCountry').value;
+    const country = selPais === 'Otro' ? ($('#editCountryOther').value || '').trim() : selPais;
+    if (!country) return toast('Escribe tu pais');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return toast('Escribe un correo valido');
     if (phone.replace(/\D/g, '').length < 7) return toast('Escribe un numero de celular valido');
     try {
@@ -3181,7 +3200,7 @@ const App = (() => {
     openAdmin, openChatFromAdmin, openFirstChat,
     adminTab, adminIr, adminFiltrar, adminBuscarPersona, adminBuscarTramite, salirPanel,
     viewImage, closeViewer, logout,
-    installApp, dismissInstall, closeIosSheet, testMail, countryChanged, cargarPaisDetectado,
+    installApp, dismissInstall, closeIosSheet, testMail, countryChanged, cargarPaisDetectado, editCountryChanged,
     openTramites, loadTramites, openTramite, openTramiteChat, subirComprobante, avisoDescarga,
     adminFillSubtypes, crearTramite, adminSubirDocumento, adminAprobar, adminRechazar,
     adminBorrarTramite, guardarPagoInfo, cerrarArchivo,

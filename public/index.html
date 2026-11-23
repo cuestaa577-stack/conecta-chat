@@ -438,15 +438,15 @@
       <label class="field"><span>Correo electronico</span><input id="editEmail" type="email" placeholder="tucorreo@ejemplo.com" /></label>
       <label class="field"><span>Numero de celular</span><input id="editPhone" type="tel" inputmode="tel" placeholder="04141234567" /></label>
       <label class="field"><span>Pais donde vives</span>
-        <select id="editCountry">
+        <select id="editCountry" onchange="App.editCountryChanged()">
           <option value="Venezuela">Venezuela</option>
           <option value="Chile">Chile</option>
           <option value="Ecuador">Ecuador</option>
-          <option value="Colombia">Colombia</option>
-          <option value="Peru">Peru</option>
-          <option value="Argentina">Argentina</option>
-          <option value="Otro">Otro</option>
+          <option value="Otro">Otro pais</option>
         </select>
+      </label>
+      <label class="field hidden" id="editCountryOtherWrap"><span>Escribe tu pais</span>
+        <input id="editCountryOther" type="text" placeholder="Nombre del pais" />
       </label>
       <button class="btn primary" onclick="App.savePersonalData()">Guardar cambios</button>
       <button class="btn ghost" onclick="App.closeEditData()">Cancelar</button>
