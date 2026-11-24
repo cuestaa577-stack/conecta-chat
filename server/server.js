@@ -22,7 +22,7 @@ let PDFLib = null;
 try { PDFLib = require('pdf-lib'); } catch (e) { PDFLib = null; }
 const { normalizePdf } = require('../public/pdf-normalize.js');
 
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 8080;
 // Clave que firma las sesiones. Si no viene por variable de entorno, se genera
 // una vez y se guarda en la base de datos, asi las sesiones NO se cierran al
 // reiniciar el servidor.
