@@ -1076,7 +1076,8 @@ const App = (() => {
          de la conversacion es el administrador. */
       const chulo = (other && other.role === 'admin') ? '<span class="verified sm" title="Cuenta verificada"></span>' : '';
       const lm = c.lastMessage;
-      const last = lm ? (lm.type === 'text' ? lm.text : '[' + lm.type + ']') : 'Sin mensajes';
+      const TIPO_TXT = { requisitos_entrega: 'Requisitos enviados', image: 'Foto', video: 'Video', file: 'Archivo', pdf: 'Documento' };
+      const last = lm ? (lm.type === 'text' ? lm.text : (TIPO_TXT[lm.type] || '[' + lm.type + ']')) : 'Sin mensajes';
       const tramite = c.tramite ? `${c.tramite.serviceLabel || ''}${c.tramite.subtypeLabel ? ' \u00b7 ' + c.tramite.subtypeLabel : ''}` : '';
       return `<button class="chat-row" onclick="App.openChat('${c.id}')">
         <div class="avatar" data-avatar="${esc(other && other.avatar ? other.avatar : '')}" data-nombre="${esc(name)}" style="width:46px;height:46px;font-size:16px">${other && other.avatar ? '' : initials(name)}</div>
@@ -1192,6 +1193,17 @@ const App = (() => {
         inner = `<a class="file-link" href="${esc(media(m.url))}" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1 1 0 01-1 1H6a1 1 0 01-1-1V4.5a1 1 0 011-1z"/><path d="M14 3.6V8h4"/></svg>
           <span>${esc(m.text || 'Archivo')}</span></a>`;
+      } else if (m.type === 'requisitos_entrega') {
+        const piezas = [['Foto', m.foto], ['Firma', m.firma], ['Huella', m.huella]]
+          .filter((par) => par[1]);
+        const mini = piezas.map((par) => {
+          const u = esc(media(par[1]));
+          return `<figure><img src="${u}" alt="${par[0]}" onclick="App.viewImage('${u}')" /><figcaption>${par[0]}</figcaption></figure>`;
+        }).join('');
+        inner = `<div class="req-entrega">
+          <div class="req-entrega-h">${esc(m.text || 'Requisitos enviados')}</div>
+          <div class="req-entrega-grid">${mini}</div>
+        </div>`;
       } else inner = esc(m.text || '');
 
       const marca = mine
@@ -3951,7 +3963,113 @@ const App = (() => {
      esta conectado al borde, asi la ropa o el pelo de un color parecido al
      fondo no se borran, y la cara nunca se alcanza. Despues se suaviza el
      contorno para que no quede un recorte duro. */
+  /* ---------------- Recorte real de la persona ---------------- */
+  /* MediaPipe Selfie Segmentation separa a la persona del fondo aunque el
+     fondo tenga textura (ladrillo, cortinas, desorden). Se carga una sola vez,
+     cuando hace falta, y si no hay internet se usa el metodo clasico. */
+  const REQ_SEG = { estado: 'sin', modelo: null };
+
+  async function reqCargarSegmentador() {
+    if (REQ_SEG.estado === 'listo') return REQ_SEG.modelo;
+    if (REQ_SEG.estado === 'cargando') return null;
+    REQ_SEG.estado = 'cargando';
+    try {
+      const base = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+      const vision = await import(base);
+      const fileset = await vision.FilesetResolver.forVisionTasks(base + '/wasm');
+      REQ_SEG.modelo = await vision.ImageSegmenter.createFromOptions(fileset, {
+        baseOptions: {
+          modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite',
+          delegate: 'GPU',
+        },
+        runningMode: 'IMAGE',
+        outputCategoryMask: true,
+        outputConfidenceMasks: false,
+      });
+      REQ_SEG.estado = 'listo';
+      return REQ_SEG.modelo;
+    } catch (e) {
+      REQ_SEG.estado = 'fallo';
+      return null;
+    }
+  }
+
+  /* Pone a la persona sobre blanco puro. Devuelve false si no se pudo. */
+  async function reqFotoSobreBlanco() {
+    const canvas = document.getElementById('reqFotoCanvas');
+    if (!canvas || !REQ.foto) return false;
+    const modelo = await reqCargarSegmentador();
+    if (!modelo) return false;
+
+    const w = canvas.width, h = canvas.height;
+    const res = modelo.segment(canvas);
+    const mask = res.categoryMask;
+    if (!mask) return false;
+    const mw = mask.width, mh = mask.height;
+    const datos = mask.getAsUint8Array();
+
+    /* La mascara viene chica (256x256): se arma como imagen y se escala. */
+    const mcan = document.createElement('canvas');
+    mcan.width = mw; mcan.height = mh;
+    const mctx = mcan.getContext('2d');
+    const mimg = mctx.createImageData(mw, mh);
+    let persona = 0;
+    for (let p = 0; p < mw * mh; p++) {
+      const i = p * 4;
+      const es = datos[p] === 1 || datos[p] === 255;
+      if (es) persona++;
+      mimg.data[i] = 255; mimg.data[i + 1] = 255; mimg.data[i + 2] = 255;
+      mimg.data[i + 3] = es ? 255 : 0;
+    }
+    mctx.putImageData(mimg, 0, 0);
+    try { if (mask.close) mask.close(); } catch (e) {}
+    if (!persona || persona > mw * mh * 0.95) return false;
+
+    /* Recorte: la foto original, con la silueta de la persona. */
+    const recorte = document.createElement('canvas');
+    recorte.width = w; recorte.height = h;
+    const rctx = recorte.getContext('2d');
+    rctx.drawImage(canvas, 0, 0);
+    rctx.globalCompositeOperation = 'destination-in';
+    rctx.drawImage(mcan, 0, 0, mw, mh, 0, 0, w, h);
+
+    /* Fondo blanco solido y la persona encima. */
+    const salida = document.createElement('canvas');
+    salida.width = w; salida.height = h;
+    const sctx = salida.getContext('2d');
+    sctx.fillStyle = '#ffffff';
+    sctx.fillRect(0, 0, w, h);
+    sctx.drawImage(recorte, 0, 0);
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(salida, 0, 0);
+    REQ.foto = canvas.toDataURL('image/jpeg', 0.94);
+    return true;
+  }
+
   async function reqAplicarFondo(silencioso) {
+    const canvas = document.getElementById('reqFotoCanvas');
+    if (!canvas || !REQ.foto) return;
+    const nota = document.getElementById('reqFotoNota');
+    if (nota) nota.textContent = 'Dejando el fondo blanco...';
+
+    /* 1) Recorte real con el modelo. */
+    let listo = false;
+    try { listo = await reqFotoSobreBlanco(); } catch (e) { listo = false; }
+    if (listo) {
+      reqMostrarFotoBlanca();
+      if (nota) nota.textContent = 'Listo: fondo blanco solido detras de ti.';
+      if (!silencioso) toast('Fondo blanco aplicado', 'ok');
+      reqActualizarResumen();
+      return;
+    }
+
+    /* 2) Si el modelo no esta disponible, el metodo clasico. */
+    await reqFondoClasico(silencioso);
+  }
+
+  async function reqFondoClasico(silencioso) {
     const canvas = document.getElementById('reqFotoCanvas');
     if (!canvas || !REQ.foto) return;
     const nota = document.getElementById('reqFotoNota');
@@ -4318,14 +4436,12 @@ const App = (() => {
         esLicencia ? Promise.resolve('') : subir(REQ.firma, 'firma.png'),
         esLicencia ? Promise.resolve('') : subir(REQ.huella, 'huella.png'),
       ]);
-      if (state.ws && state.ws.readyState === 1) {
-        state.ws.send(JSON.stringify({
-          type: 'requisitos:entregar',
-          chatId: state.currentChatId,
-          foto: foto, firma: firma, huella: huella,
-          servicio: REQ.servicio,
-        }));
-      }
+      /* Va por HTTP: la entrega llega al chat del servidor publico aunque el
+         socket este caido o el telefono haya perdido la conexion. */
+      await api('/api/chats/' + encodeURIComponent(state.currentChatId) + '/requisitos', {
+        method: 'POST',
+        body: JSON.stringify({ foto: foto, firma: firma, huella: huella, servicio: REQ.servicio }),
+      });
       cerrarRequisitos();
       toast(esLicencia ? 'Foto 3x4 enviada' : 'Requisitos enviados');
     } catch (e) {
