@@ -858,6 +858,8 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .req-resumen {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin: 14px 0 10px;
 }
+/* Mismo caso que .req-mini: display:grid anula el atributo hidden. */
+.req-resumen[hidden] { display: none !important; }
 .req-mini {
   display: flex; align-items: center; justify-content: space-between;
   padding: 8px 10px; border-radius: 10px; background: #f7fafd; border: 1px solid var(--border);
@@ -865,6 +867,10 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 }
 .req-mini i { font-style: normal; font-weight: 800; font-size: 11px; color: #b9c4d3; }
 .req-mini i.ok { color: #12805c; }
+/* El atributo hidden no basta: .req-mini fija display:flex y lo anula, asi que
+   el resumen mostraba piezas que el tramite no pide (Datos en la cedula,
+   Foto/Firma/Huella en antecedentes). */
+.req-mini[hidden] { display: none !important; }
 .req-enviar { width: 100%; margin-top: 6px; }
 
 /* Modo horizontal: la tarjeta ocupa menos y se ve mas de una */
@@ -1351,8 +1357,13 @@ body.con-actualizacion .view.active { padding-top: 54px; }
 }
 .req-field input:focus { outline: none; border-color: var(--navy); background: #fff; }
 
-/* Marco 3x4 para la foto de la licencia. */
-.req-foto-wrap.foto-3x4 { aspect-ratio: 3 / 4; max-height: 340px; }
+/* Marco 3x4 para la foto de la licencia. Se fija la ALTURA y se deja que el
+   ancho salga del ratio: con width:100% y max-height el marco se aplastaba y
+   dejaba de ser 3x4. */
+.req-foto-wrap.foto-3x4 {
+  aspect-ratio: 3 / 4; width: auto; height: 300px; max-height: none;
+  margin: 0 auto;
+}
 .req-foto-wrap.foto-3x4 video, .req-foto-wrap.foto-3x4 .req-foto-canvas { object-fit: cover; }
 
 /* La huella se pinta en tinta negra: el fondo se deja claro para que el
