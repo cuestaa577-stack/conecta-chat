@@ -983,6 +983,17 @@ const App = (() => {
     renderFlow();
   }
 
+  /* Texto que explica como sigue el trámite, según el servicio. */
+  function notaDelTramite(servicio) {
+    const base = 'Al continuar se abre el chat con un gestor de trámites, el cual te enviará los requisitos y el paso a paso. '
+      + 'En los requisitos podrás tomarte la foto nueva, colocar tu firma y colocar tu huella; le das enviar y el gestor avanzará con el proceso. '
+      + 'En el tiempo estimado te llegará una notificación cuando el documento esté listo y, una vez se apruebe tu pago, podrás descargar tu documento, imprimirlo y plastificarlo. ';
+    if (servicio === 'licencia') {
+      return base + 'El documento lo puedes imprimir en papel bond o en plástico PVC.';
+    }
+    return base + 'El documento se debe imprimir en papel opalina.';
+  }
+
   function flowSummary() {
     const svc = state.flowSteps[0].service;
     const opt = state.flowSteps.find((s) => s.k === 'option');
@@ -1089,7 +1100,7 @@ const App = (() => {
           <p class="consulta-txt">El valor de este tramite depende del pais donde vives. Consultalo con un servidor publico y te responde al momento.</p>
           <button class="btn primary" onclick="App.consultarPrecio()">Consultar precio</button>
         </div>` : ''}
-        <p class="summary-note">Al continuar se abre el chat con un servidor publico, que te envia los requisitos, el costo y el paso a paso de tu caso.</p>
+        <p class="summary-note">${esc(notaDelTramite(s.service))}</p>
       </div>
       <button class="btn primary" onclick="App.startChat()">Continuar por el chat</button>`;
   }
