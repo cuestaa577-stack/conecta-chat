@@ -1,3 +1,6 @@
 node_modules/
 data/
+.testdata/
+.env
+__pycache__/
 *.log
