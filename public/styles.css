@@ -788,6 +788,12 @@ body.has-install #chatMessages { padding-bottom: 96px; }
   align-items: center; justify-content: center; gap: 7px; color: #8b9ab1; font-size: 12.5px;
 }
 .req-foto-vacio svg { width: 38px; height: 38px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.req-foto-par { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.req-foto-par .req-foto-wrap { max-height: 300px; }
+.req-foto-resultado { background: #fff; }
+.req-foto-blanca { width: 100%; height: 100%; object-fit: cover; display: block; background: #fff; }
+.req-foto-blanca[hidden] { display: none; }
+.req-foto-vacio span { text-align: center; padding: 0 6px; }
 
 /* Firma: el lienzo llena el recuadro y el trazo queda fijo donde se pinta */
 .req-firma-wrap {
