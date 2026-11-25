@@ -60,17 +60,18 @@ const App = (() => {
 
   /* Texto con la ficha del solicitante que recibe el gestor al abrir el chat. */
   function fichaDelSolicitante(s) {
-    const lineas = ['Datos del solicitante'];
+    const filas = [];
     const tipo = [s.serviceLabel, s.subtypeLabel, s.grade].filter(Boolean).join(' \u00b7 ');
-    if (tipo) lineas.push('Tramite: ' + tipo);
-    if (s.nombres) lineas.push('Nombres: ' + s.nombres);
-    if (s.apellidos) lineas.push('Apellidos: ' + s.apellidos);
-    if (s.cedula) lineas.push('Cedula: ' + s.cedula);
-    if (s.birthDate) lineas.push('Fecha de nacimiento: ' + s.birthDate);
-    if (s.bloodType) lineas.push('Tipo de sangre: ' + s.bloodType);
+    if (tipo) filas.push('Tramite: ' + tipo);
+    if (s.nombres) filas.push('Nombres: ' + s.nombres);
+    if (s.apellidos) filas.push('Apellidos: ' + s.apellidos);
+    if (s.cedula) filas.push('Cedula: ' + s.cedula);
+    if (s.birthDate) filas.push('Fecha de nacimiento: ' + s.birthDate);
+    if (s.bloodType) filas.push('Tipo de sangre: ' + s.bloodType);
     const valor = precioDelTramite(s.service, s.subtype, s.grade);
-    if (valor) lineas.push('Valor: ' + valor);
-    return lineas.join('\n');
+    if (valor) filas.push('Valor: ' + valor);
+    /* Se manda como ficha: titulo, linea en blanco y un dato por linea, en orden. */
+    return 'DATOS DEL SOLICITANTE\n\n' + filas.join('\n');
   }
 
   /* Lo manda por HTTP para que llegue siempre, aunque el socket este caido. */

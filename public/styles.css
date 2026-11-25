@@ -403,6 +403,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .bubble {
   max-width: 79%; padding: 9px 13px 6px; border-radius: 18px; font-size: 14.6px; line-height: 1.45;
   word-wrap: break-word; position: relative; animation: bubbleIn .16s ease-out;
+  white-space: pre-wrap;
 }
 .bubble.mine {
   background: linear-gradient(135deg, #1f5f9e, #2f79bb); color: #fff;
