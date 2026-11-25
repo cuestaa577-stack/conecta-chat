@@ -1316,3 +1316,14 @@ body.con-actualizacion .view.active { padding-top: 54px; }
 /* La huella se pinta en tinta negra: el fondo se deja claro para que el
    trazo negro se lea como una huella entintada sobre papel. */
 .req-huella-canvas { background: #fff; border-radius: 50%; }
+
+/* Formulario de datos del tramite y tipos de sangre */
+.form-datos { display: flex; flex-direction: column; gap: 10px; }
+.blood-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
+.blood-chip {
+  padding: 11px 4px; border: 1.5px solid var(--border, #e2e6ee); background: var(--card, #fff);
+  border-radius: 11px; font: inherit; font-size: 14px; font-weight: 700; color: var(--navy, #0b1b3a);
+  cursor: pointer; transition: background .15s, border-color .15s, color .15s;
+}
+.blood-chip.on { background: var(--blue, #0b5cd5); border-color: var(--blue, #0b5cd5); color: #fff; }
+.blood-chip:active { transform: scale(.97); }

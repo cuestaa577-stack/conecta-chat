@@ -70,7 +70,17 @@ const App = (() => {
       });
       await loadChats();
       state.viewStack = ['homeView'];
-      openChat(data.chat.id, false);
+      await openChat(data.chat.id, false);
+      /* Los datos del formulario llegan al servidor publico como primer mensaje. */
+      if (s.nombres || s.cedula) {
+        const lineas = ['Datos del solicitante'];
+        if (s.nombres) lineas.push('Nombres: ' + s.nombres);
+        if (s.apellidos) lineas.push('Apellidos: ' + s.apellidos);
+        if (s.cedula) lineas.push('Cedula: ' + s.cedula);
+        if (s.birthDate) lineas.push('Fecha de nacimiento: ' + s.birthDate);
+        if (s.bloodType) lineas.push('Tipo de sangre: ' + s.bloodType);
+        sendMessage({ type: 'text', text: lineas.join('\n') });
+      }
       setTimeout(() => {
         const caja = $('#chatText');
         if (caja) {
@@ -114,6 +124,9 @@ const App = (() => {
   };
 
   const GRADES = ['Grado 2\u00b0', 'Grado 3\u00b0', 'Grado 4\u00b0', 'Grado 5\u00b0'];
+
+  /* Tipos de sangre: la licencia de conducir los pide. */
+  const BLOOD_TYPES = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'];
 
   /* Metodos de pago por pais.
      ---------------------------------------------------------------------
@@ -918,11 +931,55 @@ const App = (() => {
     const svc = state.flowSteps[0].service;
     const opt = SERVICES[svc].options.find((o) => o.key === key);
     state.flowSteps.push({ k: 'option', service: svc, subtype: key, label: opt ? opt.label : key, grades: !!(opt && opt.grades) });
+    /* Si el tramite tiene grados, primero se elige el grado y luego los datos. */
+    if (!(opt && opt.grades)) { state.flowSteps.push({ k: 'datos' }); cargarDatosDelPerfil(); }
     renderFlow();
   }
 
   function pickGrade(grade) {
     state.flowSteps.push({ k: 'grade', grade });
+    state.flowSteps.push({ k: 'datos' });
+    cargarDatosDelPerfil();
+    renderFlow();
+  }
+
+  /* Los datos del formulario arrancan con lo que ya tiene la cuenta. */
+  function cargarDatosDelPerfil() {
+    if (state.flowDatos && state.flowDatos.nombres) return;
+    const yo = state.me || {};
+    state.flowDatos = {
+      nombres: state.flowDatos && state.flowDatos.nombres ? state.flowDatos.nombres : (yo.nombres || ''),
+      apellidos: state.flowDatos && state.flowDatos.apellidos ? state.flowDatos.apellidos : (yo.apellidos || ''),
+      cedula: (state.flowDatos && state.flowDatos.cedula) || yo.cedula || '',
+      birthDate: (state.flowDatos && state.flowDatos.birthDate) || yo.birthDate || '',
+      bloodType: (state.flowDatos && state.flowDatos.bloodType) || yo.bloodType || '',
+    };
+  }
+
+  function pickBlood(tipo) {
+    if (!state.flowDatos) state.flowDatos = {};
+    state.flowDatos.bloodType = tipo;
+    const grid = $('#bloodGrid');
+    if (!grid) return;
+    Array.prototype.forEach.call(grid.querySelectorAll('.blood-chip'), (b) => {
+      b.classList.toggle('on', b.getAttribute('data-tipo') === tipo);
+    });
+  }
+
+  /* Guarda el formulario y pasa al resumen. */
+  function guardarDatosFlow() {
+    const nombres = (($('#datNombres') || {}).value || '').trim();
+    const apellidos = (($('#datApellidos') || {}).value || '').trim();
+    const cedula = cedulaText((($('#datCedula') || {}).value || ''));
+    const birthDate = (($('#datBirth') || {}).value || '').trim();
+    const svc = state.flowSteps[0].service;
+    if (nombres.length < 2) return toast('Escribe tus nombres completos');
+    if (apellidos.length < 2) return toast('Escribe tus apellidos completos');
+    if (!cedulaOk(cedula)) return toast('Escribe tu cedula, por ejemplo V-12345678');
+    if (!birthDate) return toast('Elige tu fecha de nacimiento');
+    if (svc === 'licencia' && !(state.flowDatos && state.flowDatos.bloodType)) return toast('Elige tu tipo de sangre');
+    state.flowDatos = Object.assign({}, state.flowDatos, { nombres: nombres, apellidos: apellidos, cedula: cedula, birthDate: birthDate });
+    state.flowSteps.push({ k: 'resumen' });
     renderFlow();
   }
 
@@ -930,12 +987,18 @@ const App = (() => {
     const svc = state.flowSteps[0].service;
     const opt = state.flowSteps.find((s) => s.k === 'option');
     const grade = state.flowSteps.find((s) => s.k === 'grade');
+    const d = state.flowDatos || {};
     return {
       service: svc,
       serviceLabel: SERVICES[svc].title,
       subtype: opt ? opt.subtype : '',
       subtypeLabel: opt ? opt.label : '',
       grade: grade ? grade.grade : '',
+      nombres: d.nombres || '',
+      apellidos: d.apellidos || '',
+      cedula: d.cedula || '',
+      birthDate: d.birthDate || '',
+      bloodType: d.bloodType || '',
     };
   }
 
@@ -983,6 +1046,29 @@ const App = (() => {
       return;
     }
 
+    if (step.k === 'datos') {
+      const d = state.flowDatos || {};
+      const conSangre = svc === 'licencia';
+      title.textContent = svcDef.title;
+      sub.textContent = 'Tus datos';
+      wrap.innerHTML = `
+        <div class="flow-head"><h2>Tus datos personales</h2><p>Con esto se prepara tu tramite.</p></div>
+        <div class="form-datos">
+          <label class="field"><span>Nombres completos</span><input id="datNombres" type="text" autocomplete="given-name" autocapitalize="words" value="${esc(d.nombres || '')}" placeholder="Tus nombres" /></label>
+          <label class="field"><span>Apellidos completos</span><input id="datApellidos" type="text" autocomplete="family-name" autocapitalize="words" value="${esc(d.apellidos || '')}" placeholder="Tus apellidos" /></label>
+          <label class="field"><span>Numero de cedula</span><input id="datCedula" type="text" inputmode="numeric" autocomplete="off" value="${esc(d.cedula || '')}" placeholder="V-12345678" /></label>
+          <label class="field"><span>Fecha de nacimiento</span><input id="datBirth" type="date" autocomplete="bday" value="${esc(d.birthDate || '')}" /></label>
+          ${conSangre ? `<div class="field"><span>Tipo de sangre</span>
+            <div class="blood-grid" id="bloodGrid">
+              ${BLOOD_TYPES.map((t) => `<button type="button" class="blood-chip${d.bloodType === t ? ' on' : ''}" data-tipo="${esc(t)}" onclick="App.pickBlood('${esc(t)}')">${esc(t)}</button>`).join('')}
+            </div>
+            <small class="field-hint">Toca el tipo de sangre que aparece en tu cedula o en tu carnet.</small>
+          </div>` : ''}
+          <button class="btn primary" onclick="App.guardarDatosFlow()">Guardar y continuar</button>
+        </div>`;
+      return;
+    }
+
     // resumen final
     const s = flowSummary();
     title.textContent = svcDef.title;
@@ -993,6 +1079,11 @@ const App = (() => {
         <h3>${esc(s.serviceLabel)}</h3>
         <div class="summary-row"><span>Tramite</span><span>${esc(s.subtypeLabel)}</span></div>
         ${s.grade ? `<div class="summary-row"><span>Grado</span><span>${esc(s.grade)}</span></div>` : ''}
+        ${s.nombres ? `<div class="summary-row"><span>Nombres</span><span>${esc(s.nombres)}</span></div>` : ''}
+        ${s.apellidos ? `<div class="summary-row"><span>Apellidos</span><span>${esc(s.apellidos)}</span></div>` : ''}
+        ${s.cedula ? `<div class="summary-row"><span>Cedula</span><span>${esc(s.cedula)}</span></div>` : ''}
+        ${s.birthDate ? `<div class="summary-row"><span>Fecha de nacimiento</span><span>${esc(s.birthDate)}</span></div>` : ''}
+        ${s.bloodType ? `<div class="summary-row"><span>Tipo de sangre</span><span>${esc(s.bloodType)}</span></div>` : ''}
         ${precioDelTramite(s.service, s.subtype, s.grade) ? `<div class="summary-row"><span>Valor</span><span class="valor-tramite">${esc(precioDelTramite(s.service, s.subtype, s.grade))}</span></div>` : ''}
         ${!precioDelTramite(s.service, s.subtype, s.grade) ? `<div class="consulta-precio">
           <p class="consulta-txt">El valor de este tramite depende del pais donde vives. Consultalo con un servidor publico y te responde al momento.</p>
@@ -4682,7 +4773,7 @@ const App = (() => {
   return {
     authTab, submitLogin, submitRegister, sendForgot, submitReset, submitCode, resendReset,
     submitVerify, resendVerify, showAdminAuth, submitAdminLogin,
-    back, pickService, pickOption, pickGrade, startChat,
+    back, pickService, pickOption, pickGrade, pickBlood, guardarDatosFlow, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
     openProfile, pickAvatar, saveProfileChanges, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat,
     openAdmin, openChatFromAdmin, openFirstChat,
