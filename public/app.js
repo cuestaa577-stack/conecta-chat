@@ -1268,7 +1268,14 @@ const App = (() => {
   async function openChat(chatId, remember = true) {
     try { localStorage.setItem('tve_chat', chatId); localStorage.setItem('tve_vista', 'chat'); } catch (e) {}
     state.currentChatId = chatId;
-    const chat = state.chats.find((c) => c.id === chatId);
+    /* Si el chat no esta en la lista en memoria (por ejemplo, se abrio desde
+       el panel del servidor publico antes de que cargara la lista), se pide
+       la lista otra vez antes de pintar: antes se abria en blanco. */
+    let chat = state.chats.find((c) => c.id === chatId);
+    if (!chat) {
+      await loadChats();
+      chat = state.chats.find((c) => c.id === chatId);
+    }
     const other = otherOf(chat);
     const title = state.me.role === 'admin' ? (other ? other.name : 'Persona') : 'Servidor publico';
     $('#chatTitle').textContent = title;
@@ -2249,7 +2256,6 @@ const App = (() => {
     await loadChats();
     await openChat(chatId);
   }
-
   /* ------------------------------ mis tramites ------------------------------ */
   /* Flujo: recibido -> en_proceso -> listo (vista previa) -> pago_en_revision
      -> aprobado (descarga habilitada) / rechazado (reenviar comprobante). */
@@ -2324,6 +2330,7 @@ const App = (() => {
     const porAtender = (state.tramites || []).filter((t) =>
       t && (t.status === 'listo' || t.status === 'rechazado' || t.status === 'aprobado')).length;
     setBadge('tramitesBadge', porAtender);
+    setBadge('tramitesBadgeTop', porAtender);
   }
 
   /* Texto de la tarjeta de la portada: dice cuántos trámites esperan algo de la persona */
@@ -3589,6 +3596,12 @@ const App = (() => {
           else list.push(msg);
           if (msg.chatId === state.currentChatId) { renderMessages(); markRead(msg.chatId); }
           if (msg.senderId !== (state.me && state.me.id) && !document.hidden) pitido();
+          /* El contador del icono se actualiza al instante, sin esperar a que
+             termine la recarga de la lista. */
+          if (msg.senderId !== (state.me && state.me.id) && msg.chatId !== state.currentChatId) {
+            const c = (state.chats || []).find((x) => x && x.id === msg.chatId);
+            if (c) { c.unread = (Number(c.unread) || 0) + 1; pintarBadges(); }
+          }
           loadChats();
         } else if (m.type === 'presence') {
           /* Se conecto o se desconecto: se actualiza la conversacion y la
@@ -3959,6 +3972,7 @@ const App = (() => {
     firmaTrazo: false,
     huellaTimer: null,
     huellaProg: 0,
+    camara: 'user',
   };
 
   const REQ_SERVICIOS = {
@@ -4136,7 +4150,7 @@ const App = (() => {
     reqApagarCamara();
   }
 
-  /* ---------------- 1. Foto: camara y fondo blanco ---------------- */
+  /* ---------------- 1. Foto: camara (frontal o trasera) ---------------- */
   async function reqEncenderCamara() {
     const video = document.getElementById('reqVideo');
     const nota = document.getElementById('reqFotoNota');
@@ -4144,9 +4158,11 @@ const App = (() => {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Este navegador no permite la camara. Usa Chrome o Safari actualizado.');
       }
-      /* Camara frontal: es la que sirve para una foto de documento personal. */
+      /* Se abre la camara frontal por defecto; el boton "Voltear camara"
+         alterna a la trasera y viceversa. */
+      if (!REQ.camara) REQ.camara = 'user';
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 1280 } },
+        video: { facingMode: REQ.camara, width: { ideal: 1280 }, height: { ideal: 1280 } },
         audio: false,
       });
       REQ.stream = stream;
@@ -4156,6 +4172,8 @@ const App = (() => {
       await video.play().catch(() => {});
       document.getElementById('reqBtnCamara').classList.add('hidden');
       document.getElementById('reqBtnTomar').classList.remove('hidden');
+      const btnVoltear = document.getElementById('reqBtnFondo');
+      if (btnVoltear) btnVoltear.classList.remove('hidden');
       const vacio = document.getElementById('reqFotoVacio');
       if (vacio) vacio.classList.add('hidden');
       if (nota) nota.textContent = 'Encuadra tu cara y pulsa Tomar foto.';
@@ -4165,17 +4183,29 @@ const App = (() => {
     }
   }
 
-  function reqApagarCamara() {
+  /* Alterna entre la camara frontal y la trasera sin cerrar la hoja. */
+  async function reqVoltearCamara() {
+    REQ.camara = REQ.camara === 'environment' ? 'user' : 'environment';
+    const nota = document.getElementById('reqFotoNota');
+    if (nota) nota.textContent = REQ.camara === 'environment' ? 'Camara trasera. Encuadra y pulsa Tomar foto.' : 'Camara frontal. Encuadra tu cara y pulsa Tomar foto.';
+    reqApagarCamara(true);
+    await reqEncenderCamara();
+  }
+
+  function reqApagarCamara(mantenerBotones) {
     if (REQ.stream) {
       try { REQ.stream.getTracks().forEach((t) => t.stop()); } catch (e) {}
       REQ.stream = null;
     }
     const v = document.getElementById('reqVideo');
     if (v) { v.srcObject = null; v.hidden = true; }
+    if (mantenerBotones) return;
     const b1 = document.getElementById('reqBtnCamara');
     const b2 = document.getElementById('reqBtnTomar');
+    const b3 = document.getElementById('reqBtnFondo');
     if (b1) b1.classList.remove('hidden');
     if (b2) b2.classList.add('hidden');
+    if (b3) b3.classList.add('hidden');
   }
 
   /* Muestra la foto ya recortada en el recuadro blanco de la derecha. */
@@ -4217,7 +4247,6 @@ const App = (() => {
     const vacio = document.getElementById('reqFotoVacio');
     if (vacio) vacio.classList.remove('hidden');
     REQ.foto = canvas.toDataURL('image/jpeg', 0.9);
-    document.getElementById('reqBtnFondo').classList.remove('hidden');
     if (nota) nota.textContent = 'Foto tomada. Dejando el fondo blanco...';
     /* El recuadro de la derecha se pone blanco de una vez, con el aviso,
        mientras se calcula el recorte. */
@@ -4570,7 +4599,10 @@ const App = (() => {
     if (!c) return;
     if (!c.dataset.listo) {
       const zona = document.getElementById('reqHuellaZona');
-      const lado = zona ? Math.min(zona.clientWidth, 250) : 230;
+      /* Si la zona aun no tiene ancho (pane recien mostrado), se usa 250 px:
+         con 0 el canvas quedaba de 0x0 y no se veia NADA al apoyar el dedo. */
+      const medido = zona ? zona.clientWidth : 0;
+      const lado = Math.max(180, Math.min(medido || 250, 250));
       c.width = Math.round(lado * 2);
       c.height = Math.round(lado * 2);
       c.style.width = lado + 'px';
@@ -4603,58 +4635,60 @@ const App = (() => {
       return { x: (p.clientX - r.left) * (c.width / r.width), y: (p.clientY - r.top) * (c.height / r.height) };
     };
 
-    /* Dibuja la huella a partir del trazo: se toman los puntos que hizo la
-       persona, se centran en el circulo y se pintan crestas concentricas que
-       siguen ESA forma. Asi la huella sale de su dedo y no de una imagen fija. */
+    /* Dibuja una huella legible: crestas concentricas (como una impresion
+       entintada) cuyo centro y orientacion salen del recorrido REAL del dedo.
+       Antes se encogia el trazo capa por capa y, al ser un garabato, salian
+       lineas cruzadas que no parecian una huella. */
     const pintar = () => {
       ctx.clearRect(0, 0, c.width, c.height);
-      if (puntos.length < 3) return;
       const cx = c.width / 2, cy = c.height / 2;
       const radio = c.width * 0.42;
 
-      /* Centro y tamano del trazo real. */
-      let sx = 0, sy = 0;
-      puntos.forEach((p) => { sx += p.x; sy += p.y; });
-      const mx = sx / puntos.length, my = sy / puntos.length;
-      let maxR = 0;
-      puntos.forEach((p) => { maxR = Math.max(maxR, Math.hypot(p.x - mx, p.y - my)); });
-      const escala = maxR > 1 ? (radio * 0.9) / maxR : 1;
+      /* Centro real del trazo (si hay pocos puntos, el centro del circulo). */
+      let mx = cx, my = cy, giro = 0;
+      if (puntos.length >= 2) {
+        let sx = 0, sy = 0;
+        puntos.forEach((p) => { sx += p.x; sy += p.y; });
+        mx = sx / puntos.length;
+        my = sy / puntos.length;
+        /* Orientacion: del primer al ultimo punto del recorrido. */
+        const a = puntos[0], b = puntos[puntos.length - 1];
+        giro = Math.atan2(b.y - a.y, b.x - a.x) || 0;
+        /* Se limita el desplazamiento para que la huella no se salga. */
+        const dx = mx - cx, dy = my - cy;
+        const d = Math.hypot(dx, dy);
+        const tope = radio * 0.18;
+        if (d > tope) { mx = cx + (dx / d) * tope; my = cy + (dy / d) * tope; }
+      }
 
-      /* Puntos normalizados: centrados en el circulo y a escala. */
-      const base = puntos.map((p) => ({
-        x: cx + (p.x - mx) * escala,
-        y: cy + (p.y - my) * escala,
-      }));
-
-      /* Crestas: la misma forma encogida hacia el centro, capa por capa, con
-         cortes para que se lea como una impresion entintada y no como un
-         contorno cerrado. */
-      const capas = 10;
       ctx.save();
       ctx.strokeStyle = '#111111';
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      for (let k = 0; k < capas; k++) {
-        const f = 1 - k * (0.88 / capas);
-        ctx.globalAlpha = 0.95 - k * 0.035;
-        ctx.lineWidth = Math.max(1.2, c.width * 0.0065);
+      ctx.lineWidth = Math.max(1.4, c.width * 0.0075);
+
+      /* Crestas: anillos elipticos desde el nucleo hasta el borde. */
+      const anillos = 13;
+      for (let k = 0; k < anillos; k++) {
+        const t = (k + 1) / anillos;
+        const rx = radio * (0.10 + 0.86 * t);
+        const ry = rx * (0.86 + 0.10 * Math.sin(t * 3.1));
+        ctx.globalAlpha = 0.95 - t * 0.18;
         ctx.beginPath();
-        let trazando = false;
-        base.forEach((p, i) => {
-          const x = cx + (p.x - cx) * f;
-          const y = cy + (p.y - cy) * f;
-          /* Corte de cresta: deja huecos como en una huella real. */
-          if ((i + k * 3) % 9 === 0) { trazando = false; return; }
-          if (!trazando) { ctx.moveTo(x, y); trazando = true; }
-          else ctx.lineTo(x, y);
-        });
+        /* Arco con huecos: se dibuja por tramos para que se lea como huella. */
+        const tramos = 7;
+        for (let s = 0; s < tramos; s++) {
+          const a0 = giro + (s / tramos) * Math.PI * 2 + k * 0.12;
+          const a1 = a0 + (Math.PI * 2 / tramos) * 0.72;
+          ctx.ellipse(mx, my, rx, ry, giro * 0.35, a0, a1);
+        }
         ctx.stroke();
       }
+
       /* Nucleo del pulgar. */
-      ctx.globalAlpha = 0.92;
-      ctx.lineWidth = Math.max(1.2, c.width * 0.0065);
+      ctx.globalAlpha = 0.95;
       ctx.beginPath();
-      ctx.arc(cx, cy, radio * 0.11, 0.5, 5.3);
+      ctx.ellipse(mx, my, radio * 0.09, radio * 0.075, giro * 0.35, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
 
@@ -4666,8 +4700,8 @@ const App = (() => {
        un toque, hay que rodar el pulgar. */
     const avance = () => {
       const radio = c.width * 0.42;
-      const porTiempo = Math.min(1, (Date.now() - inicio) / 1200);
-      const porTrazo = Math.min(1, recorrido / (radio * 0.85));
+      const porTiempo = Math.min(1, (Date.now() - inicio) / 900);
+      const porTrazo = Math.min(1, recorrido / (radio * 0.55));
       return Math.min(porTiempo, porTrazo) * 100;
     };
 
@@ -4723,9 +4757,9 @@ const App = (() => {
       pintar();
       /* Si el dedo se va del circulo, se reinicia: no vale una huella falsa. */
       const r = c.getBoundingClientRect();
-      const dx = (p.x / (c.width / r.width)) - r.width / 2;
-      const dy = (p.y / (c.height / r.height)) - r.height / 2;
-      if (Math.hypot(dx, dy) > r.width * 0.46) {
+      const dx = p.x - c.width / 2;
+      const dy = p.y - c.height / 2;
+      if (Math.hypot(dx, dy) > c.width * 0.5) {
         REQ.huellaProg = 0;
         if (prog) prog.style.width = '0%';
         if (nota) nota.textContent = 'Se salio del circulo. Apoya otra vez el pulgar derecho.';
@@ -4869,18 +4903,13 @@ const App = (() => {
     const chat = (state.chats || []).find((c) => c && c.id === state.currentChatId);
     const on = !!(chat && chat.requisitos && chat.requisitos.habilitado);
     const soyAdmin = state.me && state.me.role === 'admin';
-    /* El tramite del chat sirve de respaldo: si el servidor publico todavia no
-       pulso "Enviar requisitos", la persona igual ve el boton y puede hacer su
-       foto, su firma y su huella. Antes el boton dependia SOLO del envio del
-       servidor publico y, si no lo enviaba, la persona no veia nada. */
+    /* La persona SOLO ve los requisitos cuando el servidor publico se los
+       envia en esa conversacion. Antes bastaba con que el chat fuera directo
+       para que el boton apareciera siempre, aunque el administrador no los
+       hubiera enviado. */
     const delTramite = (chat && chat.tramite && chat.tramite.service) || '';
     REQ.servicio = (chat && chat.requisitos && chat.requisitos.servicio) || delTramite || '';
-    /* En una conversacion directa con el servidor publico el boton SIEMPRE
-       esta disponible para la persona; al servidor publico no se le muestra
-       porque es el quien envia los requisitos. */
-    const esDirecto = !!(chat && chat.type === 'direct');
-    const disponible = on || esDirecto;
-    reqVisible(disponible && !soyAdmin);
+    reqVisible(on && !soyAdmin);
     /* El boton de enviar requisitos es solo del servidor publico. */
     const bAdmin = document.getElementById('reqAdminBtn');
     if (bAdmin) bAdmin.classList.toggle('hidden', !soyAdmin);
@@ -5008,7 +5037,7 @@ const App = (() => {
     actualizarApp, comprobarVersionPublicada,
     enviarReferencia, modAprobar, modBorrar, modDesmarcar, cargarModeracion,
     abrirRequisitos, cerrarRequisitos, reqPaso, reqEncenderCamara, reqTomarFoto,
-    reqAplicarFondo, reqBorrarFirma, reqEnviar,
+    reqAplicarFondo, reqBorrarFirma, reqEnviar, reqVoltearCamara,
     abrirMenuRequisitos, cerrarMenuRequisitos, enviarRequisitosChat, quitarRequisitosChat,
   };
 })();

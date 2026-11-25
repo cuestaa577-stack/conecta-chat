@@ -1773,9 +1773,21 @@ function chatView(chat, forUserId) {
   };
 }
 
+/* Un chat pertenece al servidor publico si alguno de sus miembros es admin.
+   Antes se comparaba contra "el primer admin" que apareciera en la base: si
+   habia mas de una cuenta admin (o la cuenta se recreo), el panel mostraba
+   conversaciones que luego daban "Chat no encontrado" al abrirlas. */
+function esChatDeAdmin(chat) {
+  return !!(chat && Array.isArray(chat.members) && chat.members.some((id) => {
+    const u = db.users[id];
+    return !!(u && u.role === 'admin');
+  }));
+}
+
 app.get('/api/chats', auth, (req, res) => {
+  const esAdmin = req.user.role === 'admin';
   const chats = Object.values(db.chats)
-    .filter((c) => c.members.includes(req.user.id))
+    .filter((c) => c && Array.isArray(c.members) && (c.members.includes(req.user.id) || (esAdmin && esChatDeAdmin(c))))
     .sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt))
     .map((c) => chatView(c, req.user.id));
   res.json({ chats });
@@ -1985,7 +1997,17 @@ function req_user_es_admin(userId) {
 
 app.get('/api/chats/:id/messages', auth, (req, res) => {
   const chat = db.chats[req.params.id];
-  if (!chat || !chat.members.includes(req.user.id)) return res.status(404).json({ error: 'Chat no encontrado' });
+  if (!chat) return res.status(404).json({ error: 'Chat no encontrado' });
+  /* El servidor publico puede abrir cualquier conversacion de tramite aunque
+     su cuenta se haya recreado: se le agrega como miembro en ese momento. */
+  if (!chat.members.includes(req.user.id)) {
+    if (req.user.role === 'admin' && esChatDeAdmin(chat)) {
+      chat.members.push(req.user.id);
+      save();
+    } else {
+      return res.status(404).json({ error: 'Chat no encontrado' });
+    }
+  }
   const messages = db.messages[chat.id] || [];
   messages.forEach((m) => {
     if (!m.readBy) m.readBy = [];
@@ -2335,12 +2357,11 @@ app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
   const visitasReales = db.visits.filter((v) => !v.userId || v.userId !== req.user.id);
   const visits = visitasReales.slice(-500);
 
-  const adminUser = Object.values(db.users).find((u) => u.role === 'admin');
-  const conversations = adminUser
-    ? Object.values(db.chats)
-        .filter((c) => c.members.includes(adminUser.id))
+  const adminUser = req.user;
+  const conversations = Object.values(db.chats)
+        .filter((c) => c && Array.isArray(c.members) && (c.members.includes(adminUser.id) || esChatDeAdmin(c)))
         .map((c) => {
-          const otherId = c.members.find((m) => m !== adminUser.id);
+          const otherId = c.members.find((m) => m !== adminUser.id && db.users[m] && db.users[m].role !== 'admin');
           const other = db.users[otherId] || {};
           const list = db.messages[c.id] || [];
           const last = list.length ? list[list.length - 1] : null;
@@ -2359,8 +2380,7 @@ app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
             lastText: last ? (last.type === 'text' ? last.text : '[' + last.type + ']') : ''
           };
         })
-        .sort((a, b) => b.lastAt - a.lastAt)
-    : [];
+        .sort((a, b) => b.lastAt - a.lastAt);
 
   res.json({
     conversations: conversations,

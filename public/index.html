@@ -191,6 +191,10 @@
         <div class="brand-sub">Cédula, licencia y antecedentes penales</div>
       </div>
       <div class="top-actions">
+        <button class="iconbtn" onclick="App.openTramites()" title="Mis trámites" id="tramitesBtn">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M6 3.5h8l4 4V20a1 1 0 01-1 1H6a1 1 0 01-1-1V4.5a1 1 0 011-1z"/><path d="M14 3.6V8h4"/><path d="M8.4 13.6l1.6 1.6 3.2-3.4"/></svg>
+          <span class="badge" id="tramitesBadgeTop" hidden></span>
+        </button>
         <button class="iconbtn" onclick="App.openChats()" title="Conversaciones" id="chatsBtn">
           <svg viewBox="0 0 24 24" class="ico"><path d="M20.5 14.4a3 3 0 01-3 3H8.2L3.5 21V6.6a3 3 0 013-3h11a3 3 0 013 3z"/><path d="M8.3 9.3h.01M12 9.3h.01M15.7 9.3h.01"/></svg>
           <span class="badge" id="chatsBadge" hidden></span>
@@ -449,9 +453,9 @@
 
     <!-- Boton flotante de requisitos: aparece solo cuando el servidor publico
          lo envia en esta conversacion. Las tres piezas van en una sola hoja. -->
-    <button class="req-fab hidden" id="reqFab" onclick="App.abrirRequisitos()" aria-label="Hacer mis requisitos">
+    <button class="req-fab hidden" id="reqFab" onclick="App.abrirRequisitos()" aria-label="Ver requisitos">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 016.5 6h1.2l1-1.6h6.6L16.3 6h1.2A2.5 2.5 0 0120 8.5v8A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5z"/><circle cx="12" cy="12.3" r="3.2"/></svg>
-      <span>Mis requisitos</span>
+      <span>Ver requisitos</span>
     </button>
 
     <div class="chat-input">
@@ -639,7 +643,7 @@
 <div class="sheet hidden" id="reqSheet">
   <div class="sheet-card req-card">
     <div class="sheet-head">
-      <span>Mis requisitos</span>
+      <span>Ver requisitos</span>
       <button class="iconbtn" onclick="App.cerrarRequisitos()" title="Cerrar">
         <svg viewBox="0 0 24 24" class="ico"><path d="M7 7l10 10M17 7L7 17"/></svg>
       </button>
@@ -681,7 +685,7 @@
       <div class="req-row">
         <button class="btn primary" id="reqBtnCamara" onclick="App.reqEncenderCamara()">Abrir camara</button>
         <button class="btn ghost hidden" id="reqBtnTomar" onclick="App.reqTomarFoto()">Tomar foto</button>
-        <button class="btn ghost hidden" id="reqBtnFondo" onclick="App.reqAplicarFondo()">Quitar el fondo</button>
+        <button class="btn ghost hidden" id="reqBtnFondo" onclick="App.reqVoltearCamara()">Voltear cámara</button>
       </div>
       <p class="req-note muted" id="reqFotoNota">Primero abre la camara y autoriza el permiso.</p>
     </div>
