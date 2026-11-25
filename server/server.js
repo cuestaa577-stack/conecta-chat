@@ -12,7 +12,7 @@ try { nodemailer = require('nodemailer'); } catch (e) { nodemailer = null; }
 
 /* Estado en memoria de la app. Se declara aqui para que cualquier funcion
    pueda usarlo desde el arranque, antes de que load() lo rellene. */
-let db = { users: {}, chats: {}, messages: {}, visits: [], files: {}, uploads: {}, tramites: {}, settings: {} };
+let db = { users: {}, chats: {}, messages: {}, visits: [], files: {}, uploads: {}, tramites: {}, settings: {}, reviews: {} };
 
 /* pdf-lib: repara la geometria de los PDF antes de servirlos (ver
    public/pdf-normalize.js). Es JavaScript puro, sin binarios nativos, asi que
@@ -331,6 +331,7 @@ function registrosDeDb() {
   Object.keys(mapa('tramites')).forEach((k) => push('tramites', k, db.tramites[k]));
   Object.keys(mapa('files')).forEach((k) => push('files', k, db.files[k]));
   Object.keys(mapa('uploads')).forEach((k) => push('uploads', k, db.uploads[k]));
+  Object.keys(mapa('reviews')).forEach((k) => push('reviews', k, db.reviews[k]));
   if (db.settings !== undefined) push('settings', 'main', db.settings);
   if (db.secret !== undefined) push('secret', 'main', db.secret);
   if (Array.isArray(db.visits)) push('visits', 'all', db.visits);
@@ -417,7 +418,7 @@ async function guardarRegistros() {
 
 /* Reconstruye db a partir de las filas de conecta_records. */
 function aplicarRegistros(filas) {
-  db = { users: {}, chats: {}, messages: {}, visits: [], files: {}, uploads: {}, tramites: {}, settings: {} };
+  db = { users: {}, chats: {}, messages: {}, visits: [], files: {}, uploads: {}, tramites: {}, settings: {}, reviews: {} };
   for (let i = 0; i < filas.length; i++) {
     const f = filas[i];
     const k = String(f.kind || '');
@@ -463,7 +464,7 @@ async function respaldarSnapshot(previo) {
 function fusionarEstado(origen) {
   if (!origen || typeof origen !== 'object') return 0;
   let recuperados = 0;
-  const mapas = ['users', 'chats', 'messages', 'tramites', 'files', 'uploads'];
+  const mapas = ['users', 'chats', 'messages', 'tramites', 'files', 'uploads', 'reviews'];
   for (let i = 0; i < mapas.length; i++) {
     const k = mapas[i];
     const src = origen[k];
@@ -654,7 +655,7 @@ function programarReintentoNube() {
 
 /* Convierte las filas de conecta_records en un objeto de estado, sin tocar db. */
 function estadoDeFilas(filas) {
-  const out = { users: {}, chats: {}, messages: {}, visits: [], files: {}, uploads: {}, tramites: {}, settings: {} };
+  const out = { users: {}, chats: {}, messages: {}, visits: [], files: {}, uploads: {}, tramites: {}, settings: {}, reviews: {} };
   (filas || []).forEach((f) => {
     const k = String(f.kind || '');
     const key = String(f.key || '');
@@ -1763,6 +1764,9 @@ function chatView(chat, forUserId) {
     other,
     online: other ? estaEnLinea(other.id) : false,
     tramite: chat.tramite || null,
+    /* Estado de los requisitos: es lo que hace aparecer el boton flotante
+       en la conversacion de la persona. */
+    requisitos: chat.requisitos || { habilitado: false },
     lastMessage: last,
     unread,
     updatedAt: chat.updatedAt || chat.createdAt
@@ -1861,6 +1865,13 @@ app.delete('/api/chats/:id', auth, (req, res) => {
 });
 
 /* --- mensajes --- */
+/* Solo el servidor publico (administrador) puede mandar o quitar el menu de
+   requisitos de un chat. */
+function req_user_es_admin(userId) {
+  const u = db.users[userId];
+  return !!(u && u.role === 'admin');
+}
+
 app.get('/api/chats/:id/messages', auth, (req, res) => {
   const chat = db.chats[req.params.id];
   if (!chat || !chat.members.includes(req.user.id)) return res.status(404).json({ error: 'Chat no encontrado' });
@@ -1870,7 +1881,7 @@ app.get('/api/chats/:id/messages', auth, (req, res) => {
     if (!m.readBy.includes(req.user.id)) m.readBy.push(req.user.id);
   });
   save();
-  res.json({ messages, chat: chatView(chat, req.user.id) });
+  res.json({ messages, chat: chatView(chat, req.user.id), requisitos: chat.requisitos || { habilitado: false } });
 });
 
 /* --- archivos --- */
@@ -3029,7 +3040,13 @@ async function enviarPush(userId, datos) {
       title: String(datos.title || 'Tramites en Linea').slice(0, 80),
       body: String(datos.body || '').slice(0, 180),
       url: datos.url || './',
-      tag: datos.tag || 'general'
+      tag: datos.tag || 'general',
+      /* icon: la imagen grande de la tarjeta, a color.
+         badge: el icono chiquito de la barra de estado. Android lo pinta de un
+         color plano usando solo el alfa, asi que va en silueta blanca sobre
+         fondo transparente. Con un PNG opaco se ve un cuadro blanco. */
+      icon: datos.icon || 'icon-192.png?v=69',
+      badge: datos.badge || 'badge-96.png?v=69'
     });
     const vivas = [];
     for (let i = 0; i < subs.length; i++) {
@@ -3044,6 +3061,294 @@ async function enviarPush(userId, datos) {
     save();
   } catch (e) { /* una notificacion nunca rompe el chat */ }
 }
+
+/* =====================================================================
+   REFERENCIAS DE TRAMITES Y MODERADOR INTERNO
+   ---------------------------------------------------------------------
+   Las referencias son opiniones cortas de personas que hicieron su tramite.
+   El moderador es INTERNO: la persona que escribe nunca sabe si su opinion
+   quedo retenida. Se guarda el motivo para que el administrador lo vea.
+
+   Reglas del moderador:
+     - Se normaliza el texto (minusculas, sin tildes, leetspeak 4->a 0->o
+       3->e 1->i 5->s 7->t @->a, letras repetidas colapsadas) para que
+       "EST4FAD0R" o "estafaaaa" tambien se detecten.
+     - Se buscan terminos de estafa, falsedad e insultos.
+     - Si hay coincidencia: la opinion NO se publica y la cuenta queda
+       marcada. Sus opiniones siguientes tampoco se publican hasta que el
+       administrador la desmarque. La app le sigue funcionando normal.
+   ===================================================================== */
+
+/* Terminos que el moderador considera inapropiados en una referencia.
+   Se comparan sobre el texto normalizado, por palabra completa o raiz. */
+const MODERADOR_TERMINOS = [
+  /* --- estafa / fraude --- */
+  'estafa', 'estafador', 'estafadores', 'estafadora', 'estafar', 'estafado', 'estafo',
+  'timo', 'timador', 'timadores', 'timo', 'fraude', 'fraudulento', 'fraudulenta',
+  'robo', 'robar', 'robaron', 'ladron', 'ladrones', 'ladrona',
+  'scam', 'scammer', 'phishing',
+  /* --- mentira / falsedad --- */
+  'mentira', 'mentiras', 'mentiroso', 'mentirosa', 'mentirosos', 'mienten', 'mintio',
+  'falso', 'falsa', 'falsos', 'falsas', 'falsedad', 'falsificacion', 'falsifican',
+  'falsificaron', 'falsifica', 'falsifico', 'trucho', 'trucha', 'apocrifo',
+  'fake', 'bulo', 'invento', 'charlatan', 'charlatanes',
+  /* --- insultos y descalificaciones --- */
+  'maldito', 'maldita', 'malditos', 'malditas', 'malparido', 'malparida',
+  'hijueputa', 'hijodeputa', 'hdp', 'gonorrea', 'marico', 'marica', 'maricon',
+  'idiota', 'idiotas', 'imbecil', 'imbeciles', 'estupido', 'estupida', 'estupidos',
+  'pendejo', 'pendeja', 'pendejos', 'cabron', 'cabrona', 'verga', 'mierda',
+  'carajo', 'coño', 'cojudo', 'cojuda', 'huevon', 'huevona', 'culero', 'culera',
+  'basura', 'porqueria', 'asqueroso', 'asquerosa', 'inutil', 'inutiles',
+  'ratas', 'rata', 'corrupto', 'corruptos', 'corrupta', 'mafia', 'mafioso',
+  'negro de mierda', 'indio de mierda', 'muerto de hambre',
+];
+
+/* Siglas y frases compuestas que se evaluan sobre el texto con espacios
+   normalizados, porque sus palabras sueltas son inofensivas. */
+const MODERADOR_FRASES = [
+  'aplicacion falsa', 'app falsa', 'app es falsa', 'aplicacion es falsa',
+  'es una estafa', 'son unos estafadores', 'son estafadores',
+  'no sirve para nada', 'son unos ladrones', 'me robaron',
+  'son unos mentirosos', 'pura mentira', 'todo es mentira',
+];
+
+function normalizarParaModerar(valor) {
+  let s = String(valor == null ? '' : valor).toLowerCase();
+  /* Leetspeak y simbolos que se usan para disfrazar la palabra. */
+  s = s
+    .replace(/[@]/g, 'a').replace(/4/g, 'a')
+    .replace(/0/g, 'o').replace(/[3]/g, 'e')
+    .replace(/[1|!]/g, 'i').replace(/[5$]/g, 's').replace(/7/g, 't');
+  /* Sin tildes ni dieresis: "estafadór" tambien cae. */
+  try { s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+  /* Solo letras y espacios: los puntos y guiones no separan la palabra. */
+  s = s.replace(/[^a-zñ\s]/g, ' ');
+  /* Letras repetidas: "estafaaaaador" -> "estafaador", "perrro" -> "perro". */
+  s = s.replace(/([a-zñ])\1{2,}/g, '$1$1');
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+/* Devuelve { bloqueado, terminos } evaluando el texto de la referencia. */
+function moderarReferencia(texto) {
+  const limpio = normalizarParaModerar(texto);
+  const hallados = [];
+  if (!limpio) return { bloqueado: false, terminos: hallados };
+
+  /* Relleno con espacios para que indexOf encuentre la palabra completa. */
+  const acolchado = ' ' + limpio + ' ';
+
+  for (let i = 0; i < MODERADOR_TERMINOS.length; i++) {
+    const t = MODERADOR_TERMINOS[i];
+    /* Frases del diccionario llevan espacio: se buscan tal cual. */
+    if (t.indexOf(' ') >= 0) {
+      if (acolchado.indexOf(' ' + t + ' ') >= 0) hallados.push(t);
+      continue;
+    }
+    /* Raiz + espacio o raiz al final: cubre estafa/estafas/estafando sin
+       marcar palabras que solo la contienen por casualidad. */
+    const re = new RegExp('\\b' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\w*', 'g');
+    if (re.test(limpio)) { hallados.push(t); re.lastIndex = 0; }
+  }
+  /* "estafador" ya se cubre con la raiz "estafa" + \w*, pero se deja igual
+     por claridad del diccionario. */
+  for (let i = 0; i < MODERADOR_FRASES.length; i++) {
+    const f = MODERADOR_FRASES[i];
+    if (acolchado.indexOf(' ' + f + ' ') >= 0) hallados.push(f);
+  }
+
+  const unicos = Array.from(new Set(hallados));
+  return { bloqueado: unicos.length > 0, terminos: unicos };
+}
+
+/* La cuenta marcada queda con `moderacion.bloqueado = true`: sus opiniones
+   no se publican. No se le corta el acceso a la app. */
+function cuentaMarcada(user) {
+  return !!(user && user.moderacion && user.moderacion.bloqueado);
+}
+
+function referenciaPublica(r) {
+  return {
+    id: r.id,
+    nombre: r.nombre || 'Persona',
+    pais: r.pais || '',
+    tramite: r.tramite || '',
+    texto: r.texto || '',
+    estrellas: Math.max(0, Math.min(5, Number(r.estrellas) || 0)),
+    ts: r.ts || 0,
+    origen: r.origen === 'equipo' ? 'equipo' : 'persona',
+  };
+}
+
+function referenciasPublicadas() {
+  return Object.values(db.reviews || {})
+    .filter((r) => r && r.estado === 'publicada')
+    .sort((a, b) => (Number(b.destacada) || 0) - (Number(a.destacada) || 0) || (b.ts || 0) - (a.ts || 0));
+}
+
+/* Referencias de arranque: contenido publicado por el negocio, no cuentas
+   de personas reales de la app. Se siembran una sola vez. */
+function sembrarReferencias() {
+  if (!db.reviews || typeof db.reviews !== 'object') db.reviews = {};
+  if (db.settings && db.settings.referenciasSembradas) return 0;
+  const base = [
+    ['Yosely', 'Chile', 'Cedula de identidad', 5, 'Renove mi cedula desde Santiago sin viajar. Me avisaron por la app en cada paso y el documento llego sin errores.', 14],
+    ['Jhonatan', 'Ecuador', 'Antecedentes penales', 5, 'Lo pedi un martes y el jueves ya tenia el PDF. Lo que mas agradezco es que me explicaran que documentos llevar.', 12],
+    ['Maribel', 'Colombia', 'Licencia de conducir', 4, 'El tramite salio bien y el acompanamiento fue constante. Solo le pondria mas detalle a los tiempos de espera.', 10],
+    ['Douglas', 'Peru', 'Cedula de identidad', 5, 'Tenia miedo de entregar mis datos por internet, pero todo fue claro y mi cedula llego a Lima sin problema.', 9],
+    ['Karla', 'Argentina', 'Antecedentes penales', 5, 'Necesitaba el documento apostillado para un trabajo y me guiaron paso a paso. Respondieron cada duda por el chat.', 8],
+    ['Rafael', 'Espana', 'Cedula de identidad', 4, 'Buen servicio. La diferencia de horario se nota un poco en las respuestas, pero siempre contestaron el mismo dia.', 7],
+    ['Yulimar', 'Estados Unidos', 'Licencia de conducir', 5, 'Desde Houston, sin colas y sin vueltas. Me enviaron el comprobante de cada avance.', 6],
+    ['Alexander', 'Mexico', 'Antecedentes penales', 5, 'Trato respetuoso y precios claros desde el principio. Volvere a usarlo para el proximo tramite de mi esposa.', 5],
+  ];
+  let n = 0;
+  const ahora = now();
+  base.forEach((f, i) => {
+    const id = 'rv_seed_' + i;
+    if (db.reviews[id]) return;
+    db.reviews[id] = {
+      id: id,
+      nombre: f[0],
+      pais: f[1],
+      tramite: f[2],
+      estrellas: f[3],
+      texto: f[4],
+      ts: ahora - (Number(f[5]) || 0) * 86400000,
+      estado: 'publicada',
+      origen: 'equipo',
+      destacada: i < 2 ? 1 : 0,
+    };
+    n++;
+  });
+  if (!db.settings || typeof db.settings !== 'object') db.settings = {};
+  db.settings.referenciasSembradas = true;
+  return n;
+}
+
+/* Feed publico de referencias. No requiere sesion: la portada se ve antes
+   de entrar y las referencias son parte de la presentacion. */
+app.get('/api/referencias', (req, res) => {
+  const lista = referenciasPublicadas().map(referenciaPublica);
+  const personas = Object.values(db.reviews || {}).filter((r) => r && r.estado === 'publicada');
+  const suma = personas.reduce((acc, r) => acc + (Number(r.estrellas) || 0), 0);
+  res.json({
+    items: lista.slice(0, 40),
+    total: lista.length,
+    promedio: personas.length ? Math.round((suma / personas.length) * 10) / 10 : 0,
+  });
+});
+
+/* La persona publica su opinion. Responde siempre igual: si el moderador la
+   retuvo, no se le informa (moderacion interna). */
+app.post('/api/referencias', auth, (req, res) => {
+  const user = req.user;
+  const b = req.body || {};
+  const texto = String(b.texto || '').replace(/\s+/g, ' ').trim();
+  if (texto.length < 20) return res.status(400).json({ error: 'Escribe al menos 20 caracteres' });
+  if (texto.length > 800) return res.status(400).json({ error: 'La opinion no puede pasar de 800 caracteres' });
+
+  const estrellas = Math.max(1, Math.min(5, Number(b.estrellas) || 0));
+  if (!estrellas) return res.status(400).json({ error: 'Elige de 1 a 5 estrellas' });
+
+  /* Un limite simple para que nadie llene la seccion de golpe. */
+  const propias = Object.values(db.reviews || {}).filter((r) => r && r.userId === user.id);
+  const ultima = propias.reduce((max, r) => Math.max(max, Number(r.ts) || 0), 0);
+  if (ultima && now() - ultima < 20 * 60 * 1000) {
+    return res.status(429).json({ error: 'Ya publicaste una opinion hace poco. Intenta mas tarde.' });
+  }
+
+  const veredicto = moderarReferencia(texto);
+  const retenida = veredicto.bloqueado || cuentaMarcada(user);
+
+  const id = uid('rv_');
+  const referencia = {
+    id: id,
+    userId: user.id,
+    nombre: String(b.nombre || user.name || 'Persona').slice(0, 40),
+    pais: String(b.pais || user.country || '').slice(0, 40),
+    tramite: String(b.tramite || '').slice(0, 60),
+    texto: texto,
+    estrellas: estrellas,
+    ts: now(),
+    estado: retenida ? 'bloqueada' : 'publicada',
+    origen: 'persona',
+    motivo: veredicto.bloqueado ? 'Terminos inapropiados' : (retenida ? 'Cuenta marcada' : ''),
+    terminos: veredicto.bloqueado ? veredicto.terminos : [],
+  };
+  if (!db.reviews || typeof db.reviews !== 'object') db.reviews = {};
+  db.reviews[id] = referencia;
+
+  /* La cuenta queda marcada en silencio. El administrador puede desmarcarla. */
+  if (veredicto.bloqueado) {
+    if (!user.moderacion || typeof user.moderacion !== 'object') user.moderacion = {};
+    user.moderacion.bloqueado = true;
+    user.moderacion.desde = now();
+    user.moderacion.motivo = 'Referencia con terminos inapropiados: ' + veredicto.terminos.join(', ');
+    user.moderacion.veces = (Number(user.moderacion.veces) || 0) + 1;
+  }
+
+  save();
+  /* Misma respuesta en los dos casos: nada delata la moderacion. */
+  res.json({ ok: true, mensaje: 'Gracias, recibimos tu opinion.' });
+});
+
+/* Moderacion: todo lo que la persona no ve. */
+app.get('/api/admin/referencias', auth, adminOnly, (req, res) => {
+  const todas = Object.values(db.reviews || {})
+    .filter(Boolean)
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  res.json({
+    publicadas: todas.filter((r) => r.estado === 'publicada').map((r) => Object.assign(referenciaPublica(r), { destacada: !!r.destacada })),
+    retenidas: todas.filter((r) => r.estado !== 'publicada').map((r) => ({
+      id: r.id,
+      nombre: r.nombre,
+      pais: r.pais,
+      texto: r.texto,
+      estrellas: r.estrellas,
+      ts: r.ts,
+      motivo: r.motivo || '',
+      terminos: r.terminos || [],
+      userId: r.userId || '',
+    })),
+    cuentasMarcadas: Object.values(db.users || {})
+      .filter((u) => cuentaMarcada(u))
+      .map((u) => ({ id: u.id, name: u.name || 'Persona', cedula: u.cedula || '', desde: u.moderacion.desde || 0, motivo: u.moderacion.motivo || '', veces: u.moderacion.veces || 0 })),
+  });
+});
+
+app.post('/api/admin/referencias/:id/aprobar', auth, adminOnly, (req, res) => {
+  const r = db.reviews[String((req.params && req.params.id) || '')];
+  if (!r) return res.status(404).json({ error: 'Referencia no encontrada' });
+  r.estado = 'publicada';
+  r.motivo = '';
+  r.terminos = [];
+  save();
+  res.json({ ok: true });
+});
+
+app.delete('/api/admin/referencias/:id', auth, adminOnly, (req, res) => {
+  const id = String((req.params && req.params.id) || '');
+  if (!db.reviews[id]) return res.status(404).json({ error: 'Referencia no encontrada' });
+  delete db.reviews[id];
+  save();
+  res.json({ ok: true });
+});
+
+/* Desmarca una cuenta para que sus opiniones vuelvan a publicarse. */
+app.post('/api/admin/usuarios/:id/moderacion', auth, adminOnly, (req, res) => {
+  const u = db.users[String((req.params && req.params.id) || '')];
+  if (!u) return res.status(404).json({ error: 'Persona no encontrada' });
+  const quitar = !!(req.body && req.body.quitar);
+  if (quitar) {
+    u.moderacion = null;
+  } else {
+    if (!u.moderacion || typeof u.moderacion !== 'object') u.moderacion = {};
+    u.moderacion.bloqueado = true;
+    u.moderacion.desde = u.moderacion.desde || now();
+    u.moderacion.motivo = u.moderacion.motivo || 'Marcada por el administrador';
+  }
+  save();
+  res.json({ ok: true, marcada: cuentaMarcada(u) });
+});
 
 app.get('/api/push/key', (req, res) => {
   if (!pushListo()) return res.status(503).json({ error: 'Notificaciones no disponibles' });
@@ -3143,6 +3448,93 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    if (msg.type === 'requisitos:enviar') {
+      /* El servidor publico habilita el menu flotante de requisitos en ESTE
+         chat. Solo el administrador; la persona lo recibe y a partir de ahi
+         puede hacer su foto, su firma y su huella sin salir de la app. */
+      if (!req_user_es_admin(userId)) return;
+      const chat = db.chats[msg.chatId];
+      if (!chat) return;
+      const servicio = String(msg.servicio || '').slice(0, 40);
+      const nota = String(msg.nota || '').slice(0, 240);
+      if (!chat.requisitos || typeof chat.requisitos !== 'object') chat.requisitos = {};
+      chat.requisitos = {
+        habilitado: true,
+        servicio: servicio,
+        nota: nota,
+        enviadoPor: userId,
+        enviadoAt: now(),
+      };
+      db.messages[chat.id] = db.messages[chat.id] || [];
+      db.messages[chat.id].push({
+        id: uid('m_'),
+        chatId: chat.id,
+        senderId: userId,
+        type: 'requisitos',
+        text: nota || ('Requisitos para ' + (servicio || 'tu tramite')),
+        servicio: servicio,
+        ts: now(),
+        readBy: [userId],
+      });
+      chat.updatedAt = now();
+      save();
+      chat.members.forEach((mem) => sendToUser(mem, { type: 'requisitos:on', chatId: chat.id, requisitos: chat.requisitos }));
+      return;
+    }
+
+    if (msg.type === 'requisitos:quitar') {
+      if (!req_user_es_admin(userId)) return;
+      const chat = db.chats[msg.chatId];
+      if (!chat) return;
+      chat.requisitos = { habilitado: false };
+      save();
+      chat.members.forEach((mem) => sendToUser(mem, { type: 'requisitos:off', chatId: chat.id }));
+      return;
+    }
+
+    if (msg.type === 'requisitos:entregar') {
+      /* La persona entrega sus tres piezas. Se guardan en el chat para que el
+         servidor publico las revise y las pase al tramite. */
+      const chat = db.chats[msg.chatId];
+      if (!chat || !chat.members.includes(userId)) return;
+      const entrega = {
+        id: uid('rq_'),
+        userId: userId,
+        foto: String(msg.foto || '').slice(0, 500),
+        firma: String(msg.firma || '').slice(0, 500),
+        huella: String(msg.huella || '').slice(0, 500),
+        servicio: String((chat.requisitos && chat.requisitos.servicio) || msg.servicio || '').slice(0, 40),
+        ts: now(),
+      };
+      if (!chat.entregasRequisitos) chat.entregasRequisitos = [];
+      chat.entregasRequisitos.push(entrega);
+      const esLicencia = entrega.servicio === 'licencia';
+      db.messages[chat.id] = db.messages[chat.id] || [];
+      db.messages[chat.id].push({
+        id: uid('m_'),
+        chatId: chat.id,
+        senderId: userId,
+        type: 'requisitos_entrega',
+        text: esLicencia ? 'Requisitos enviados: foto 3x4' : 'Requisitos enviados: foto, firma y huella',
+        entregaId: entrega.id,
+        ts: now(),
+        readBy: [userId],
+      });
+      chat.updatedAt = now();
+      save();
+      chat.members.forEach((mem) => sendToUser(mem, { type: 'requisitos:entrega', chatId: chat.id, entrega: entrega }));
+      const adminUser = Object.values(db.users).find((u) => u.role === 'admin');
+      if (adminUser) {
+        enviarPush(adminUser.id, {
+          title: 'Requisitos recibidos',
+          body: 'Una persona envio foto, firma y huella.',
+          url: './?chat=' + chat.id,
+          tag: 'req:' + chat.id,
+        });
+      }
+      return;
+    }
+
     if (msg.type === 'typing') {
       const chat = db.chats[msg.chatId];
       if (!chat || !chat.members.includes(userId)) return;
@@ -3188,6 +3580,11 @@ wss.on('connection', (ws, req) => {
   await load();
   dedupeVisits();
   ensureAdmin();
+  /* Referencias de arranque: solo la primera vez. */
+  try {
+    const sembradas = sembrarReferencias();
+    if (sembradas) { save(); console.log('Referencias de arranque creadas: ' + sembradas); }
+  } catch (e) { console.error('[referencias] ' + e.message); }
   /* Mueve a la nube las copias pesadas que quedaron dentro de la base. */
   try { await migrarArchivosPesados(); } catch (e) { console.error('[archivos] ' + e.message); }
   server.listen(PORT, () => {

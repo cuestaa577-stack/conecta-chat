@@ -1,0 +1,2780 @@
+diff --git a/.gitignore b/.gitignore
+index 15e845a..28db768 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -2,3 +2,4 @@ node_modules/
+ data/
+ .testdata/
+ .env
++__pycache__/
+diff --git a/public/app.js b/public/app.js
+index 8680c1b..7a73a2a 100644
+--- a/public/app.js
++++ b/public/app.js
+@@ -1,7 +1,7 @@
+ const App = (() => {
+   // Version visible de la app (subirla junto con el cache del service worker).
+   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
+-  const APP_VERSION = 'v5.3';
++  const APP_VERSION = 'v5.8';
+ 
+   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
+      ---------------------------------------------------------------------
+@@ -80,7 +80,7 @@ const App = (() => {
+         }
+       }, 700);
+     } catch (e) {
+-      toast(e.message);
++      toast(e.message, 'bad');
+     }
+   }
+ 
+@@ -165,13 +165,17 @@ const App = (() => {
+ 
+   /* ------------------------------ utilidades ------------------------------ */
+   let toastTimer = null;
+-  function toast(msg) {
++  /* Aviso flotante con aspecto nativo del telefono (tarjeta clara con icono).
++     tipo: 'ok' (guardado, por defecto) | 'info' | 'bad' (error). */
++  function toast(msg, tipo) {
+     const el = $('#toast');
+     if (!el) return;
+     el.textContent = msg;
++    el.classList.remove('info', 'bad');
++    if (tipo === 'info' || tipo === 'bad') el.classList.add(tipo);
+     el.classList.remove('hidden');
+     clearTimeout(toastTimer);
+-    toastTimer = setTimeout(() => el.classList.add('hidden'), 2600);
++    toastTimer = setTimeout(() => el.classList.add('hidden'), tipo === 'bad' ? 3600 : 2800);
+   }
+ 
+   function esc(s) {
+@@ -461,7 +465,7 @@ const App = (() => {
+         showVerifyPanel(e.data.cedula || cedula, e.data.email, e.data.codeSent);
+         return;
+       }
+-      toast(e.message);
++      toast(e.message, 'bad');
+     }
+   }
+ 
+@@ -591,7 +595,7 @@ const App = (() => {
+         toast('Debes registrarte con el pais donde vives actualmente');
+         return;
+       }
+-      toast(e.message);
++      toast(e.message, 'bad');
+     }
+     finally { enviandoRegistro = false; }
+   }
+@@ -614,7 +618,7 @@ const App = (() => {
+       }
+       showAuthPanel('reset');
+       toast('Revisa tu correo');
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   async function resendReset() {
+@@ -625,7 +629,7 @@ const App = (() => {
+         body: JSON.stringify({ cedula: authPending.cedula, purpose: 'reset' }),
+       });
+       toast('Codigo enviado otra vez');
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   /* Cambiar la contrasena con el codigo del correo */
+@@ -642,7 +646,7 @@ const App = (() => {
+       });
+       await finishAuth(data, false);
+       toast('Contrasena cambiada');
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   /* Acceso del personal autorizado (administrador) */
+@@ -665,7 +669,7 @@ const App = (() => {
+       guardarRecordado(REC_ADMIN, $('#rememberAdmin'), email);
+       await finishAuth(data, false);
+       toast('Bienvenido, personal autorizado');
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   /* Pantalla obligatoria de verificaci\u00f3n (antes de entrar a la app) */
+@@ -699,7 +703,7 @@ const App = (() => {
+       // C\u00f3digo correcto: ahora s\u00ed se inicia la sesi\u00f3n y entra a la app.
+       await finishAuth(data, true);
+       toast('Correo confirmado. Bienvenido');
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+     finally { verificando = false; }
+   }
+ 
+@@ -712,7 +716,7 @@ const App = (() => {
+       });
+       if (data && data.codeSent === false) return toast('No pudimos enviar el correo. Intenta mas tarde');
+       toast('Codigo enviado otra vez a tu correo');
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   /* Confirmar el correo con el codigo de 6 digitos */
+@@ -733,7 +737,7 @@ const App = (() => {
+       }
+       toast('Correo confirmado');
+       authTab('login');
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   /* Saludo de la portada: "Buenos dias, Carlos" con el primer nombre real
+@@ -925,7 +929,7 @@ const App = (() => {
+       await openChat(data.chat.id);
+       setTimeout(() => toast('Escribe tu consulta al servidor publico'), 500);
+     } catch (e) {
+-      toast(e.message);
++      toast(e.message, 'bad');
+     }
+   }
+ 
+@@ -940,7 +944,7 @@ const App = (() => {
+       state.viewStack = ['homeView'];
+       openChat(data.chat.id, false);
+     } catch (e) {
+-      toast(e.message);
++      toast(e.message, 'bad');
+     }
+   }
+ 
+@@ -1073,6 +1077,7 @@ const App = (() => {
+ 
+     await loadMessages(chatId);
+     markRead(chatId);
++    reqRefrescarDesdeChat();
+   }
+ 
+   async function loadMessages(chatId) {
+@@ -1080,7 +1085,7 @@ const App = (() => {
+       const data = await api('/api/chats/' + chatId + '/messages');
+       state.messages[chatId] = data.messages || [];
+       renderMessages();
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   /* Mensajes con aspecto moderno: separador de dia, burbujas agrupadas,
+@@ -1102,6 +1107,15 @@ const App = (() => {
+     const nombreOtro = state.me.role === 'admin' ? (other ? other.name : 'Persona') : 'Servidor publico';
+     const fotoOtro = (other && other.avatar) || '';
+ 
++    /* La foto de quien escribe va en CADA mensaje, en el lado que le toca:
++       a la izquierda cuando escribe la otra parte (el servidor publico para
++       la persona, la persona para el administrador) y a la derecha cuando
++       escribe la propia persona. Antes los mensajes propios salian sin foto y
++       solo se veia la de la otra parte, asi que la conversacion no mostraba
++       la cara de quien estaba escribiendo. */
++    const fotoMia = (state.me && state.me.avatar) || '';
++    const nombreMio = (state.me && state.me.name) || 'Yo';
++
+     let html = '';
+     let dia = '';
+     msgs.forEach((m, i) => {
+@@ -1134,11 +1148,15 @@ const App = (() => {
+         ? (m.pending ? '<span class="tick">&#8226;</span>' : '<span class="tick">&#10003;</span>')
+         : '';
+       const hora = `<span class="meta">${clock(m.ts)}${marca}</span>`;
+-      const avatar = (!mine && !pegadoArriba)
+-        ? `<div class="b-avatar" data-avatar="${esc(fotoOtro)}" data-nombre="${esc(nombreOtro)}">${fotoOtro ? '' : initials(nombreOtro)}</div>`
+-        : (mine ? '' : '<div class="b-avatar hueco"></div>');
+-
+-      html += `<div class="msg-row ${mine ? 'mine' : 'theirs'}${pegadoArriba ? ' pegado' : ''}">${avatar}<div class="${clases.join(' ')}">${inner}${hora}</div></div>`;
++      const avatar = mine
++        ? (pegadoArriba
++            ? '<div class="b-avatar hueco"></div>'
++            : `<div class="b-avatar mio" data-avatar="${esc(fotoMia)}" data-nombre="${esc(nombreMio)}">${fotoMia ? '' : initials(nombreMio)}</div>`)
++        : (pegadoArriba
++            ? '<div class="b-avatar hueco"></div>'
++            : `<div class="b-avatar" data-avatar="${esc(fotoOtro)}" data-nombre="${esc(nombreOtro)}">${fotoOtro ? '' : initials(nombreOtro)}</div>`);
++
++      html += `<div class="msg-row ${mine ? 'mine' : 'theirs'}${pegadoArriba ? ' pegado' : ''}">${mine ? '' : avatar}<div class="${clases.join(' ')}">${inner}${hora}</div>${mine ? avatar : ''}</div>`;
+     });
+     body.innerHTML = html;
+     body.querySelectorAll('.b-avatar[data-avatar]').forEach((el) => {
+@@ -1239,7 +1257,7 @@ const App = (() => {
+         else if (f.type === 'application/pdf') type = 'pdf';
+         sendMessage({ type, url: up.url, text: f.name });
+       } catch (e) {
+-        toast(e.message);
++        toast(e.message, 'bad');
+       }
+     };
+     inp.click();
+@@ -1455,7 +1473,7 @@ const App = (() => {
+         state.me = data.user;
+         refrescarAvatares();
+         toast('Foto actualizada');
+-      } catch (e) { toast(e.message); }
++      } catch (e) { toast(e.message, 'bad'); }
+     };
+     inp.click();
+   }
+@@ -1477,7 +1495,7 @@ const App = (() => {
+       $('#profileEmail').value = state.me.email || '';
+       $('#profileCountry').value = state.me.country || '';
+       toast('Cambios guardados');
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   /* ------------------------------ mis datos ------------------------------ */
+@@ -1547,7 +1565,7 @@ const App = (() => {
+       $('#profileCountry').value = state.me.country || '';
+       closeEditData();
+       toast('Datos personales actualizados');
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   async function deleteChat() {
+@@ -1561,7 +1579,7 @@ const App = (() => {
+       await loadChats();
+       back();
+       toast('Conversacion eliminada');
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   /* ------------------------------ panel ------------------------------ */
+@@ -1610,6 +1628,7 @@ const App = (() => {
+     { key: 'tramites', txt: 'Tramites' },
+     { key: 'chats', txt: 'Chats' },
+     { key: 'personas', txt: 'Personas' },
++    { key: 'referencias', txt: 'Referencias' },
+     { key: 'ajustes', txt: 'Ajustes' },
+   ];
+ 
+@@ -1620,6 +1639,7 @@ const App = (() => {
+     state.adminQuery = '';
+     renderAdminTab();
+     if (name === 'tramites' && !adminTramitesData) loadAdminTramites();
++    if (name === 'referencias') cargarModeracion();
+   }
+ 
+   function adminIr(name, filtro) {
+@@ -1712,6 +1732,108 @@ const App = (() => {
+         </div>`;
+   }
+ 
++  /* -------------------------- moderacion de referencias --------------------------
++     Todo lo que la persona no ve: opiniones retenidas por el moderador y
++     cuentas marcadas. Desde aqui se aprueba, se borra o se desmarca. */
++  let modData = null;
++
++  async function cargarModeracion() {
++    const cont = document.getElementById('modContenido');
++    if (!cont) return;
++    try {
++      modData = await api('/api/admin/referencias');
++      renderModeracion();
++    } catch (e) {
++      cont.innerHTML = '<div class="panel-row"><span>' + esc(e.message) + '</span></div>';
++    }
++  }
++
++  function adminReferenciasShellHtml() {
++    return `
++        <div class="panel">
++          <h3>Referencias</h3>
++          <p class="pnote muted">Las opiniones con lenguaje inapropiado se retienen solas y no se publican. La persona no se entera.</p>
++          <div id="modContenido"><div class="empty">Cargando...</div></div>
++        </div>`;
++  }
++
++  function renderModeracion() {
++    const cont = document.getElementById('modContenido');
++    if (!cont || !modData) return;
++    const ret = modData.retenidas || [];
++    const mar = modData.cuentasMarcadas || [];
++    const pub = modData.publicadas || [];
++
++    const retHtml = ret.length ? ret.map((r) => `<div class="panel-row stack">
++        <div class="who">
++          <b>${esc(r.nombre)}${r.pais ? ' \u00b7 ' + esc(r.pais) : ''}</b>
++          <small>${new Date(r.ts).toLocaleString('es')}</small>
++          <small class="mod-quote">"${esc(r.texto)}"</small>
++          <small class="mod-terms">Detectado: ${(r.terminos || []).map(esc).join(', ') || esc(r.motivo || '')}</small>
++        </div>
++        <div class="mod-actions">
++          <button class="mini" onclick="App.modAprobar('${esc(r.id)}')">Aprobar</button>
++          <button class="mini bad" onclick="App.modBorrar('${esc(r.id)}')">Borrar</button>
++        </div>
++      </div>`).join('') : '<div class="panel-row"><span>Ninguna opinion retenida</span></div>';
++
++    const marHtml = mar.length ? mar.map((u) => `<div class="panel-row">
++        <div class="who">
++          <b>${esc(u.name)}</b>
++          <small>${esc(u.cedula || 'Sin cedula')} \u00b7 ${u.veces || 1} referencia(s)</small>
++          <small>${esc(u.motivo || '')}</small>
++        </div>
++        <button class="mini" onclick="App.modDesmarcar('${esc(u.id)}')">Quitar marca</button>
++      </div>`).join('') : '<div class="panel-row"><span>Ninguna cuenta marcada</span></div>';
++
++    const pubHtml = pub.length ? pub.slice(0, 12).map((r) => `<div class="panel-row">
++        <div class="who">
++          <b>${esc(r.nombre)}</b>
++          <small>${estrellasTexto(r.estrellas)} \u00b7 ${esc(r.pais || '')}${r.origen === 'equipo' ? ' \u00b7 arranque' : ''}</small>
++        </div>
++        <button class="mini bad" onclick="App.modBorrar('${esc(r.id)}')">Borrar</button>
++      </div>`).join('') : '<div class="panel-row"><span>Sin referencias publicadas</span></div>';
++
++    cont.innerHTML = `
++      <h4 class="mod-h">Retenidas (${ret.length})</h4>
++      ${retHtml}
++      <h4 class="mod-h">Cuentas marcadas (${mar.length})</h4>
++      ${marHtml}
++      <h4 class="mod-h">Publicadas (${pub.length})</h4>
++      ${pubHtml}`;
++  }
++
++  function estrellasTexto(n) {
++    const v = Math.max(0, Math.min(5, Number(n) || 0));
++    return '\u2605'.repeat(v) + '\u2606'.repeat(5 - v);
++  }
++
++  async function modAprobar(id) {
++    try {
++      await api('/api/admin/referencias/' + encodeURIComponent(id) + '/aprobar', { method: 'POST', body: '{}' });
++      toast('Referencia publicada');
++      cargarModeracion();
++      cargarReferencias();
++    } catch (e) { toast(e.message, 'bad'); }
++  }
++
++  async function modBorrar(id) {
++    try {
++      await api('/api/admin/referencias/' + encodeURIComponent(id), { method: 'DELETE' });
++      toast('Referencia borrada');
++      cargarModeracion();
++      cargarReferencias();
++    } catch (e) { toast(e.message, 'bad'); }
++  }
++
++  async function modDesmarcar(userId) {
++    try {
++      await api('/api/admin/usuarios/' + encodeURIComponent(userId) + '/moderacion', { method: 'POST', body: JSON.stringify({ quitar: true }) });
++      toast('Marca quitada');
++      cargarModeracion();
++    } catch (e) { toast(e.message, 'bad'); }
++  }
++
+   function adminPersonasFilas(lista) {
+     return (lista || []).map((p) => `<div class="panel-row">
+             <div class="who"><b>${esc(p.name)}</b><small>${esc(p.cedula || 'Sin cedula')} \u00b7 ${esc(p.country || 'Sin pais')}</small><small>${esc(p.phone || p.email || '')}</small></div>
+@@ -1827,10 +1949,12 @@ const App = (() => {
+     if (tab === 'tramites') cuerpo = adminTramitesShellHtml();
+     else if (tab === 'chats') cuerpo = adminChatsHtml(d);
+     else if (tab === 'personas') cuerpo = adminPersonasHtml(d);
++    else if (tab === 'referencias') cuerpo = adminReferenciasShellHtml();
+     else if (tab === 'ajustes') cuerpo = adminAjustesHtml(d);
+     else cuerpo = adminResumenHtml(d);
+     box.innerHTML = adminTabsHtml() + cuerpo;
+     if (tab === 'tramites') renderAdminTramites();
++    if (tab === 'referencias') cargarModeracion();
+     if (tab === 'ajustes') adminFillSubtypes();
+   }
+ 
+@@ -1874,7 +1998,7 @@ const App = (() => {
+         out.className = 'mail-test ' + (r.ok ? 'ok' : 'bad');
+       }
+     } catch (e) {
+-      toast(e.message);
++      toast(e.message, 'bad');
+     } finally {
+       if (btn) { btn.disabled = false; btn.textContent = 'Enviar prueba'; }
+     }
+@@ -2802,7 +2926,7 @@ const App = (() => {
+         renderTramiteDetail(r.tramite);
+         toast('Comprobante enviado. El servidor público lo revisa y te confirma.');
+         loadTramites();
+-      } catch (e) { toast(e.message); }
++      } catch (e) { toast(e.message, 'bad'); }
+     };
+     inp.click();
+   }
+@@ -2924,7 +3048,7 @@ const App = (() => {
+       });
+       toast('Trámite creado');
+       loadAdminTramites();
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   function adminSubirDocumento(id) {
+@@ -2954,7 +3078,7 @@ const App = (() => {
+         toast('Documento listo: la persona ya lo puede ver en vista previa');
+         loadAdminTramites();
+         if (state.currentTramiteId === id) openTramite(id, false);
+-      } catch (e) { toast(e.message); }
++      } catch (e) { toast(e.message, 'bad'); }
+     };
+     inp.click();
+   }
+@@ -2981,7 +3105,7 @@ const App = (() => {
+         ? 'Listo: salir de la app con el documento abierto cuenta como intento'
+         : 'Listo: salir de la app ya no cuenta como intento');
+       loadAdminTramites();
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   async function adminDesbloquear(id) {
+@@ -2991,7 +3115,7 @@ const App = (() => {
+       adminOverview = await api('/api/admin/overview');
+       renderAdminTab();
+       loadAdminTramites();
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   async function adminAprobar(id) {
+@@ -3001,7 +3125,7 @@ const App = (() => {
+       await api('/api/admin/tramites/' + encodeURIComponent(id) + '/aprobar', { method: 'POST', body: JSON.stringify({}) });
+       toast('Pago confirmado: descarga habilitada');
+       loadAdminTramites();
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   async function adminRechazar(id) {
+@@ -3012,7 +3136,7 @@ const App = (() => {
+       await api('/api/admin/tramites/' + encodeURIComponent(id) + '/rechazar', { method: 'POST', body: JSON.stringify({ note: nota }) });
+       toast('Comprobante rechazado: la persona puede enviar otro');
+       loadAdminTramites();
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   async function adminBorrarTramite(id) {
+@@ -3021,7 +3145,7 @@ const App = (() => {
+       await api('/api/admin/tramites/' + encodeURIComponent(id), { method: 'DELETE' });
+       toast('Trámite borrado');
+       loadAdminTramites();
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   async function guardarPagoInfo() {
+@@ -3031,7 +3155,7 @@ const App = (() => {
+       const r = await api('/api/admin/pago-info', { method: 'POST', body: JSON.stringify({ pagoInfo: el.value }) });
+       state.pagoInfo = r.pagoInfo || el.value;
+       toast('Datos de pago guardados');
+-    } catch (e) { toast(e.message); }
++    } catch (e) { toast(e.message, 'bad'); }
+   }
+ 
+   /* --------------------- Notificaciones del telefono --------------------- */
+@@ -3056,7 +3180,7 @@ const App = (() => {
+       }
+       const permiso = await Notification.requestPermission();
+       if (permiso !== 'granted') {
+-        if (!silencioso) toast('No se activaron las notificaciones');
++        if (!silencioso) toast('No se pudieron activar las notificaciones', 'bad');
+         ocultarNotifBanner(true);
+         return false;
+       }
+@@ -3083,7 +3207,7 @@ const App = (() => {
+       if (!silencioso) toast('Notificaciones activadas');
+       return true;
+     } catch (e) {
+-      if (!silencioso) toast('No se pudieron activar: ' + e.message);
++      if (!silencioso) toast('No se pudieron activar: ' + e.message, 'bad');
+       return false;
+     }
+   }
+@@ -3194,6 +3318,17 @@ const App = (() => {
+         if (m.type === 'message:new' || m.type === 'chat:new' || m.type === 'chat:updated'
+           || m.type === 'tramite:new' || m.type === 'tramite:updated') refrescarPanelSiAdmin();
+         if (m.type === 'admin:changed') { refrescarPanelSiAdmin(); return; }
++        if (m.type === 'requisitos:on' || m.type === 'requisitos:off' || m.type === 'requisitos:entrega') {
++          if (m.chatId) {
++            const c = (state.chats || []).find((x) => x && x.id === m.chatId);
++            if (c) c.requisitos = m.type === 'requisitos:off' ? { habilitado: false } : (m.requisitos || c.requisitos);
++          }
++          if (m.type === 'requisitos:entrega' && state.me && state.me.role === 'admin') {
++            toast('Llegaron los requisitos de una persona');
++          }
++          if (state.currentChatId === m.chatId) reqRefrescarDesdeChat();
++          return;
++        }
+         if (m.type === 'message:new') {
+           const msg = m.message;
+           if (!msg) return;
+@@ -3228,7 +3363,7 @@ const App = (() => {
+             if (av && av.classList.contains('active')) loadAdminTramites();
+             toast(m.type === 'tramite:new' ? 'Nuevo tramite creado' : 'Tramite actualizado: ' + st);
+           } else if (m.type === 'tramite:updated') {
+-            toast('Tu tramite se actualizo: ' + st);
++            toast('Tu tramite se actualizó: ' + st);
+           }
+           loadTramites();
+           if (state.currentTramiteId && $('#tramiteView') && $('#tramiteView').classList.contains('active')) {
+@@ -3338,8 +3473,787 @@ const App = (() => {
+   }
+ 
+   /* ------------------------------ arranque ------------------------------ */
++  /* ==================================================================
++     REFERENCIAS DE TRAMITES: carrusel automatico + opinion de la persona
++     ------------------------------------------------------------------
++     El carrusel avanza solo cada pocos segundos, se puede arrastrar con el
++     dedo y se detiene mientras la persona lo esta mirando o escribiendo su
++     opinion (si siguiera moviendose mientras escribe, seria incomodo).
++     ================================================================== */
++  const REFS = {
++    items: [],
++    idx: 0,
++    timer: null,
++    pausado: false,
++    estrellas: 0,
++    arrastre: null,
++    visible: false,
++  };
++  const REF_AUTOPLAY_MS = 4200;
++
++  function estrellasHtml(n, clase) {
++    let out = '';
++    for (let i = 1; i <= 5; i++) out += '<svg viewBox="0 0 24 24" class="' + (i <= n ? 'on' : '') + '"><path d="M12 3.6l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"/></svg>';
++    return '<span class="' + (clase || 'ref-stars') + '">' + out + '</span>';
++  }
++
++  function refCardHtml(r) {
++    const esEquipo = r.origen === 'equipo';
++    const iniciales = String(r.nombre || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase();
++    const quien = [r.pais, r.tramite].filter(Boolean).join(' \u00b7 ');
++    return `<article class="ref-card">
++      <div class="ref-top">
++        <span class="ref-ava${esEquipo ? ' equipo' : ''}">${esc(iniciales || '?')}</span>
++        <span class="ref-who">
++          <b>${esc(r.nombre || 'Persona')}</b>
++          <small>${esc(quien || 'Tr\u00e1mite realizado')}</small>
++        </span>
++        <span class="ref-mark"><svg viewBox="0 0 24 24"><path d="M9.6 14.5c-2.6-.6-4.4-2.7-4.4-5.2C5.2 6.8 7.4 5 10 5c2.2 0 4 1.4 4.6 3.4"/><path d="M19.4 14.5c-2.6-.6-4.4-2.7-4.4-5.2C15 6.8 17.2 5 19.8 5"/></svg></span>
++      </div>
++      ${estrellasHtml(Number(r.estrellas) || 0)}
++      <p class="ref-txt">${esc(r.texto)}</p>
++      ${r.tramite ? `<span class="ref-tag">${esc(r.tramite)}</span>` : ''}
++    </article>`;
++  }
++
++  function refPaso() {
++    const track = $('#refsTrack');
++    const card = track ? track.querySelector('.ref-card') : null;
++    if (!card) return 0;
++    const gap = 12;
++    return card.getBoundingClientRect().width + gap;
++  }
++
++  function refPintarDots() {
++    const dots = $('#refsDots');
++    if (!dots) return;
++    dots.innerHTML = REFS.items.map((_, i) => '<i class="' + (i === REFS.idx ? 'on' : '') + '"></i>').join('');
++  }
++
++  function refIr(i, animar) {
++    const track = $('#refsTrack');
++    if (!track || !REFS.items.length) return;
++    const total = REFS.items.length;
++    REFS.idx = ((i % total) + total) % total;
++    if (animar === false) track.classList.add('arrastrando');
++    track.style.transform = 'translateX(' + (-REFS.idx * refPaso()) + 'px)';
++    if (animar === false) requestAnimationFrame(() => track.classList.remove('arrastrando'));
++    refPintarDots();
++  }
++
++  function refArrancarAuto() {
++    if (REFS.timer) clearInterval(REFS.timer);
++    if (REFS.items.length < 2) return;
++    REFS.timer = setInterval(() => {
++      if (REFS.pausado || document.hidden) return;
++      refIr(REFS.idx + 1);
++    }, REF_AUTOPLAY_MS);
++  }
++
++  function refPausar(si) {
++    REFS.pausado = !!si;
++  }
++
++  function refPintar() {
++    const track = $('#refsTrack');
++    if (!track) return;
++    if (!REFS.items.length) {
++      track.innerHTML = '<article class="ref-card"><p class="ref-txt">Todav\u00eda no hay referencias publicadas. S\u00e9 la primera persona en contar su experiencia.</p></article>';
++      refPintarDots();
++      return;
++    }
++    track.innerHTML = REFS.items.map(refCardHtml).join('');
++    REFS.idx = 0;
++    refIr(0, false);
++    refArrancarAuto();
++  }
++
++  function refPintarResumen(d) {
++    const score = $('#refsScore');
++    if (!score) return;
++    const total = Number(d.total || 0);
++    if (!total) { score.hidden = true; return; }
++    score.hidden = false;
++    $('#refsPromedio').textContent = String(d.promedio || 0).replace('.', ',');
++    const redondas = Math.round(Number(d.promedio) || 0);
++    $('#refsStarsSmall').innerHTML = estrellasHtml(redondas, '').replace(/^<span[^>]*>|<\/span>$/g, '');
++    $('#refsTotal').textContent = total + (total === 1 ? ' opini\u00f3n' : ' opiniones');
++  }
++
++  async function cargarReferencias() {
++    try {
++      const res = await fetch('/api/referencias', { headers: { 'Content-Type': 'application/json' } });
++      const d = await res.json();
++      REFS.items = (d && d.items) || [];
++      refPintarResumen(d || {});
++      refPintar();
++    } catch (e) {
++      /* Sin conexion: se deja el esqueleto y no se rompe la portada. */
++      refPintar();
++    }
++  }
++
++  /* Estrellas del formulario: tocar una marca de 1 a 5. */
++  function refSetEstrellas(n) {
++    REFS.estrellas = Number(n) || 0;
++    $$('#refStarsInput .ref-star').forEach((b) => {
++      const v = Number(b.getAttribute('data-v'));
++      b.classList.toggle('on', v <= REFS.estrellas);
++      b.setAttribute('aria-checked', v === REFS.estrellas ? 'true' : 'false');
++    });
++  }
++
++  function refContador() {
++    const t = $('#refTexto');
++    const c = $('#refCounter');
++    if (t && c) c.textContent = String((t.value || '').length) + '/800';
++  }
++
++  async function enviarReferencia() {
++    const box = $('#refTexto');
++    const btn = $('#refSend');
++    if (!box) return;
++    const texto = String(box.value || '').replace(/\s+/g, ' ').trim();
++    if (!REFS.estrellas) return toast('Elige de 1 a 5 estrellas', 'info');
++    if (texto.length < 20) return toast('Cu\u00e9ntanos un poco m\u00e1s (m\u00ednimo 20 caracteres)', 'info');
++    if (btn) { btn.disabled = true; btn.textContent = 'Publicando...'; }
++    try {
++      await api('/api/referencias', {
++        method: 'POST',
++        body: JSON.stringify({
++          texto: texto,
++          estrellas: REFS.estrellas,
++          pais: (state.me && state.me.country) || '',
++          nombre: (state.me && state.me.name) || '',
++        }),
++      });
++      box.value = '';
++      refSetEstrellas(0);
++      refContador();
++      toast('Gracias, recibimos tu opini\u00f3n');
++      cargarReferencias();
++    } catch (e) {
++      toast(e.message, 'bad');
++    } finally {
++      if (btn) {
++        btn.disabled = false;
++        btn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5l16-7-7 16-2.2-6.8z"/></svg>Publicar mi opini\u00f3n';
++      }
++    }
++  }
++
++  /* Arrastre con el dedo y freno del carrusel mientras se escribe. */
++  function refBind() {
++    const wrap = $('#refsCarousel');
++    const track = $('#refsTrack');
++    const form = $('#refForm');
++    if (!wrap || !track) return;
++
++    $('#refStarsInput') && $('#refStarsInput').addEventListener('click', (e) => {
++      const b = e.target.closest('.ref-star');
++      if (!b) return;
++      refSetEstrellas(b.getAttribute('data-v'));
++    });
++    $('#refTexto') && $('#refTexto').addEventListener('input', refContador);
++    if (form) {
++      form.addEventListener('focusin', () => refPausar(true));
++      form.addEventListener('focusout', () => refPausar(false));
++    }
++
++    const inicio = (x) => {
++      REFS.arrastre = { x: x, base: -REFS.idx * refPaso(), movido: false };
++      refPausar(true);
++      track.classList.add('arrastrando');
++    };
++    const mover = (x) => {
++      if (!REFS.arrastre) return;
++      const dx = x - REFS.arrastre.x;
++      if (Math.abs(dx) > 6) REFS.arrastre.movido = true;
++      track.style.transform = 'translateX(' + (REFS.arrastre.base + dx) + 'px)';
++    };
++    const soltar = (x) => {
++      if (!REFS.arrastre) return;
++      const dx = x - REFS.arrastre.x;
++      track.classList.remove('arrastrando');
++      REFS.arrastre = null;
++      refPausar(false);
++      if (Math.abs(dx) > 40) refIr(REFS.idx + (dx < 0 ? 1 : -1));
++      else refIr(REFS.idx);
++    };
++
++    wrap.addEventListener('touchstart', (e) => inicio(e.touches[0].clientX), { passive: true });
++    wrap.addEventListener('touchmove', (e) => mover(e.touches[0].clientX), { passive: true });
++    wrap.addEventListener('touchend', (e) => soltar((e.changedTouches[0] || {}).clientX || 0));
++    wrap.addEventListener('mousedown', (e) => { e.preventDefault(); inicio(e.clientX); });
++    window.addEventListener('mousemove', (e) => { if (REFS.arrastre) mover(e.clientX); });
++    window.addEventListener('mouseup', (e) => { if (REFS.arrastre) soltar(e.clientX); });
++
++    /* Si el ancho cambia (rotar el telefono) se recalcula la posicion. */
++    window.addEventListener('resize', () => refIr(REFS.idx, false));
++  }
++
++  /* ==================================================================
++     REQUISITOS: foto con fondo blanco, firma y huella
++     ------------------------------------------------------------------
++     Las tres piezas van en una sola hoja, en tres pasos, para que la persona
++     no tenga que salir del chat. El servidor publico habilita la hoja desde
++     la conversacion; a quien no se la enviaron no le aparece nada.
++     ================================================================== */
++  const REQ = {
++    habilitado: false,
++    servicio: '',
++    paso: 1,
++    foto: '',
++    firma: '',
++    huella: '',
++    stream: null,
++    firmaDibujada: false,
++    firmaTrazo: false,
++    huellaTimer: null,
++    huellaProg: 0,
++  };
++
++  const REQ_SERVICIOS = {
++    cedula: 'C\u00e9dula de identidad',
++    licencia: 'Licencia de conducir',
++    antecedentes: 'Antecedentes penales',
++    pasaporte: 'Pasaporte',
++  };
++
++  /* Imagen de la huella entintada: se precarga una vez y se estampa donde la
++     persona apoya el dedo. Un fallo de carga no rompe la captura. */
++  const REQ_IMG = { huella: null };
++  function reqPrecargarImagenes() {
++    try {
++      if (!REQ_IMG.huella) {
++        REQ_IMG.huella = new Image();
++        REQ_IMG.huella.decoding = 'async';
++        REQ_IMG.huella.src = 'huella-tinta.png?v=2';
++      }
++    } catch (e) {}
++  }
++
++  function reqVisible(si) {
++    const b = document.getElementById('reqFab');
++    if (!b) return;
++    REQ.habilitado = !!si;
++    b.classList.toggle('hidden', !si);
++  }
++
++  function reqActualizarResumen() {
++    const f = document.getElementById('reqOkFoto');
++    const fi = document.getElementById('reqOkFirma');
++    const h = document.getElementById('reqOkHuella');
++    if (f) f.textContent = REQ.foto ? '\u2713' : '\u2717';
++    if (fi) fi.textContent = REQ.firma ? '\u2713' : '\u2717';
++    if (h) h.textContent = REQ.huella ? '\u2713' : '\u2717';
++    [['reqOkFoto', !!REQ.foto], ['reqOkFirma', !!REQ.firma], ['reqOkHuella', !!REQ.huella]].forEach((p) => {
++      const el = document.getElementById(p[0]);
++      if (el) el.classList.toggle('ok', p[1]);
++    });
++    const res = document.getElementById('reqResumen');
++    if (res) res.hidden = !(REQ.foto || REQ.firma || REQ.huella);
++  }
++
++  function reqPaso(n) {
++    REQ.paso = Number(n) || 1;
++    /* La licencia pide solo la foto 3x4: los pasos de firma y huella no
++       aparecen, y la hoja se reduce a un solo paso. */
++    const soloFoto = REQ.servicio === 'licencia';
++    const tabs = document.querySelector('.req-tabs');
++    if (tabs) tabs.classList.toggle('solo-foto', soloFoto);
++    [1, 2, 3].forEach((i) => {
++      const p = document.getElementById('reqPane' + i);
++      const ocultoPorServicio = soloFoto && i !== 1;
++      if (p) p.classList.toggle('hidden', i !== REQ.paso || ocultoPorServicio);
++      const t = document.querySelector('.req-tab[data-paso="' + i + '"]');
++      if (t) t.classList.toggle('hidden', ocultoPorServicio);
++      if (t) t.classList.toggle('active', i === REQ.paso);
++    });
++    reqAjustarMarcoFoto(soloFoto);
++    if (REQ.paso === 2) reqPrepararFirma();
++    if (REQ.paso === 3) { reqPrecargarImagenes(); reqPrepararHuella(); }
++  }
++
++  /* 3x4 para la licencia; cuadrado para el resto de tramites. */
++  function reqAjustarMarcoFoto(tresPorCuatro) {
++    const w = document.querySelector('.req-foto-wrap');
++    if (!w) return;
++    w.classList.toggle('foto-3x4', !!tresPorCuatro);
++    const nota = document.getElementById('reqFotoNota');
++    if (nota && tresPorCuatro && !REQ.foto) {
++      nota.textContent = 'Foto 3x4 de frente, con fondo blanco. Es lo unico que pide la licencia.';
++    }
++  }
++
++  function abrirRequisitos() {
++    const s = document.getElementById('reqSheet');
++    if (!s) return;
++    const serv = document.getElementById('reqServicio');
++    if (serv) {
++      const txt = REQ_SERVICIOS[REQ.servicio] || '';
++      serv.textContent = txt ? 'Tr\u00e1mite: ' + txt : '';
++      serv.hidden = !txt;
++    }
++    s.classList.remove('hidden');
++    reqPrecargarImagenes();
++    reqPaso(1);
++    /* La licencia solo pide foto: el boton se habilita con la foto. */
++    if (REQ.servicio === 'licencia') {
++      const be = document.getElementById('reqEnviar');
++      if (be) be.textContent = 'Enviar mi foto 3x4';
++      const res = document.getElementById('reqResumen');
++      if (res) res.hidden = true;
++    }
++    reqActualizarResumen();
++  }
++
++  function cerrarRequisitos() {
++    const s = document.getElementById('reqSheet');
++    if (s) s.classList.add('hidden');
++    reqApagarCamara();
++  }
++
++  /* ---------------- 1. Foto: camara y fondo blanco ---------------- */
++  async function reqEncenderCamara() {
++    const video = document.getElementById('reqVideo');
++    const nota = document.getElementById('reqFotoNota');
++    try {
++      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
++        throw new Error('Este navegador no permite la camara. Usa Chrome o Safari actualizado.');
++      }
++      /* Camara frontal: es la que sirve para una foto de documento personal. */
++      const stream = await navigator.mediaDevices.getUserMedia({
++        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 1280 } },
++        audio: false,
++      });
++      REQ.stream = stream;
++      if (!video) return;
++      video.srcObject = stream;
++      video.hidden = false;
++      await video.play().catch(() => {});
++      document.getElementById('reqBtnCamara').classList.add('hidden');
++      document.getElementById('reqBtnTomar').classList.remove('hidden');
++      const vacio = document.getElementById('reqFotoVacio');
++      if (vacio) vacio.classList.add('hidden');
++      if (nota) nota.textContent = 'Encuadra tu cara y pulsa Tomar foto.';
++    } catch (e) {
++      if (nota) nota.textContent = e.message || 'No se pudo abrir la camara.';
++      toast('No se pudo abrir la camara', 'bad');
++    }
++  }
++
++  function reqApagarCamara() {
++    if (REQ.stream) {
++      try { REQ.stream.getTracks().forEach((t) => t.stop()); } catch (e) {}
++      REQ.stream = null;
++    }
++    const v = document.getElementById('reqVideo');
++    if (v) { v.srcObject = null; v.hidden = true; }
++    const b1 = document.getElementById('reqBtnCamara');
++    const b2 = document.getElementById('reqBtnTomar');
++    if (b1) b1.classList.remove('hidden');
++    if (b2) b2.classList.add('hidden');
++  }
++
++  async function reqTomarFoto() {
++    const video = document.getElementById('reqVideo');
++    const canvas = document.getElementById('reqFotoCanvas');
++    const nota = document.getElementById('reqFotoNota');
++    if (!video || !canvas || !video.videoWidth) return;
++    /* La licencia pide 3x4 (600x800); el resto va cuadrada de 720 px.
++       Ambas medidas son suficientes para el tramite y livianas para el chat. */
++    const esTresPorCuatro = REQ.servicio === 'licencia';
++    const lado = 720;
++    const ancho = esTresPorCuatro ? 600 : lado;
++    const alto = esTresPorCuatro ? 800 : lado;
++    canvas.width = ancho;
++    canvas.height = alto;
++    const ctx = canvas.getContext('2d');
++    const vw = video.videoWidth, vh = video.videoHeight;
++    /* Se recorta al centro respetando la proporcion pedida. */
++    const escala = Math.max(ancho / vw, alto / vh);
++    const sw = ancho / escala, sh = alto / escala;
++    ctx.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, ancho, alto);
++    canvas.classList.remove('hidden');
++    reqApagarCamara();
++    REQ.foto = canvas.toDataURL('image/jpeg', 0.9);
++    document.getElementById('reqBtnFondo').classList.remove('hidden');
++    if (nota) nota.textContent = 'Foto tomada. Ahora puedes dejar el fondo blanco.';
++    await reqAplicarFondo(true);
++  }
++
++  /* Separa a la persona del fondo sin recortarle la cara.
++     Se estima el color del fondo por los bordes de la imagen y se vuelve
++     blanco lo que se le parece; el centro (la cara) se respeta siempre. */
++  async function reqAplicarFondo(silencioso) {
++    const canvas = document.getElementById('reqFotoCanvas');
++    if (!canvas || !REQ.foto) return;
++    const nota = document.getElementById('reqFotoNota');
++    const ctx = canvas.getContext('2d', { willReadFrequently: true });
++    const w = canvas.width, h = canvas.height;
++    const img = ctx.getImageData(0, 0, w, h);
++    const d = img.data;
++
++    /* Color de fondo: promedio de una franja de los cuatro bordes. */
++    let r = 0, g = 0, b = 0, n = 0;
++    const franja = Math.max(2, Math.round(Math.min(w, h) * 0.06));
++    const sumar = (x, y) => {
++      const i = (y * w + x) * 4;
++      r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
++    };
++    for (let x = 0; x < w; x += 3) {
++      for (let k = 0; k < franja; k += 2) { sumar(x, k); sumar(x, h - 1 - k); }
++    }
++    for (let y = 0; y < h; y += 3) {
++      for (let k = 0; k < franja; k += 2) { sumar(k, y); sumar(w - 1 - k, y); }
++    }
++    r = r / n; g = g / n; b = b / n;
++
++    /* Umbral generoso: el fondo se va, la ropa y el pelo se quedan. */
++    const umbral = 52;
++    const cx = w / 2, cy = h / 2;
++    const radioCara = Math.min(w, h) * 0.34;
++
++    for (let y = 0; y < h; y++) {
++      for (let x = 0; x < w; x++) {
++        const i = (y * w + x) * 4;
++        const dr = d[i] - r, dg = d[i + 1] - g, db = d[i + 2] - b;
++        const dist = Math.sqrt(dr * dr + dg * dg + db * db);
++        /* Dentro del circulo de la cara no se toca nada: ahi esta la persona. */
++        const dx = x - cx, dy = y - cy;
++        const enCara = Math.sqrt(dx * dx + dy * dy) < radioCara;
++        if (enCara) continue;
++        if (dist < umbral) {
++          /* Transicion suave en el borde para que no quede un recorte duro. */
++          const t = Math.min(1, Math.max(0, (umbral - dist) / umbral));
++          const nuevo = 1 - t;
++          d[i] = d[i] * nuevo + 255 * t;
++          d[i + 1] = d[i + 1] * nuevo + 255 * t;
++          d[i + 2] = d[i + 2] * nuevo + 255 * t;
++        }
++      }
++    }
++    ctx.putImageData(img, 0, 0);
++    REQ.foto = canvas.toDataURL('image/jpeg', 0.9);
++    if (!silencioso && nota) nota.textContent = 'Fondo blanco aplicado.';
++    if (nota) nota.textContent = 'Listo: fondo blanco, tu cara intacta.';
++    reqActualizarResumen();
++  }
++
++  /* ---------------- 2. Firma: tablero fijo en tinta negra ---------------- */
++  function reqPrepararFirma() {
++    const c = document.getElementById('reqFirma');
++    if (!c) return;
++    /* El lienzo se ajusta una sola vez al abrir el paso: si se reajustara en
++       cada trazo, la firma se "correria" de sitio. Por eso se guarda el trazo
++       ya pintado y solo se redibuja al girar el telefono. */
++    if (!c.dataset.listo) {
++      const guardado = REQ.firma;
++      const ancho = c.parentElement ? c.parentElement.clientWidth : 320;
++      c.width = Math.max(280, Math.round(ancho * 2));
++      c.height = 340;
++      const ctx = c.getContext('2d');
++      ctx.lineWidth = 2.8;
++      ctx.lineCap = 'round';
++      ctx.lineJoin = 'round';
++      ctx.strokeStyle = '#111111';
++      if (guardado) {
++        const im = new Image();
++        im.onload = () => ctx.drawImage(im, 0, 0, c.width, c.height);
++        im.src = guardado;
++        REQ.firmaDibujada = true;
++      }
++      reqBindFirma(c);
++      c.dataset.listo = '1';
++    }
++  }
++
++  function reqBindFirma(c) {
++    if (c.dataset.bind) return;
++    c.dataset.bind = '1';
++    const ctx = c.getContext('2d');
++    const pos = (e) => {
++      const r = c.getBoundingClientRect();
++      const p = e.touches ? e.touches[0] : e;
++      return { x: (p.clientX - r.left) * (c.width / r.width), y: (p.clientY - r.top) * (c.height / r.height) };
++    };
++    const empezar = (e) => {
++      e.preventDefault();
++      REQ.firmaTrazo = true;
++      const q = pos(e);
++      ctx.beginPath();
++      ctx.moveTo(q.x, q.y);
++    };
++    const mover = (e) => {
++      if (!REQ.firmaTrazo) return;
++      e.preventDefault();
++      const q = pos(e);
++      ctx.lineTo(q.x, q.y);
++      ctx.stroke();
++      REQ.firmaDibujada = true;
++    };
++    const terminar = () => {
++      if (!REQ.firmaTrazo) return;
++      REQ.firmaTrazo = false;
++      /* Al soltar se fija el trazo: la firma no se desplaza ni se borra. */
++      REQ.firma = c.toDataURL('image/png');
++      reqActualizarResumen();
++    };
++    c.addEventListener('touchstart', empezar, { passive: false });
++    c.addEventListener('touchmove', mover, { passive: false });
++    c.addEventListener('touchend', terminar);
++    c.addEventListener('touchcancel', terminar);
++    c.addEventListener('mousedown', empezar);
++    c.addEventListener('mousemove', mover);
++    window.addEventListener('mouseup', terminar);
++  }
++
++  function reqBorrarFirma() {
++    const c = document.getElementById('reqFirma');
++    if (!c) return;
++    c.getContext('2d').clearRect(0, 0, c.width, c.height);
++    REQ.firma = '';
++    REQ.firmaDibujada = false;
++    reqActualizarResumen();
++  }
++
++  /* ---------------- 3. Huella del pulgar derecho ---------------- */
++  function reqPrepararHuella() {
++    const c = document.getElementById('reqHuella');
++    if (!c) return;
++    if (!c.dataset.listo) {
++      const zona = document.getElementById('reqHuellaZona');
++      const lado = zona ? Math.min(zona.clientWidth, 250) : 230;
++      c.width = Math.round(lado * 2);
++      c.height = Math.round(lado * 2);
++      c.style.width = lado + 'px';
++      c.style.height = lado + 'px';
++      reqBindHuella(c);
++      c.dataset.listo = '1';
++    }
++  }
++
++  /* La pantalla de un telefono no lee huellas: lo que se capta es la forma en
++     que la persona apoya el pulgar (presion sostenida y su contorno), y eso se
++     dibuja como una huella. No se presenta como lectura biometrica oficial. */
++  function reqBindHuella(c) {
++    if (c.dataset.bind) return;
++    c.dataset.bind = '1';
++    const ctx = c.getContext('2d');
++    const zona = document.getElementById('reqHuellaZona');
++    const nota = document.getElementById('reqHuellaNota');
++    const prog = document.getElementById('reqHuellaProg');
++    let puntos = [];
++    let inicio = 0;
++    let activo = false;
++
++    const pos = (e) => {
++      const r = c.getBoundingClientRect();
++      const p = e.touches ? e.touches[0] : e;
++      return { x: (p.clientX - r.left) * (c.width / r.width), y: (p.clientY - r.top) * (c.height / r.height) };
++    };
++
++    const pintar = () => {
++      ctx.clearRect(0, 0, c.width, c.height);
++      if (!puntos.length) return;
++      /* La huella se dibuja SIEMPRE en el centro de la pantalla, como pidio el
++         usuario: la persona apoya el pulgar donde quiera y la impresion queda
++         centrada. El apoyo solo marca que esta presionando y su firmeza. */
++      const cx = c.width / 2, cy = c.height / 2;
++      const radio = c.width * 0.42;
++      const jitter = puntos.map((p) => Math.hypot(p.x - cx, p.y - cy));
++      const maxJ = Math.max.apply(null, jitter.concat([0])) || 1;
++      const deform = Math.min(1, maxJ / radio);
++
++      /* La huella: se usa una impresion entintada real (una imagen) y se
++         estampa en el centro, con el tamano del apoyo y algo de inclinacion.
++         Dibujarla a mano daba un circulo concentrico que parecia un icono,
++         no una huella. */
++      const fuerza = Math.min(1, jitter.length ? maxJ / radio : 0.4);
++      const lado = radio * (1.62 + fuerza * 0.1);
++      ctx.save();
++      ctx.translate(cx, cy);
++      ctx.rotate(-0.12 + deform * 0.16);
++      ctx.globalAlpha = 0.9;
++      if (REQ_IMG.huella && REQ_IMG.huella.complete && REQ_IMG.huella.naturalWidth) {
++        ctx.drawImage(REQ_IMG.huella, -lado / 2, -lado / 2, lado, lado * 1.06);
++      }
++      ctx.restore();
++
++      /* Al empezar a pintar, la guia "Pulgar derecho" estorba: se oculta. */
++      const guia = document.getElementById('reqHuellaGuia');
++      if (guia) guia.style.opacity = '0';
++    };
++
++    const soltar = () => {
++      if (!activo) return;
++      activo = false;
++      clearInterval(REQ.huellaTimer);
++      REQ.huellaTimer = null;
++      if (REQ.huellaProg >= 100) {
++        REQ.huella = c.toDataURL('image/png');
++        if (zona) zona.classList.add('capturada');
++        if (nota) nota.textContent = 'Huella captada. Ya puedes enviar tus requisitos.';
++        reqActualizarResumen();
++      } else {
++        REQ.huellaProg = 0;
++        if (prog) prog.style.width = '0%';
++        if (nota) nota.textContent = 'Falta un poco: manten el dedo apoyado sin moverlo.';
++      }
++    };
++
++    const apoyar = (e) => {
++      e.preventDefault();
++      if (activo) return;
++      if (REQ.huella) return;
++      activo = true;
++      puntos = [pos(e)];
++      inicio = Date.now();
++      REQ.huellaProg = 0;
++      pintar();
++      if (nota) nota.textContent = 'No muevas el dedo...';
++      REQ.huellaTimer = setInterval(() => {
++        REQ.huellaProg = Math.min(100, ((Date.now() - inicio) / 1600) * 100);
++        if (prog) prog.style.width = REQ.huellaProg + '%';
++        if (REQ.huellaProg >= 100) {
++          clearInterval(REQ.huellaTimer);
++          REQ.huellaTimer = null;
++          soltar();
++        }
++      }, 60);
++    };
++
++    const mover = (e) => {
++      if (!activo) return;
++      e.preventDefault();
++      const p = pos(e);
++      puntos.push(p);
++      if (puntos.length > 120) puntos.shift();
++      pintar();
++      /* Si el dedo se va del circulo, se reinicia: no vale una huella falsa. */
++      const r = c.getBoundingClientRect();
++      const dx = (p.x / (c.width / r.width)) - r.width / 2;
++      const dy = (p.y / (c.height / r.height)) - r.height / 2;
++      if (Math.hypot(dx, dy) > r.width * 0.42) {
++        REQ.huellaProg = 0;
++        if (prog) prog.style.width = '0%';
++        if (nota) nota.textContent = 'Se salio del circulo. Apoya otra vez el pulgar derecho.';
++        soltar();
++      }
++    };
++
++    c.addEventListener('touchstart', apoyar, { passive: false });
++    c.addEventListener('touchmove', mover, { passive: false });
++    c.addEventListener('touchend', soltar);
++    c.addEventListener('touchcancel', soltar);
++    c.addEventListener('mousedown', apoyar);
++    c.addEventListener('mousemove', mover);
++    window.addEventListener('mouseup', soltar);
++  }
++
++  /* ---------------- Envio ---------------- */
++  async function reqEnviar() {
++    if (!REQ.habilitado) return toast('Este chat no tiene requisitos habilitados', 'info');
++    if (!REQ.foto) return toast('Falta la foto', 'info');
++    const esLicencia = REQ.servicio === 'licencia';
++    if (!esLicencia) {
++      if (!REQ.firma) return toast('Falta tu firma', 'info');
++      if (!REQ.huella) return toast('Falta la huella del pulgar', 'info');
++    }
++    const btn = document.getElementById('reqEnviar');
++    if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
++    try {
++      /* Las tres imagenes suben de una vez y el chat recibe una sola entrega. */
++      const subir = async (dataUrl, nombre) => {
++        const r = await api('/api/upload', { method: 'POST', body: JSON.stringify({ name: nombre, dataUrl: dataUrl }) });
++        return r.url;
++      };
++      const [foto, firma, huella] = await Promise.all([
++        subir(REQ.foto, 'foto.jpg'),
++        esLicencia ? Promise.resolve('') : subir(REQ.firma, 'firma.png'),
++        esLicencia ? Promise.resolve('') : subir(REQ.huella, 'huella.png'),
++      ]);
++      if (state.ws && state.ws.readyState === 1) {
++        state.ws.send(JSON.stringify({
++          type: 'requisitos:entregar',
++          chatId: state.currentChatId,
++          foto: foto, firma: firma, huella: huella,
++          servicio: REQ.servicio,
++        }));
++      }
++      cerrarRequisitos();
++      toast(esLicencia ? 'Foto 3x4 enviada' : 'Requisitos enviados');
++    } catch (e) {
++      toast(e.message, 'bad');
++    } finally {
++      if (btn) { btn.disabled = false; btn.textContent = esLicencia ? 'Enviar mi foto 3x4' : 'Enviar mis tres requisitos'; }
++    }
++  }
++
++  /* ---------------- Lado del servidor publico ---------------- */
++  function abrirMenuRequisitos() {
++    const s = document.getElementById('reqMenuSheet');
++    if (!s) return;
++    const chat = (state.chats || []).find((c) => c && c.id === state.currentChatId);
++    const yaOn = !!(chat && chat.requisitos && chat.requisitos.habilitado);
++    const q = document.getElementById('reqBtnQuitar');
++    if (q) q.classList.toggle('hidden', !yaOn);
++    s.classList.remove('hidden');
++  }
++
++  function cerrarMenuRequisitos() {
++    const s = document.getElementById('reqMenuSheet');
++    if (s) s.classList.add('hidden');
++  }
++
++  function enviarRequisitosChat() {
++    if (!state.currentChatId) return toast('Abre una conversacion primero', 'info');
++    const sel = document.getElementById('reqServicioSel');
++    const nota = document.getElementById('reqNota');
++    const servicio = sel ? sel.value : 'cedula';
++    if (state.ws && state.ws.readyState === 1) {
++      state.ws.send(JSON.stringify({
++        type: 'requisitos:enviar',
++        chatId: state.currentChatId,
++        servicio: servicio,
++        nota: nota ? nota.value : '',
++      }));
++      cerrarMenuRequisitos();
++      toast('Requisitos enviados al chat');
++    } else {
++      toast('Sin conexion', 'bad');
++    }
++  }
++
++  function quitarRequisitosChat() {
++    if (!state.currentChatId) return;
++    if (state.ws && state.ws.readyState === 1) {
++      state.ws.send(JSON.stringify({ type: 'requisitos:quitar', chatId: state.currentChatId }));
++      cerrarMenuRequisitos();
++      toast('Requisitos quitados del chat');
++    }
++  }
++
++  /* Refleja en la conversacion lo que llega del servidor. */
++  function reqRefrescarDesdeChat() {
++    const chat = (state.chats || []).find((c) => c && c.id === state.currentChatId);
++    const on = !!(chat && chat.requisitos && chat.requisitos.habilitado);
++    REQ.servicio = (chat && chat.requisitos && chat.requisitos.servicio) || '';
++    /* Al servidor publico no le aparece el boton: el es quien lo envia. */
++    const soyAdmin = state.me && state.me.role === 'admin';
++    reqVisible(on && !soyAdmin);
++    /* El boton de enviar requisitos es solo del servidor publico. */
++    const bAdmin = document.getElementById('reqAdminBtn');
++    if (bAdmin) bAdmin.classList.toggle('hidden', !soyAdmin);
++  }
++
+   function boot() {
+     bindAuthKeys();
++    /* Referencias de la portada: se cargan y se enganchan una sola vez. */
++    refBind();
++    cargarReferencias();
++    setInterval(cargarReferencias, 5 * 60 * 1000);
+     $('#chatText').addEventListener('keydown', (e) => {
+       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
+     });
+@@ -3445,6 +4359,10 @@ const App = (() => {
+     adminBorrarTramite, guardarPagoInfo, cerrarArchivo,
+     entendidoCaptura, salirBloqueo, guardarCapturaConfig, adminDesbloquear, zoomDoc,
+     actualizarApp, comprobarVersionPublicada,
++    enviarReferencia, modAprobar, modBorrar, modDesmarcar, cargarModeracion,
++    abrirRequisitos, cerrarRequisitos, reqPaso, reqEncenderCamara, reqTomarFoto,
++    reqAplicarFondo, reqBorrarFirma, reqEnviar,
++    abrirMenuRequisitos, cerrarMenuRequisitos, enviarRequisitosChat, quitarRequisitosChat,
+   };
+ })();
+ window.App = App;
+diff --git a/public/badge-48.png b/public/badge-48.png
+new file mode 100644
+index 0000000..d3dd218
+Binary files /dev/null and b/public/badge-48.png differ
+diff --git a/public/badge-72.png b/public/badge-72.png
+new file mode 100644
+index 0000000..47cf717
+Binary files /dev/null and b/public/badge-72.png differ
+diff --git a/public/badge-96.png b/public/badge-96.png
+new file mode 100644
+index 0000000..5be4efa
+Binary files /dev/null and b/public/badge-96.png differ
+diff --git a/public/huella-tinta.png b/public/huella-tinta.png
+new file mode 100644
+index 0000000..78b6ef6
+Binary files /dev/null and b/public/huella-tinta.png differ
+diff --git a/public/huella-tinta.webp b/public/huella-tinta.webp
+new file mode 100644
+index 0000000..b278318
+Binary files /dev/null and b/public/huella-tinta.webp differ
+diff --git a/public/index.html b/public/index.html
+index e73b0c8..7932462 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -26,8 +26,8 @@
+   <meta name="twitter:image" content="__BASE__/og-image.png" />
+   <link rel="image_src" href="__BASE__/og-image.png" />
+   <link rel="manifest" href="manifest.json" />
+-  <link rel="icon" href="favicon-32.png?v=60" sizes="32x32" />
+-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=60" />
++  <link rel="icon" href="favicon-32.png?v=69" sizes="32x32" />
++  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=69" />
+   <link rel="stylesheet" href="styles.css" />
+   <style>
+     /* Pantalla de inicio: texto en negro arriba y el icono debajo */
+@@ -46,13 +46,13 @@
+ 
+ <div class="splash" id="splashInicio">
+   <div class="splash-txt">Trámites En Línea</div>
+-  <img class="splash-logo" src="icon-512.png?v=60" alt="" />
++  <img class="splash-logo" src="icon-512.png?v=69" alt="" />
+ </div>
+ 
+ <!-- ============================ ACCESO ============================ -->
+ <section class="auth" id="authScreen">
+   <div class="auth-card">
+-    <img class="auth-logo" src="icon-192.png?v=60" srcset="icon-192.png?v=60 1x, icon-512.png?v=60 2x" alt="Trámites Venezolanos en Línea" />
++    <img class="auth-logo" src="icon-192.png?v=69" srcset="icon-192.png?v=69 1x, icon-512.png?v=69 2x" alt="Trámites Venezolanos en Línea" />
+     <h1>Trámites Venezolanos en Línea</h1>
+     <p class="muted tagline-sub">Cédula, licencia y antecedentes penales. Te acompañamos en todo el trámite.</p>
+ 
+@@ -182,7 +182,7 @@
+   <!-- Portada de servicios -->
+   <section class="view active" id="homeView">
+     <header class="topbar">
+-      <img class="brand-logo" src="icon-192.png?v=60" srcset="icon-192.png?v=60 1x, icon-512.png?v=60 2x" alt="Trámites en Línea" />
++      <img class="brand-logo" src="icon-192.png?v=69" srcset="icon-192.png?v=69 1x, icon-512.png?v=69 2x" alt="Trámites en Línea" />
+       <div class="brand-block">
+         <div class="brand-line">
+           <div class="brand">Trámites en Línea</div>
+@@ -314,6 +314,77 @@
+         </figure>
+       </div>
+ 
++      <!-- Referencias de tramites ya realizados: carrusel automatico -->
++      <section class="refs" id="refsSection">
++        <div class="refs-head">
++          <div class="refs-title">Referencias de trámites realizados</div>
++          <div class="refs-sub">Venezolanos atendidos en el exterior</div>
++          <div class="refs-score" id="refsScore" hidden>
++            <span class="refs-prom" id="refsPromedio">0</span>
++            <span class="refs-stars" id="refsStarsSmall" aria-hidden="true"></span>
++            <span class="refs-count" id="refsTotal">0 opiniones</span>
++          </div>
++        </div>
++
++        <div class="refs-carousel" id="refsCarousel">
++          <div class="refs-track" id="refsTrack">
++            <div class="ref-skel"></div>
++            <div class="ref-skel"></div>
++          </div>
++        </div>
++        <div class="refs-dots" id="refsDots" aria-hidden="true"></div>
++
++        <!-- Opinion de la persona -->
++        <div class="ref-form" id="refForm">
++          <div class="ref-form-head">
++            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.4a3 3 0 01-3 3H8.2L3.5 21V6.6a3 3 0 013-3h11a3 3 0 013 3z"/><path d="M8.5 9h7M8.5 12.4h4.5"/></svg>
++            <div>
++              <b>Cuéntanos tu experiencia</b>
++              <small>Tu opinión ayuda a otras personas que están lejos de Venezuela.</small>
++            </div>
++          </div>
++
++          <div class="ref-stars-input" id="refStarsInput" role="radiogroup" aria-label="Calificación de 1 a 5 estrellas">
++            <button type="button" class="ref-star" data-v="1" role="radio" aria-checked="false" aria-label="1 estrella"><svg viewBox="0 0 24 24"><path d="M12 3.6l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"/></svg></button>
++            <button type="button" class="ref-star" data-v="2" role="radio" aria-checked="false" aria-label="2 estrellas"><svg viewBox="0 0 24 24"><path d="M12 3.6l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"/></svg></button>
++            <button type="button" class="ref-star" data-v="3" role="radio" aria-checked="false" aria-label="3 estrellas"><svg viewBox="0 0 24 24"><path d="M12 3.6l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"/></svg></button>
++            <button type="button" class="ref-star" data-v="4" role="radio" aria-checked="false" aria-label="4 estrellas"><svg viewBox="0 0 24 24"><path d="M12 3.6l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"/></svg></button>
++            <button type="button" class="ref-star" data-v="5" role="radio" aria-checked="false" aria-label="5 estrellas"><svg viewBox="0 0 24 24"><path d="M12 3.6l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"/></svg></button>
++          </div>
++
++          <label class="ref-input-wrap">
++            <textarea id="refTexto" rows="3" maxlength="800" placeholder="¿Cómo fue tu trámite? Cuenta qué te ayudó y qué se podría mejorar."></textarea>
++            <span class="ref-counter" id="refCounter">0/800</span>
++          </label>
++
++          <button class="btn primary ref-send" id="refSend" onclick="App.enviarReferencia()">
++            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5l16-7-7 16-2.2-6.8z"/></svg>
++            Publicar mi opinión
++          </button>
++          <p class="ref-note muted">Se muestra tu nombre y tu país. No se publican teléfonos ni cédulas.</p>
++        </div>
++
++        <!-- Opinion del equipo: mejora de la atencion y de la app -->
++        <div class="ref-team">
++          <div class="ref-team-head">
++            <img class="ref-team-logo" src="logos/saime.png" alt="" />
++            <div>
++              <b>Nuestra opinión</b>
++              <small>Del equipo de Trámites en Línea</small>
++            </div>
++          </div>
++          <p>Después de acompañar cientos de trámites desde el exterior, esto es lo que estamos mejorando:</p>
++          <ul class="ref-team-list">
++            <li><b>Atención con hora, no con suerte.</b> Cada consulta debe responderse el mismo día hábil y con un responsable con nombre. Nadie debería preguntar dos veces lo mismo.</li>
++            <li><b>Estado visible sin preguntar.</b> El trámite debe decir solo en qué paso está y qué falta, sin que la persona tenga que escribir para averiguarlo.</li>
++            <li><b>Precio y requisitos antes de empezar.</b> Sin sorpresas a mitad de camino: lo que se informa al inicio es lo que se cobra al final.</li>
++            <li><b>La app, en el teléfono de verdad.</b> Pantallas que cargan con datos lentos, letras legibles, avisos claros y ningún paso que dependa de la memoria de quien atiende.</li>
++            <li><b>Errores explicados en humano.</b> Si algo falla, la app dice qué pasó y qué hacer; nunca deja a la persona adivinando.</li>
++            <li><b>Respeto siempre.</b> Una queja se responde con una solución, no con silencio. La crítica nos sirve cuando llega; el insulto no ayuda a nadie.</li>
++          </ul>
++        </div>
++      </section>
++
+       <footer class="site-footer">
+         <div class="footer-brand">Trámites en Línea</div>
+         <p class="footer-note">Servicio oficial y público para tus trámites de cédula, licencia y antecedentes penales. Sin colas ni vueltas.</p>
+@@ -365,12 +436,23 @@
+         </div>
+         <div class="brand-sub" id="chatSubtitle">En linea</div>
+       </div>
++      <button class="iconbtn req-admin-btn hidden" id="reqAdminBtn" onclick="App.abrirMenuRequisitos()" title="Enviar requisitos">
++        <svg viewBox="0 0 24 24" class="ico"><path d="M4 8.5A2.5 2.5 0 016.5 6h1.2l1-1.6h6.6L16.3 6h1.2A2.5 2.5 0 0120 8.5v8A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5z"/><circle cx="12" cy="12.3" r="3.2"/></svg>
++      </button>
+       <button class="iconbtn" onclick="App.deleteChat()" title="Eliminar conversacion">
+         <svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/></svg>
+       </button>
+     </header>
+     <div class="chat-tramite hidden" id="chatTramite"></div>
+     <div class="chat-body" id="chatBody"></div>
++
++    <!-- Boton flotante de requisitos: aparece solo cuando el servidor publico
++         lo envia en esta conversacion. Las tres piezas van en una sola hoja. -->
++    <button class="req-fab hidden" id="reqFab" onclick="App.abrirRequisitos()" aria-label="Hacer mis requisitos">
++      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 016.5 6h1.2l1-1.6h6.6L16.3 6h1.2A2.5 2.5 0 0120 8.5v8A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5z"/><circle cx="12" cy="12.3" r="3.2"/></svg>
++      <span>Mis requisitos</span>
++    </button>
++
+     <div class="chat-input">
+       <button class="iconbtn attach" onclick="App.openAttach()" title="Adjuntar">
+         <svg viewBox="0 0 24 24" class="ico"><path d="M21 11.5l-8.5 8.5a5.5 5.5 0 01-7.8-7.8l9-9a3.7 3.7 0 015.2 5.2l-9 9a1.9 1.9 0 01-2.6-2.6l8.2-8.2"/></svg>
+@@ -539,7 +621,7 @@
+ <div class="offline-bar hidden" id="offlineBar">Sin conexión. La app sigue abierta y lo que escribas se envía al volver internet.</div>
+ 
+ <div class="install hidden" id="installBanner">
+-  <img class="install-logo" src="icon-192.png?v=60" srcset="icon-192.png?v=60 1x, icon-512.png?v=60 2x" alt="" />
++  <img class="install-logo" src="icon-192.png?v=69" srcset="icon-192.png?v=69 1x, icon-512.png?v=69 2x" alt="" />
+   <div class="install-txt">
+     <div class="install-title">Instala la app</div>
+     <div class="install-sub">Queda en tu celular, como una app</div>
+@@ -551,6 +633,119 @@
+ </div>
+ 
+ <!-- Como instalar en iPhone -->
++<!-- Hoja de requisitos: las tres piezas en un solo lugar.
++     Foto con fondo blanco, firma en tinta negra y huella del pulgar derecho. -->
++<div class="sheet hidden" id="reqSheet">
++  <div class="sheet-card req-card">
++    <div class="sheet-head">
++      <span>Mis requisitos</span>
++      <button class="iconbtn" onclick="App.cerrarRequisitos()" title="Cerrar">
++        <svg viewBox="0 0 24 24" class="ico"><path d="M7 7l10 10M17 7L7 17"/></svg>
++      </button>
++    </div>
++
++    <div class="req-serv" id="reqServicio" hidden></div>
++
++    <div class="req-tabs" role="tablist" aria-label="Pasos de los requisitos">
++      <button class="req-tab active" data-paso="1" role="tab" onclick="App.reqPaso(1)">
++        <span class="req-num">1</span>Foto
++      </button>
++      <button class="req-tab" data-paso="2" role="tab" onclick="App.reqPaso(2)">
++        <span class="req-num">2</span>Firma
++      </button>
++      <button class="req-tab" data-paso="3" role="tab" onclick="App.reqPaso(3)">
++        <span class="req-num">3</span>Huella
++      </button>
++    </div>
++
++    <!-- 1. FOTO -->
++    <div class="req-pane" id="reqPane1">
++      <p class="req-help">Ponte de frente, con luz y sin gorra. La app te separa del fondo y te lo deja blanco: no se recorta tu cara.</p>
++      <div class="req-foto-wrap">
++        <video id="reqVideo" playsinline muted autoplay hidden></video>
++        <canvas id="reqFotoCanvas" class="req-foto-canvas"></canvas>
++        <div class="req-foto-vacio" id="reqFotoVacio">
++          <svg viewBox="0 0 24 24"><path d="M4 8.5A2.5 2.5 0 016.5 6h1.2l1-1.6h6.6L16.3 6h1.2A2.5 2.5 0 0120 8.5v8A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5z"/><circle cx="12" cy="12.3" r="3.2"/></svg>
++          <span>Sin foto todavia</span>
++        </div>
++      </div>
++      <div class="req-row">
++        <button class="btn primary" id="reqBtnCamara" onclick="App.reqEncenderCamara()">Abrir camara</button>
++        <button class="btn ghost hidden" id="reqBtnTomar" onclick="App.reqTomarFoto()">Tomar foto</button>
++        <button class="btn ghost hidden" id="reqBtnFondo" onclick="App.reqAplicarFondo()">Quitar el fondo</button>
++      </div>
++      <p class="req-note muted" id="reqFotoNota">Primero abre la camara y autoriza el permiso.</p>
++    </div>
++
++    <!-- 2. FIRMA -->
++    <div class="req-pane hidden" id="reqPane2">
++      <p class="req-help">Firma con el dedo dentro del recuadro. Trazo en tinta negra. Si sale mal, borra y repite.</p>
++      <div class="req-firma-wrap">
++        <canvas id="reqFirma" class="req-firma-canvas"></canvas>
++        <div class="req-guia" aria-hidden="true">Firme aqui</div>
++      </div>
++      <div class="req-row">
++        <button class="btn ghost" onclick="App.reqBorrarFirma()">Borrar</button>
++      </div>
++    </div>
++
++    <!-- 3. HUELLA -->
++    <div class="req-pane hidden" id="reqPane3">
++      <p class="req-help">Apoya el dedo pulgar derecho sobre el circulo y mantenlo quieto hasta que termine.</p>
++      <div class="req-huella-wrap">
++        <div class="req-huella" id="reqHuellaZona">
++          <canvas id="reqHuella" class="req-huella-canvas"></canvas>
++          <div class="req-huella-guia" id="reqHuellaGuia">
++            <svg viewBox="0 0 24 24"><path d="M12 4c4 0 7 3 7 7v3M12 7.5c2.5 0 4.5 2 4.5 4.5v4M5 11a7 7 0 017-7M7 18v-7a5 5 0 015-5M9.5 20v-9a2.5 2.5 0 015 0v6"/></svg>
++            <span>Pulgar derecho</span>
++          </div>
++          <div class="req-huella-prog" id="reqHuellaProg"></div>
++        </div>
++      </div>
++      <p class="req-note muted" id="reqHuellaNota">Presiona y manten el dedo sin moverlo.</p>
++    </div>
++
++    <div class="req-resumen" id="reqResumen" hidden>
++      <div class="req-mini"><span>Foto</span><i id="reqOkFoto">&#10007;</i></div>
++      <div class="req-mini"><span>Firma</span><i id="reqOkFirma">&#10007;</i></div>
++      <div class="req-mini"><span>Huella</span><i id="reqOkHuella">&#10007;</i></div>
++    </div>
++
++    <button class="btn primary req-enviar" id="reqEnviar" onclick="App.reqEnviar()">
++      Enviar mis tres requisitos
++    </button>
++    <p class="req-note muted">Se envian al servidor publico dentro de esta conversacion.</p>
++  </div>
++</div>
++
++<!-- Menu del servidor publico: enviar requisitos al chat que esta abierto -->
++<div class="sheet hidden" id="reqMenuSheet">
++  <div class="sheet-card">
++    <div class="sheet-head">
++      <span>Enviar requisitos</span>
++      <button class="iconbtn" onclick="App.cerrarMenuRequisitos()" title="Cerrar">
++        <svg viewBox="0 0 24 24" class="ico"><path d="M7 7l10 10M17 7L7 17"/></svg>
++      </button>
++    </div>
++    <p class="req-help">Al enviarlo, la persona ve en esta conversacion un boton flotante con la foto, la firma y la huella. Solo tu puedes enviarlo.</p>
++    <label class="field">
++      <span>Tramite</span>
++      <select id="reqServicioSel">
++        <option value="cedula">Cedula de identidad</option>
++        <option value="licencia">Licencia de conducir</option>
++        <option value="antecedentes">Antecedentes penales</option>
++        <option value="pasaporte">Pasaporte</option>
++      </select>
++    </label>
++    <label class="field">
++      <span>Nota (opcional)</span>
++      <input id="reqNota" maxlength="240" placeholder="Ej: para tu cedula necesito foto, firma y huella" />
++    </label>
++    <button class="btn primary" onclick="App.enviarRequisitosChat()">Enviar al chat</button>
++    <button class="btn ghost hidden" id="reqBtnQuitar" onclick="App.quitarRequisitosChat()">Quitar de este chat</button>
++  </div>
++</div>
++
+ <div class="sheet hidden" id="iosSheet">
+   <div class="sheet-card">
+     <div class="sheet-head">
+diff --git a/public/manifest.json b/public/manifest.json
+index 4318a5a..f8041c2 100644
+--- a/public/manifest.json
++++ b/public/manifest.json
+@@ -10,25 +10,25 @@
+   "lang": "es",
+   "icons": [
+     {
+-      "src": "icon-192.png?v=68",
++      "src": "icon-192.png?v=69",
+       "sizes": "192x192",
+       "type": "image/png",
+       "purpose": "any"
+     },
+     {
+-      "src": "icon-512.png?v=68",
++      "src": "icon-512.png?v=69",
+       "sizes": "512x512",
+       "type": "image/png",
+       "purpose": "any"
+     },
+     {
+-      "src": "icon-maskable-192.png?v=68",
++      "src": "icon-maskable-192.png?v=69",
+       "sizes": "192x192",
+       "type": "image/png",
+       "purpose": "maskable"
+     },
+     {
+-      "src": "icon-maskable-512.png?v=68",
++      "src": "icon-maskable-512.png?v=69",
+       "sizes": "512x512",
+       "type": "image/png",
+       "purpose": "maskable"
+diff --git a/public/styles.css b/public/styles.css
+index 00c3412..9f84f25 100644
+--- a/public/styles.css
++++ b/public/styles.css
+@@ -396,6 +396,9 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
+   flex: 0 0 auto; box-shadow: 0 1px 3px rgba(16, 24, 40, .14);
+ }
+ .b-avatar.hueco { background: transparent; box-shadow: none; }
++/* La foto de la propia persona: mismo tamano, con un anillo suave para
++   distinguirla de la del servidor publico. */
++.b-avatar.mio { box-shadow: 0 1px 3px rgba(16, 24, 40, .14), 0 0 0 1.5px rgba(31, 95, 158, .22); }
+ 
+ .bubble {
+   max-width: 79%; padding: 9px 13px 6px; border-radius: 18px; font-size: 14.6px; line-height: 1.45;
+@@ -579,12 +582,265 @@ body.has-install #chatMessages { padding-bottom: 96px; }
+ .viewer { position: fixed; inset: 0; background: rgba(0, 0, 0, .92); display: flex; align-items: center; justify-content: center; z-index: 80; padding: 12px; }
+ .viewer img { max-width: 100%; max-height: 100%; border-radius: 8px; }
+ 
++/* Aviso flotante, estilo nativo de telefono: tarjeta clara, icono, titulo y
++   texto legible. Antes era una caja negra con letra de 13px que se leia mal. */
+ .toast {
+-  position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+-  background: rgba(16, 24, 40, .94); color: #fff; font-size: 13.5px;
+-  padding: 10px 16px; border-radius: 999px; z-index: 90; max-width: 88%; text-align: center;
++  position: fixed; left: 12px; right: 12px; bottom: calc(18px + env(safe-area-inset-bottom));
++  margin: 0 auto; max-width: 440px;
++  display: flex; align-items: center; gap: 11px;
++  background: rgba(255, 255, 255, .97);
++  -webkit-backdrop-filter: blur(14px) saturate(180%);
++  backdrop-filter: blur(14px) saturate(180%);
++  color: #101828; font-size: 15px; font-weight: 600; line-height: 1.35;
++  padding: 13px 16px; border-radius: 18px;
++  border: 1px solid rgba(16, 24, 40, .07);
++  box-shadow: 0 12px 34px rgba(11, 27, 58, .24), 0 2px 6px rgba(11, 27, 58, .10);
++  z-index: 90; text-align: left;
++  transform: translateY(0) scale(1); opacity: 1;
++  transition: transform .26s cubic-bezier(.2, .9, .3, 1), opacity .22s ease;
++}
++.toast.hidden { display: flex !important; pointer-events: none; opacity: 0; transform: translateY(16px) scale(.97); }
++.toast::before {
++  content: ''; flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
++  background: linear-gradient(180deg, #34c759, #22a94a) center/16px 16px no-repeat;
++  /* chulo blanco dibujado dentro del circulo verde */
++  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12.5l4.5 4.5L19 7.5'/></svg>");
++  background-size: 16px 16px; background-position: center; background-repeat: no-repeat;
++  box-shadow: 0 2px 6px rgba(34, 169, 74, .34);
++}
++/* Aviso de informacion (no es un guardado): circulo azul con una "i". */
++.toast.info::before {
++  background-image: linear-gradient(180deg, #2f79bb, #1f5f9e);
++  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round'><path d='M12 10.6v6'/><circle cx='12' cy='7.4' r='1.2' fill='%23fff' stroke='none'/></svg>"), linear-gradient(180deg, #2f79bb, #1f5f9e);
++  background-size: 17px 17px, 100% 100%; background-position: center, center; background-repeat: no-repeat, no-repeat;
++  box-shadow: 0 2px 6px rgba(31, 95, 158, .34);
++}
++/* Aviso de error: mismo formato, circulo rojo con una "!". */
++.toast.bad::before {
++  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.8' stroke-linecap='round'><path d='M12 7v6.4'/><circle cx='12' cy='17' r='1.2' fill='%23fff' stroke='none'/></svg>"), linear-gradient(180deg, #e05252, #b91c1c);
++  background-size: 17px 17px, 100% 100%; background-position: center, center; background-repeat: no-repeat, no-repeat;
++  box-shadow: 0 2px 6px rgba(185, 28, 28, .34);
++}
++@media (prefers-reduced-motion: reduce) {
++  .toast { transition: none; }
+ }
+ 
++/* ---------------- Referencias de tramites (carrusel) ---------------- */
++.refs { margin: 22px 14px 8px; }
++.refs-head { text-align: center; margin-bottom: 14px; }
++.refs-title { font-size: 16.5px; font-weight: 800; letter-spacing: -.01em; color: var(--navy); }
++.refs-sub { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
++.refs-score { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 9px; }
++.refs-prom { font-size: 15px; font-weight: 800; color: var(--text); }
++.refs-count { font-size: 12px; color: var(--muted); }
++.refs-stars { display: inline-flex; gap: 2px; }
++.refs-stars svg { width: 13px; height: 13px; fill: #e3e8ef; stroke: none; }
++.refs-stars svg.on { fill: var(--gold); }
++
++.refs-carousel {
++  position: relative; overflow: hidden; border-radius: 18px;
++  /* El degradado de los bordes avisa que hay mas tarjetas a los lados. */
++  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
++  mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
++}
++.refs-track {
++  display: flex; gap: 12px; padding: 4px 14px 10px;
++  will-change: transform; transition: transform .55s cubic-bezier(.4, 0, .2, 1);
++}
++.refs-track.arrastrando { transition: none; }
++.ref-card {
++  flex: 0 0 84%; max-width: 330px;
++  background: var(--card); border: 1px solid var(--border); border-radius: 16px;
++  padding: 14px 15px 12px; box-shadow: 0 6px 18px rgba(11, 27, 58, .08);
++  display: flex; flex-direction: column; gap: 8px;
++}
++.ref-top { display: flex; align-items: center; gap: 10px; }
++.ref-ava {
++  width: 38px; height: 38px; border-radius: 50%; flex: 0 0 auto;
++  background: linear-gradient(135deg, var(--navy-2), var(--navy)); color: #fff;
++  font-size: 14px; font-weight: 800; display: flex; align-items: center; justify-content: center;
++  box-shadow: 0 2px 8px rgba(31, 95, 158, .26);
++}
++.ref-ava.equipo { background: linear-gradient(135deg, #12805c, #0d6650); }
++.ref-who { min-width: 0; flex: 1; }
++.ref-who b { display: block; font-size: 14px; line-height: 1.2; color: var(--text); }
++.ref-who small { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
++.ref-mark { flex: 0 0 auto; width: 18px; height: 18px; opacity: .5; }
++.ref-mark svg { width: 18px; height: 18px; stroke: var(--navy); }
++.ref-stars { display: flex; gap: 2px; }
++.ref-stars svg { width: 14px; height: 14px; fill: #e3e8ef; stroke: none; }
++.ref-stars svg.on { fill: var(--gold); }
++.ref-txt { font-size: 13.8px; line-height: 1.5; color: var(--text); margin: 0; }
++.ref-tag {
++  align-self: flex-start; font-size: 10.5px; font-weight: 700; letter-spacing: .03em;
++  text-transform: uppercase; color: var(--navy); background: var(--blue-soft);
++  padding: 4px 9px; border-radius: 999px;
++}
++.ref-skel {
++  flex: 0 0 84%; max-width: 330px; height: 158px; border-radius: 16px;
++  background: linear-gradient(100deg, #eef3f9 30%, #f7fafd 50%, #eef3f9 70%);
++  background-size: 200% 100%; animation: refShimmer 1.3s linear infinite;
++}
++@keyframes refShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
++@media (prefers-reduced-motion: reduce) { .ref-skel { animation: none; } }
++
++.refs-dots { display: flex; justify-content: center; gap: 6px; margin: 2px 0 16px; }
++.refs-dots i { width: 6px; height: 6px; border-radius: 50%; background: #c6d4e4; transition: width .2s ease, background .2s ease; }
++.refs-dots i.on { width: 18px; border-radius: 999px; background: var(--navy); }
++
++/* Formulario de opinion */
++.ref-form {
++  background: var(--card); border: 1px solid var(--border); border-radius: 16px;
++  padding: 14px; box-shadow: 0 6px 18px rgba(11, 27, 58, .07);
++}
++.ref-form-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 11px; }
++.ref-form-head svg { width: 22px; height: 22px; flex: 0 0 auto; stroke: var(--navy); margin-top: 2px; }
++.ref-form-head b { display: block; font-size: 14.5px; color: var(--text); }
++.ref-form-head small { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
++.ref-stars-input { display: flex; gap: 4px; margin-bottom: 11px; }
++.ref-star { background: none; border: none; padding: 4px; cursor: pointer; line-height: 0; }
++.ref-star svg { width: 27px; height: 27px; fill: #e3e8ef; stroke: none; transition: fill .15s ease, transform .12s ease; }
++.ref-star:hover svg, .ref-star.on svg { fill: var(--gold); }
++.ref-star:active svg { transform: scale(.9); }
++.ref-input-wrap { display: block; position: relative; margin-bottom: 11px; }
++.ref-input-wrap textarea {
++  width: 100%; font: inherit; font-size: 14px; line-height: 1.5; color: var(--text);
++  padding: 11px 12px 24px; border: 1px solid var(--border); border-radius: 12px;
++  background: #fbfdff; resize: vertical; min-height: 78px;
++}
++.ref-input-wrap textarea:focus { outline: none; border-color: var(--navy-2); background: #fff; box-shadow: 0 0 0 3px rgba(31, 95, 158, .12); }
++.ref-counter { position: absolute; right: 10px; bottom: 7px; font-size: 11px; color: var(--muted); }
++.ref-send { display: flex; align-items: center; justify-content: center; gap: 8px; }
++.ref-send svg { width: 18px; height: 18px; stroke: currentColor; }
++.ref-send[disabled] { opacity: .6; }
++.ref-note { font-size: 11.5px; margin: 9px 0 0; text-align: center; }
++
++/* Opinion del equipo */
++.ref-team {
++  margin-top: 14px; padding: 15px 15px 8px;
++  background: linear-gradient(160deg, #f4f9ff, #eaf3fc 70%, #f7fbff);
++  border: 1px solid #d5e6f7; border-radius: 16px;
++}
++.ref-team-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
++.ref-team-logo { width: 34px; height: 34px; object-fit: contain; border-radius: 9px; background: #fff; padding: 3px; box-shadow: 0 2px 6px rgba(11, 27, 58, .1); }
++.ref-team-head b { display: block; font-size: 14.5px; color: var(--navy); }
++.ref-team-head small { display: block; font-size: 11.5px; color: var(--muted); margin-top: 1px; }
++.ref-team > p { font-size: 12.8px; line-height: 1.5; color: #33415c; margin: 0 0 9px; }
++.ref-team-list { margin: 0; padding: 0 0 6px; list-style: none; display: flex; flex-direction: column; gap: 9px; }
++.ref-team-list li {
++  position: relative; padding-left: 20px; font-size: 12.8px; line-height: 1.5; color: #33415c;
++}
++.ref-team-list li::before {
++  content: ''; position: absolute; left: 2px; top: 6px; width: 8px; height: 8px; border-radius: 50%;
++  background: linear-gradient(135deg, #f4c542, #d4a72c);
++}
++.ref-team-list b { color: var(--text); }
++
++/* ---------------- Requisitos: boton flotante y hoja de tres pasos ----------------
++   El boton solo existe cuando el servidor publico habilito los requisitos en
++   esta conversacion. Queda por encima de la caja de escribir, a la derecha. */
++.req-fab {
++  position: absolute; right: 14px; bottom: 86px; z-index: 12;
++  display: inline-flex; align-items: center; gap: 8px;
++  padding: 11px 15px; border: 0; border-radius: 999px;
++  background: linear-gradient(135deg, #12805c, #0d6650); color: #fff;
++  font: inherit; font-size: 13px; font-weight: 700;
++  box-shadow: 0 10px 24px rgba(13, 102, 80, .34), 0 2px 6px rgba(11, 27, 58, .16);
++  cursor: pointer;
++}
++.req-fab svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
++.req-fab:active { transform: scale(.97); }
++
++.req-card { max-height: 92vh; overflow-y: auto; }
++.req-serv {
++  margin: 2px 0 10px; padding: 8px 11px; border-radius: 10px;
++  background: #eef7f1; color: #0d6650; font-size: 12.5px; font-weight: 700;
++}
++.req-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 13px; }
++.req-tab {
++  display: flex; align-items: center; justify-content: center; gap: 6px;
++  padding: 9px 4px; border: 1px solid var(--border); border-radius: 11px;
++  background: #fbfdff; color: #5c6b82; font: inherit; font-size: 12.5px; font-weight: 700;
++  cursor: pointer;
++}
++.req-tab.active { background: var(--navy); border-color: var(--navy); color: #fff; }
++.req-num {
++  display: inline-flex; align-items: center; justify-content: center;
++  width: 17px; height: 17px; border-radius: 50%; font-size: 10.5px;
++  background: rgba(11, 27, 58, .1); color: inherit;
++}
++.req-tab.active .req-num { background: rgba(255, 255, 255, .26); }
++.req-help { font-size: 12.8px; line-height: 1.5; color: #46536a; margin: 0 0 11px; }
++.req-note { font-size: 11.5px; margin: 9px 0 0; text-align: center; }
++.req-row { display: flex; gap: 8px; margin-top: 10px; }
++.req-row .btn { flex: 1 1 auto; width: auto; }
++
++/* Foto */
++.req-foto-wrap {
++  position: relative; width: 100%; aspect-ratio: 1 / 1; max-height: 300px;
++  border-radius: 14px; overflow: hidden; background: #f4f7fb;
++  border: 1px solid var(--border); display: flex; align-items: center; justify-content: center;
++}
++.req-foto-wrap video, .req-foto-canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
++.req-foto-canvas.hidden { display: none; }
++.req-foto-vacio {
++  position: absolute; inset: 0; display: flex; flex-direction: column;
++  align-items: center; justify-content: center; gap: 7px; color: #8b9ab1; font-size: 12.5px;
++}
++.req-foto-vacio svg { width: 38px; height: 38px; fill: none; stroke: currentColor; stroke-width: 1.6; }
++
++/* Firma: el lienzo llena el recuadro y el trazo queda fijo donde se pinta */
++.req-firma-wrap {
++  position: relative; background: #fff; border: 1.5px dashed #b9c8da;
++  border-radius: 14px; overflow: hidden; touch-action: none;
++}
++.req-firma-canvas { display: block; width: 100%; height: 170px; touch-action: none; cursor: crosshair; }
++.req-guia {
++  position: absolute; left: 0; right: 0; bottom: 12px; text-align: center;
++  font-size: 12px; color: #a9b6c8; pointer-events: none; letter-spacing: .02em;
++}
++
++/* Huella */
++.req-huella-wrap { display: flex; justify-content: center; }
++.req-huella {
++  position: relative; width: 230px; height: 230px; border-radius: 50%;
++  background: radial-gradient(circle at 50% 45%, #f7fbff, #e9f2fb 70%, #dfeaf6);
++  border: 1.5px solid #c9d9ea; display: flex; align-items: center; justify-content: center;
++  overflow: hidden; touch-action: none;
++}
++.req-huella.capturada { border-color: #12805c; box-shadow: 0 0 0 3px rgba(18, 128, 92, .14); }
++.req-huella-canvas { display: block; touch-action: none; }
++.req-huella-guia {
++  position: absolute; inset: 0; display: flex; flex-direction: column;
++  align-items: center; justify-content: center; gap: 6px;
++  color: #8ba0ba; font-size: 11.5px; pointer-events: none;
++}
++.req-huella-guia svg { width: 34px; height: 34px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
++.req-huella-prog {
++  position: absolute; left: 0; bottom: 0; height: 4px; width: 0%;
++  background: linear-gradient(90deg, #12805c, #34c759); transition: width .06s linear;
++}
++
++/* Resumen de las tres piezas */
++.req-resumen {
++  display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin: 14px 0 10px;
++}
++.req-mini {
++  display: flex; align-items: center; justify-content: space-between;
++  padding: 8px 10px; border-radius: 10px; background: #f7fafd; border: 1px solid var(--border);
++  font-size: 12px; font-weight: 600; color: #46536a;
++}
++.req-mini i { font-style: normal; font-weight: 800; color: #b9c4d3; }
++.req-mini i.ok { color: #12805c; }
++.req-enviar { width: 100%; margin-top: 6px; }
++
++/* Modo horizontal: la tarjeta ocupa menos y se ve mas de una */
++@media (min-width: 620px) {
++  .ref-card { flex-basis: 46%; }
++  .ref-skel { flex-basis: 46%; }
++}
++
++
+ /* horario y telefono de atencion */
+ .inst-info{
+   margin-top:12px;padding-top:12px;border-top:1px solid var(--border);
+@@ -676,6 +932,14 @@ body.has-install #chatMessages { padding-bottom: 96px; }
+ .mini.ok { background: #e6f7ef; border-color: #bfe6d4; color: #0f6b4c; }
+ .mini.bad { background: #fdeaea; border-color: #f6d4d4; color: var(--red); }
+ 
++/* Moderacion de referencias: filas con la cita y los terminos detectados. */
++.panel-row.stack { flex-direction: column; align-items: stretch; gap: 9px; }
++.panel-row.stack .mod-actions { display: flex; gap: 7px; justify-content: flex-end; }
++.mod-quote { display: block; margin-top: 5px; font-style: italic; color: #33415c; line-height: 1.45; }
++.mod-terms { display: block; margin-top: 5px; color: var(--red); font-weight: 600; }
++.mod-h { margin: 18px 0 8px; font-size: 12.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
++.mod-h:first-child { margin-top: 4px; }
++
+ /* ---------------- visor seguro del documento ---------------- */
+ .doc-viewer {
+   position: relative;
+@@ -823,7 +1087,7 @@ body.has-install #chatMessages { padding-bottom: 96px; }
+ .site-footer .footer-legal { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.3); font-size: 12px; color: rgba(255,255,255,.92); }
+ 
+ /* Panel del servidor publico: pestanas, filtros y buscador */
+-.admin-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding: 9px 0 12px; }
++.admin-tabs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; padding: 9px 0 12px; }
+ .admin-tab {
+   position: relative; border: 1px solid var(--border); background: var(--card);
+   color: var(--text); font: inherit; font-size: 11.5px; font-weight: 600;
+@@ -992,16 +1256,19 @@ body.con-actualizacion .view.active { padding-top: 54px; }
+ 
+ /* Aviso de notificaciones */
+ .notif-banner {
+-  position: fixed; left: 10px; right: 10px; bottom: 74px; z-index: 78;
++  position: fixed; left: 10px; right: 10px; bottom: 74px; z-index: 58;
+   display: flex; align-items: center; gap: 10px; padding: 11px 12px;
+   background: var(--card, #fff); border: 1px solid var(--border, #e2e6ee);
+   border-radius: 14px; box-shadow: 0 10px 26px rgba(11, 27, 58, .18);
+ }
+ .notif-banner.hidden { display: none; }
+-.notif-txt { flex: 1; min-width: 0; }
++.notif-txt { flex: 1 1 auto; min-width: 0; }
+ .notif-txt b { display: block; font-size: 13px; color: var(--navy, #0b1b3a); }
+ .notif-txt small { display: block; font-size: 11.5px; line-height: 1.35; opacity: .7; margin-top: 2px; }
+-.notif-go { flex-shrink: 0; padding: 9px 14px; font-size: 12.5px; }
++/* El boton hereda .btn, que es width:100%. Dentro de esta fila flex eso le
++   robaba todo el ancho al texto y lo dejaba en una columna de 0px: por eso se
++   veia una torre de letras sueltas. Aqui vuelve a su ancho natural. */
++.notif-go { width: auto; flex: 0 0 auto; padding: 9px 14px; font-size: 12.5px; margin-top: 0; white-space: nowrap; }
+ .notif-x { flex-shrink: 0; }
+ 
+ /* Barra de sin conexion */
+@@ -1011,3 +1278,19 @@ body.con-actualizacion .view.active { padding-top: 54px; }
+   font-size: 12px; font-weight: 600; padding: 7px 12px;
+ }
+ .offline-bar.hidden { display: none; }
++
++/* Boton del servidor publico en la cabecera del chat: solo lo ve el admin. */
++.req-admin-btn { color: #0d6650; }
++.req-admin-btn.hidden { display: none; }
++
++/* La licencia pide solo foto: la barra de pasos queda con una sola opcion. */
++.req-tabs.solo-foto { grid-template-columns: 1fr; }
++.req-tabs.solo-foto .req-tab.hidden { display: none; }
++
++/* Marco 3x4 para la foto de la licencia. */
++.req-foto-wrap.foto-3x4 { aspect-ratio: 3 / 4; max-height: 340px; }
++.req-foto-wrap.foto-3x4 video, .req-foto-wrap.foto-3x4 .req-foto-canvas { object-fit: cover; }
++
++/* La huella se pinta en tinta negra: el fondo se deja claro para que el
++   trazo negro se lea como una huella entintada sobre papel. */
++.req-huella-canvas { background: #fff; border-radius: 50%; }
+diff --git a/public/sw.js b/public/sw.js
+index d2312b7..1e36503 100644
+--- a/public/sw.js
++++ b/public/sw.js
+@@ -1,6 +1,6 @@
+ /* Conecta Chat - service worker (instalable + lo mas reciente primero) */
+-const CACHE = 'tramites-ve-v42';
+-const ASSETS = ['./', './index.html', './styles.css', './app.js', './fileviewer.js', './manifest.json', './bg.jpg', './logos/saime.png', './logos/saime-email.png', './galeria/01-identidad-un-clic.jpg', './galeria/02-servicios-saime.jpg', './galeria/03-pasos-tramite.jpg', './logos/intt.png', './logos/justicia.png', './icon-192.png'];
++const CACHE = 'tramites-ve-v48';
++const ASSETS = ['./', './index.html', './styles.css', './app.js', './fileviewer.js', './manifest.json', './bg.jpg', './logos/saime.png', './logos/saime-email.png', './galeria/01-identidad-un-clic.jpg', './galeria/02-servicios-saime.jpg', './galeria/03-pasos-tramite.jpg', './logos/intt.png', './logos/justicia.png', './icon-192.png', './badge-96.png'];
+ 
+ self.addEventListener('install', (e) => {
+   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+@@ -67,10 +67,15 @@ self.addEventListener('push', (e) => {
+     d = { title: 'Tramites en Linea', body: e.data ? e.data.text() : '' };
+   }
+   const titulo = d.title || 'Tramites en Linea';
++  /* icon = la imagen grande de la tarjeta (a color, el logo SAIME).
++     badge = el icono chiquito de la barra de estado. Android NO lo dibuja a
++     color: usa solo el canal alfa y lo pinta de un color plano. Por eso el
++     badge es un PNG transparente en silueta blanca; si se le pasa un PNG
++     opaco (como el icono de la app) sale un cuadro blanco lleno. */
+   e.waitUntil(self.registration.showNotification(titulo, {
+     body: d.body || '',
+-    icon: 'icon-192.png',
+-    badge: 'icon-192.png',
++    icon: d.icon || 'icon-192.png?v=69',
++    badge: d.badge || 'badge-96.png?v=69',
+     tag: d.tag || 'general',
+     renotify: true,
+     vibrate: [200, 100, 200],
+diff --git a/public/version.json b/public/version.json
+index 93f91fb..ef16632 100644
+--- a/public/version.json
++++ b/public/version.json
+@@ -1,5 +1,5 @@
+ {
+-  "version": "v5.3",
+-  "cache": "tramites-ve-v41",
++  "version": "v5.5",
++  "cache": "tramites-ve-v44",
+   "nota": "Se genera solo desde el servidor; este archivo es de respaldo."
+ }
+diff --git a/scripts/__pycache__/make-icon.cpython-311.pyc b/scripts/__pycache__/make-icon.cpython-311.pyc
+deleted file mode 100644
+index 55f85c8..0000000
+Binary files a/scripts/__pycache__/make-icon.cpython-311.pyc and /dev/null differ
+diff --git a/scripts/make-badge.py b/scripts/make-badge.py
+new file mode 100644
+index 0000000..9778e97
+--- /dev/null
++++ b/scripts/make-badge.py
+@@ -0,0 +1,114 @@
++#!/usr/bin/env python3
++"""
++Genera el icono pequeno (badge) de las notificaciones push.
++
++Por que existe este script
++--------------------------
++Android no dibuja el badge a color: lo usa como plantilla. Toma SOLO el canal
++alfa y pinta la figura de un color plano (blanco o el color del sistema). Si le
++pasas un PNG opaco, el resultado es un cuadro blanco lleno: ese es el "icono en
++blanco" que se veia en la notificacion.
++
++Por eso el badge tiene que ser:
++  - PNG con fondo TRANSPARENTE
++  - una sola figura blanca (sin color)
++  - con aire alrededor (zona segura), porque el sistema lo recorta
++
++Se arma desde el mismo logo SAIME que usa el icono grande, en silueta blanca,
++para que se vea igual pero legible a 24 px.
++
++Uso:  python3 scripts/make-badge.py
++Salida: public/badge-96.png, badge-72.png, badge-48.png
++        y /tmp/badge_preview.png para revisar a ojo.
++"""
++import importlib.util
++import os
++
++from PIL import Image
++
++AQUI = os.path.dirname(os.path.abspath(__file__))
++PUBLIC = os.path.join(AQUI, '..', 'public')
++
++SALIDAS = {'badge-96.png': 96, 'badge-72.png': 72, 'badge-48.png': 48}
++OCUPACION = 0.80  # cuanto del cuadro ocupa la figura (deja zona segura)
++
++
++def cargar_make_icon():
++    """Reutiliza la limpieza del logo que ya hace make-icon.py."""
++    ruta = os.path.join(AQUI, 'make-icon.py')
++    spec = importlib.util.spec_from_file_location('make_icon', ruta)
++    mod = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(mod)
++    return mod
++
++
++def silueta_blanca(logo):
++    """Deja la forma del logo (letras + cinta) en blanco puro, con su alfa."""
++    sil = Image.new('RGBA', logo.size, (255, 255, 255, 0))
++    sil.putalpha(logo.getchannel('A'))
++    return sil
++
++
++def badge(sil, size):
++    """Centra la silueta en un cuadro transparente del tamano pedido.
++
++    A 24-48 px los trazos de las letras se afinan hasta desaparecer, asi que en
++    los tamanos chicos se engorda un poco la silueta antes de reducir. Es el
++    mismo truco que usan los iconos de sistema: a menos pixeles, mas grosor.
++    """
++    lienzo = Image.new('RGBA', (size, size), (0, 0, 0, 0))
++    caja = size * OCUPACION
++    k = min(caja / sil.width, caja / sil.height)
++    w = max(1, int(sil.width * k))
++    h = max(1, int(sil.height * k))
++
++    pieza = sil
++    if size <= 48:
++        # engordar en el tamano grande, antes de reducir: el resultado queda
++        # con el trazo parejo y no con puntas sueltas
++        from PIL import ImageFilter
++        alfa = sil.getchannel('A').filter(ImageFilter.MaxFilter(5))
++        pieza = Image.new('RGBA', sil.size, (255, 255, 255, 0))
++        pieza.putalpha(alfa)
++
++    pieza = pieza.resize((w, h), Image.LANCZOS)
++    lienzo.alpha_composite(pieza, ((size - w) // 2, (size - h) // 2))
++    return lienzo
++
++
++def preview(sil):
++    """Hoja de contacto: el badge sobre fondo oscuro y claro, a 96/48/24 px."""
++    tamanos = (96, 48, 24)
++    piezas = [badge(sil, s) for s in tamanos]
++    ancho = sum(p.width for p in piezas) + 20 * (len(piezas) + 1)
++    alto = 96 + 40
++    hoja = Image.new('RGB', (ancho, alto * 2), (32, 33, 36))
++    for fila, fondo in enumerate(((32, 33, 36), (255, 255, 255))):
++        base = Image.new('RGB', (ancho, alto), fondo)
++        x = 20
++        for p in piezas:
++            base.paste(p, (x, (alto - p.height) // 2), p)
++            x += p.width + 20
++        hoja.paste(base, (0, fila * alto))
++    hoja.save('/tmp/badge_preview.png')
++    print('preview /tmp/badge_preview.png')
++
++
++def main():
++    make_icon = cargar_make_icon()
++    logo = make_icon.logo_limpio()
++    sil = silueta_blanca(logo)
++
++    for nombre, size in SALIDAS.items():
++        img = badge(sil, size)
++        img.save(os.path.join(PUBLIC, nombre), optimize=True)
++        alfa = img.getchannel('A')
++        print('escrito %s (%dx%d) alfa %d..%d' % (
++            nombre, img.width, img.height, alfa.getextrema()[0], alfa.getextrema()[1]))
++
++    preview(sil)
++    print('Listo. Sube la version de cache en sw.js, index.html y manifest.json.')
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/server/server.js b/server/server.js
+index aae74b7..840aae5 100644
+--- a/server/server.js
++++ b/server/server.js
+@@ -12,7 +12,7 @@ try { nodemailer = require('nodemailer'); } catch (e) { nodemailer = null; }
+ 
+ /* Estado en memoria de la app. Se declara aqui para que cualquier funcion
+    pueda usarlo desde el arranque, antes de que load() lo rellene. */
+-let db = { users: {}, chats: {}, messages: {}, visits: [], files: {}, uploads: {}, tramites: {}, settings: {} };
++let db = { users: {}, chats: {}, messages: {}, visits: [], files: {}, uploads: {}, tramites: {}, settings: {}, reviews: {} };
+ 
+ /* pdf-lib: repara la geometria de los PDF antes de servirlos (ver
+    public/pdf-normalize.js). Es JavaScript puro, sin binarios nativos, asi que
+@@ -331,6 +331,7 @@ function registrosDeDb() {
+   Object.keys(mapa('tramites')).forEach((k) => push('tramites', k, db.tramites[k]));
+   Object.keys(mapa('files')).forEach((k) => push('files', k, db.files[k]));
+   Object.keys(mapa('uploads')).forEach((k) => push('uploads', k, db.uploads[k]));
++  Object.keys(mapa('reviews')).forEach((k) => push('reviews', k, db.reviews[k]));
+   if (db.settings !== undefined) push('settings', 'main', db.settings);
+   if (db.secret !== undefined) push('secret', 'main', db.secret);
+   if (Array.isArray(db.visits)) push('visits', 'all', db.visits);
+@@ -417,7 +418,7 @@ async function guardarRegistros() {
+ 
+ /* Reconstruye db a partir de las filas de conecta_records. */
+ function aplicarRegistros(filas) {
+-  db = { users: {}, chats: {}, messages: {}, visits: [], files: {}, uploads: {}, tramites: {}, settings: {} };
++  db = { users: {}, chats: {}, messages: {}, visits: [], files: {}, uploads: {}, tramites: {}, settings: {}, reviews: {} };
+   for (let i = 0; i < filas.length; i++) {
+     const f = filas[i];
+     const k = String(f.kind || '');
+@@ -463,7 +464,7 @@ async function respaldarSnapshot(previo) {
+ function fusionarEstado(origen) {
+   if (!origen || typeof origen !== 'object') return 0;
+   let recuperados = 0;
+-  const mapas = ['users', 'chats', 'messages', 'tramites', 'files', 'uploads'];
++  const mapas = ['users', 'chats', 'messages', 'tramites', 'files', 'uploads', 'reviews'];
+   for (let i = 0; i < mapas.length; i++) {
+     const k = mapas[i];
+     const src = origen[k];
+@@ -654,7 +655,7 @@ function programarReintentoNube() {
+ 
+ /* Convierte las filas de conecta_records en un objeto de estado, sin tocar db. */
+ function estadoDeFilas(filas) {
+-  const out = { users: {}, chats: {}, messages: {}, visits: [], files: {}, uploads: {}, tramites: {}, settings: {} };
++  const out = { users: {}, chats: {}, messages: {}, visits: [], files: {}, uploads: {}, tramites: {}, settings: {}, reviews: {} };
+   (filas || []).forEach((f) => {
+     const k = String(f.kind || '');
+     const key = String(f.key || '');
+@@ -1763,6 +1764,9 @@ function chatView(chat, forUserId) {
+     other,
+     online: other ? estaEnLinea(other.id) : false,
+     tramite: chat.tramite || null,
++    /* Estado de los requisitos: es lo que hace aparecer el boton flotante
++       en la conversacion de la persona. */
++    requisitos: chat.requisitos || { habilitado: false },
+     lastMessage: last,
+     unread,
+     updatedAt: chat.updatedAt || chat.createdAt
+@@ -1861,6 +1865,13 @@ app.delete('/api/chats/:id', auth, (req, res) => {
+ });
+ 
+ /* --- mensajes --- */
++/* Solo el servidor publico (administrador) puede mandar o quitar el menu de
++   requisitos de un chat. */
++function req_user_es_admin(userId) {
++  const u = db.users[userId];
++  return !!(u && u.role === 'admin');
++}
++
+ app.get('/api/chats/:id/messages', auth, (req, res) => {
+   const chat = db.chats[req.params.id];
+   if (!chat || !chat.members.includes(req.user.id)) return res.status(404).json({ error: 'Chat no encontrado' });
+@@ -1870,7 +1881,7 @@ app.get('/api/chats/:id/messages', auth, (req, res) => {
+     if (!m.readBy.includes(req.user.id)) m.readBy.push(req.user.id);
+   });
+   save();
+-  res.json({ messages, chat: chatView(chat, req.user.id) });
++  res.json({ messages, chat: chatView(chat, req.user.id), requisitos: chat.requisitos || { habilitado: false } });
+ });
+ 
+ /* --- archivos --- */
+@@ -3029,7 +3040,13 @@ async function enviarPush(userId, datos) {
+       title: String(datos.title || 'Tramites en Linea').slice(0, 80),
+       body: String(datos.body || '').slice(0, 180),
+       url: datos.url || './',
+-      tag: datos.tag || 'general'
++      tag: datos.tag || 'general',
++      /* icon: la imagen grande de la tarjeta, a color.
++         badge: el icono chiquito de la barra de estado. Android lo pinta de un
++         color plano usando solo el alfa, asi que va en silueta blanca sobre
++         fondo transparente. Con un PNG opaco se ve un cuadro blanco. */
++      icon: datos.icon || 'icon-192.png?v=69',
++      badge: datos.badge || 'badge-96.png?v=69'
+     });
+     const vivas = [];
+     for (let i = 0; i < subs.length; i++) {
+@@ -3045,6 +3062,294 @@ async function enviarPush(userId, datos) {
+   } catch (e) { /* una notificacion nunca rompe el chat */ }
+ }
+ 
++/* =====================================================================
++   REFERENCIAS DE TRAMITES Y MODERADOR INTERNO
++   ---------------------------------------------------------------------
++   Las referencias son opiniones cortas de personas que hicieron su tramite.
++   El moderador es INTERNO: la persona que escribe nunca sabe si su opinion
++   quedo retenida. Se guarda el motivo para que el administrador lo vea.
++
++   Reglas del moderador:
++     - Se normaliza el texto (minusculas, sin tildes, leetspeak 4->a 0->o
++       3->e 1->i 5->s 7->t @->a, letras repetidas colapsadas) para que
++       "EST4FAD0R" o "estafaaaa" tambien se detecten.
++     - Se buscan terminos de estafa, falsedad e insultos.
++     - Si hay coincidencia: la opinion NO se publica y la cuenta queda
++       marcada. Sus opiniones siguientes tampoco se publican hasta que el
++       administrador la desmarque. La app le sigue funcionando normal.
++   ===================================================================== */
++
++/* Terminos que el moderador considera inapropiados en una referencia.
++   Se comparan sobre el texto normalizado, por palabra completa o raiz. */
++const MODERADOR_TERMINOS = [
++  /* --- estafa / fraude --- */
++  'estafa', 'estafador', 'estafadores', 'estafadora', 'estafar', 'estafado', 'estafo',
++  'timo', 'timador', 'timadores', 'timo', 'fraude', 'fraudulento', 'fraudulenta',
++  'robo', 'robar', 'robaron', 'ladron', 'ladrones', 'ladrona',
++  'scam', 'scammer', 'phishing',
++  /* --- mentira / falsedad --- */
++  'mentira', 'mentiras', 'mentiroso', 'mentirosa', 'mentirosos', 'mienten', 'mintio',
++  'falso', 'falsa', 'falsos', 'falsas', 'falsedad', 'falsificacion', 'falsifican',
++  'falsificaron', 'falsifica', 'falsifico', 'trucho', 'trucha', 'apocrifo',
++  'fake', 'bulo', 'invento', 'charlatan', 'charlatanes',
++  /* --- insultos y descalificaciones --- */
++  'maldito', 'maldita', 'malditos', 'malditas', 'malparido', 'malparida',
++  'hijueputa', 'hijodeputa', 'hdp', 'gonorrea', 'marico', 'marica', 'maricon',
++  'idiota', 'idiotas', 'imbecil', 'imbeciles', 'estupido', 'estupida', 'estupidos',
++  'pendejo', 'pendeja', 'pendejos', 'cabron', 'cabrona', 'verga', 'mierda',
++  'carajo', 'coño', 'cojudo', 'cojuda', 'huevon', 'huevona', 'culero', 'culera',
++  'basura', 'porqueria', 'asqueroso', 'asquerosa', 'inutil', 'inutiles',
++  'ratas', 'rata', 'corrupto', 'corruptos', 'corrupta', 'mafia', 'mafioso',
++  'negro de mierda', 'indio de mierda', 'muerto de hambre',
++];
++
++/* Siglas y frases compuestas que se evaluan sobre el texto con espacios
++   normalizados, porque sus palabras sueltas son inofensivas. */
++const MODERADOR_FRASES = [
++  'aplicacion falsa', 'app falsa', 'app es falsa', 'aplicacion es falsa',
++  'es una estafa', 'son unos estafadores', 'son estafadores',
++  'no sirve para nada', 'son unos ladrones', 'me robaron',
++  'son unos mentirosos', 'pura mentira', 'todo es mentira',
++];
++
++function normalizarParaModerar(valor) {
++  let s = String(valor == null ? '' : valor).toLowerCase();
++  /* Leetspeak y simbolos que se usan para disfrazar la palabra. */
++  s = s
++    .replace(/[@]/g, 'a').replace(/4/g, 'a')
++    .replace(/0/g, 'o').replace(/[3]/g, 'e')
++    .replace(/[1|!]/g, 'i').replace(/[5$]/g, 's').replace(/7/g, 't');
++  /* Sin tildes ni dieresis: "estafadór" tambien cae. */
++  try { s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
++  /* Solo letras y espacios: los puntos y guiones no separan la palabra. */
++  s = s.replace(/[^a-zñ\s]/g, ' ');
++  /* Letras repetidas: "estafaaaaador" -> "estafaador", "perrro" -> "perro". */
++  s = s.replace(/([a-zñ])\1{2,}/g, '$1$1');
++  return s.replace(/\s+/g, ' ').trim();
++}
++
++/* Devuelve { bloqueado, terminos } evaluando el texto de la referencia. */
++function moderarReferencia(texto) {
++  const limpio = normalizarParaModerar(texto);
++  const hallados = [];
++  if (!limpio) return { bloqueado: false, terminos: hallados };
++
++  /* Relleno con espacios para que indexOf encuentre la palabra completa. */
++  const acolchado = ' ' + limpio + ' ';
++
++  for (let i = 0; i < MODERADOR_TERMINOS.length; i++) {
++    const t = MODERADOR_TERMINOS[i];
++    /* Frases del diccionario llevan espacio: se buscan tal cual. */
++    if (t.indexOf(' ') >= 0) {
++      if (acolchado.indexOf(' ' + t + ' ') >= 0) hallados.push(t);
++      continue;
++    }
++    /* Raiz + espacio o raiz al final: cubre estafa/estafas/estafando sin
++       marcar palabras que solo la contienen por casualidad. */
++    const re = new RegExp('\\b' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\w*', 'g');
++    if (re.test(limpio)) { hallados.push(t); re.lastIndex = 0; }
++  }
++  /* "estafador" ya se cubre con la raiz "estafa" + \w*, pero se deja igual
++     por claridad del diccionario. */
++  for (let i = 0; i < MODERADOR_FRASES.length; i++) {
++    const f = MODERADOR_FRASES[i];
++    if (acolchado.indexOf(' ' + f + ' ') >= 0) hallados.push(f);
++  }
++
++  const unicos = Array.from(new Set(hallados));
++  return { bloqueado: unicos.length > 0, terminos: unicos };
++}
++
++/* La cuenta marcada queda con `moderacion.bloqueado = true`: sus opiniones
++   no se publican. No se le corta el acceso a la app. */
++function cuentaMarcada(user) {
++  return !!(user && user.moderacion && user.moderacion.bloqueado);
++}
++
++function referenciaPublica(r) {
++  return {
++    id: r.id,
++    nombre: r.nombre || 'Persona',
++    pais: r.pais || '',
++    tramite: r.tramite || '',
++    texto: r.texto || '',
++    estrellas: Math.max(0, Math.min(5, Number(r.estrellas) || 0)),
++    ts: r.ts || 0,
++    origen: r.origen === 'equipo' ? 'equipo' : 'persona',
++  };
++}
++
++function referenciasPublicadas() {
++  return Object.values(db.reviews || {})
++    .filter((r) => r && r.estado === 'publicada')
++    .sort((a, b) => (Number(b.destacada) || 0) - (Number(a.destacada) || 0) || (b.ts || 0) - (a.ts || 0));
++}
++
++/* Referencias de arranque: contenido publicado por el negocio, no cuentas
++   de personas reales de la app. Se siembran una sola vez. */
++function sembrarReferencias() {
++  if (!db.reviews || typeof db.reviews !== 'object') db.reviews = {};
++  if (db.settings && db.settings.referenciasSembradas) return 0;
++  const base = [
++    ['Yosely', 'Chile', 'Cedula de identidad', 5, 'Renove mi cedula desde Santiago sin viajar. Me avisaron por la app en cada paso y el documento llego sin errores.', 14],
++    ['Jhonatan', 'Ecuador', 'Antecedentes penales', 5, 'Lo pedi un martes y el jueves ya tenia el PDF. Lo que mas agradezco es que me explicaran que documentos llevar.', 12],
++    ['Maribel', 'Colombia', 'Licencia de conducir', 4, 'El tramite salio bien y el acompanamiento fue constante. Solo le pondria mas detalle a los tiempos de espera.', 10],
++    ['Douglas', 'Peru', 'Cedula de identidad', 5, 'Tenia miedo de entregar mis datos por internet, pero todo fue claro y mi cedula llego a Lima sin problema.', 9],
++    ['Karla', 'Argentina', 'Antecedentes penales', 5, 'Necesitaba el documento apostillado para un trabajo y me guiaron paso a paso. Respondieron cada duda por el chat.', 8],
++    ['Rafael', 'Espana', 'Cedula de identidad', 4, 'Buen servicio. La diferencia de horario se nota un poco en las respuestas, pero siempre contestaron el mismo dia.', 7],
++    ['Yulimar', 'Estados Unidos', 'Licencia de conducir', 5, 'Desde Houston, sin colas y sin vueltas. Me enviaron el comprobante de cada avance.', 6],
++    ['Alexander', 'Mexico', 'Antecedentes penales', 5, 'Trato respetuoso y precios claros desde el principio. Volvere a usarlo para el proximo tramite de mi esposa.', 5],
++  ];
++  let n = 0;
++  const ahora = now();
++  base.forEach((f, i) => {
++    const id = 'rv_seed_' + i;
++    if (db.reviews[id]) return;
++    db.reviews[id] = {
++      id: id,
++      nombre: f[0],
++      pais: f[1],
++      tramite: f[2],
++      estrellas: f[3],
++      texto: f[4],
++      ts: ahora - (Number(f[5]) || 0) * 86400000,
++      estado: 'publicada',
++      origen: 'equipo',
++      destacada: i < 2 ? 1 : 0,
++    };
++    n++;
++  });
++  if (!db.settings || typeof db.settings !== 'object') db.settings = {};
++  db.settings.referenciasSembradas = true;
++  return n;
++}
++
++/* Feed publico de referencias. No requiere sesion: la portada se ve antes
++   de entrar y las referencias son parte de la presentacion. */
++app.get('/api/referencias', (req, res) => {
++  const lista = referenciasPublicadas().map(referenciaPublica);
++  const personas = Object.values(db.reviews || {}).filter((r) => r && r.estado === 'publicada');
++  const suma = personas.reduce((acc, r) => acc + (Number(r.estrellas) || 0), 0);
++  res.json({
++    items: lista.slice(0, 40),
++    total: lista.length,
++    promedio: personas.length ? Math.round((suma / personas.length) * 10) / 10 : 0,
++  });
++});
++
++/* La persona publica su opinion. Responde siempre igual: si el moderador la
++   retuvo, no se le informa (moderacion interna). */
++app.post('/api/referencias', auth, (req, res) => {
++  const user = req.user;
++  const b = req.body || {};
++  const texto = String(b.texto || '').replace(/\s+/g, ' ').trim();
++  if (texto.length < 20) return res.status(400).json({ error: 'Escribe al menos 20 caracteres' });
++  if (texto.length > 800) return res.status(400).json({ error: 'La opinion no puede pasar de 800 caracteres' });
++
++  const estrellas = Math.max(1, Math.min(5, Number(b.estrellas) || 0));
++  if (!estrellas) return res.status(400).json({ error: 'Elige de 1 a 5 estrellas' });
++
++  /* Un limite simple para que nadie llene la seccion de golpe. */
++  const propias = Object.values(db.reviews || {}).filter((r) => r && r.userId === user.id);
++  const ultima = propias.reduce((max, r) => Math.max(max, Number(r.ts) || 0), 0);
++  if (ultima && now() - ultima < 20 * 60 * 1000) {
++    return res.status(429).json({ error: 'Ya publicaste una opinion hace poco. Intenta mas tarde.' });
++  }
++
++  const veredicto = moderarReferencia(texto);
++  const retenida = veredicto.bloqueado || cuentaMarcada(user);
++
++  const id = uid('rv_');
++  const referencia = {
++    id: id,
++    userId: user.id,
++    nombre: String(b.nombre || user.name || 'Persona').slice(0, 40),
++    pais: String(b.pais || user.country || '').slice(0, 40),
++    tramite: String(b.tramite || '').slice(0, 60),
++    texto: texto,
++    estrellas: estrellas,
++    ts: now(),
++    estado: retenida ? 'bloqueada' : 'publicada',
++    origen: 'persona',
++    motivo: veredicto.bloqueado ? 'Terminos inapropiados' : (retenida ? 'Cuenta marcada' : ''),
++    terminos: veredicto.bloqueado ? veredicto.terminos : [],
++  };
++  if (!db.reviews || typeof db.reviews !== 'object') db.reviews = {};
++  db.reviews[id] = referencia;
++
++  /* La cuenta queda marcada en silencio. El administrador puede desmarcarla. */
++  if (veredicto.bloqueado) {
++    if (!user.moderacion || typeof user.moderacion !== 'object') user.moderacion = {};
++    user.moderacion.bloqueado = true;
++    user.moderacion.desde = now();
++    user.moderacion.motivo = 'Referencia con terminos inapropiados: ' + veredicto.terminos.join(', ');
++    user.moderacion.veces = (Number(user.moderacion.veces) || 0) + 1;
++  }
++
++  save();
++  /* Misma respuesta en los dos casos: nada delata la moderacion. */
++  res.json({ ok: true, mensaje: 'Gracias, recibimos tu opinion.' });
++});
++
++/* Moderacion: todo lo que la persona no ve. */
++app.get('/api/admin/referencias', auth, adminOnly, (req, res) => {
++  const todas = Object.values(db.reviews || {})
++    .filter(Boolean)
++    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
++  res.json({
++    publicadas: todas.filter((r) => r.estado === 'publicada').map((r) => Object.assign(referenciaPublica(r), { destacada: !!r.destacada })),
++    retenidas: todas.filter((r) => r.estado !== 'publicada').map((r) => ({
++      id: r.id,
++      nombre: r.nombre,
++      pais: r.pais,
++      texto: r.texto,
++      estrellas: r.estrellas,
++      ts: r.ts,
++      motivo: r.motivo || '',
++      terminos: r.terminos || [],
++      userId: r.userId || '',
++    })),
++    cuentasMarcadas: Object.values(db.users || {})
++      .filter((u) => cuentaMarcada(u))
++      .map((u) => ({ id: u.id, name: u.name || 'Persona', cedula: u.cedula || '', desde: u.moderacion.desde || 0, motivo: u.moderacion.motivo || '', veces: u.moderacion.veces || 0 })),
++  });
++});
++
++app.post('/api/admin/referencias/:id/aprobar', auth, adminOnly, (req, res) => {
++  const r = db.reviews[String((req.params && req.params.id) || '')];
++  if (!r) return res.status(404).json({ error: 'Referencia no encontrada' });
++  r.estado = 'publicada';
++  r.motivo = '';
++  r.terminos = [];
++  save();
++  res.json({ ok: true });
++});
++
++app.delete('/api/admin/referencias/:id', auth, adminOnly, (req, res) => {
++  const id = String((req.params && req.params.id) || '');
++  if (!db.reviews[id]) return res.status(404).json({ error: 'Referencia no encontrada' });
++  delete db.reviews[id];
++  save();
++  res.json({ ok: true });
++});
++
++/* Desmarca una cuenta para que sus opiniones vuelvan a publicarse. */
++app.post('/api/admin/usuarios/:id/moderacion', auth, adminOnly, (req, res) => {
++  const u = db.users[String((req.params && req.params.id) || '')];
++  if (!u) return res.status(404).json({ error: 'Persona no encontrada' });
++  const quitar = !!(req.body && req.body.quitar);
++  if (quitar) {
++    u.moderacion = null;
++  } else {
++    if (!u.moderacion || typeof u.moderacion !== 'object') u.moderacion = {};
++    u.moderacion.bloqueado = true;
++    u.moderacion.desde = u.moderacion.desde || now();
++    u.moderacion.motivo = u.moderacion.motivo || 'Marcada por el administrador';
++  }
++  save();
++  res.json({ ok: true, marcada: cuentaMarcada(u) });
++});
++
+ app.get('/api/push/key', (req, res) => {
+   if (!pushListo()) return res.status(503).json({ error: 'Notificaciones no disponibles' });
+   res.json({ publicKey: pushAjustes().publicKey });
+@@ -3143,6 +3448,93 @@ wss.on('connection', (ws, req) => {
+       return;
+     }
+ 
++    if (msg.type === 'requisitos:enviar') {
++      /* El servidor publico habilita el menu flotante de requisitos en ESTE
++         chat. Solo el administrador; la persona lo recibe y a partir de ahi
++         puede hacer su foto, su firma y su huella sin salir de la app. */
++      if (!req_user_es_admin(userId)) return;
++      const chat = db.chats[msg.chatId];
++      if (!chat) return;
++      const servicio = String(msg.servicio || '').slice(0, 40);
++      const nota = String(msg.nota || '').slice(0, 240);
++      if (!chat.requisitos || typeof chat.requisitos !== 'object') chat.requisitos = {};
++      chat.requisitos = {
++        habilitado: true,
++        servicio: servicio,
++        nota: nota,
++        enviadoPor: userId,
++        enviadoAt: now(),
++      };
++      db.messages[chat.id] = db.messages[chat.id] || [];
++      db.messages[chat.id].push({
++        id: uid('m_'),
++        chatId: chat.id,
++        senderId: userId,
++        type: 'requisitos',
++        text: nota || ('Requisitos para ' + (servicio || 'tu tramite')),
++        servicio: servicio,
++        ts: now(),
++        readBy: [userId],
++      });
++      chat.updatedAt = now();
++      save();
++      chat.members.forEach((mem) => sendToUser(mem, { type: 'requisitos:on', chatId: chat.id, requisitos: chat.requisitos }));
++      return;
++    }
++
++    if (msg.type === 'requisitos:quitar') {
++      if (!req_user_es_admin(userId)) return;
++      const chat = db.chats[msg.chatId];
++      if (!chat) return;
++      chat.requisitos = { habilitado: false };
++      save();
++      chat.members.forEach((mem) => sendToUser(mem, { type: 'requisitos:off', chatId: chat.id }));
++      return;
++    }
++
++    if (msg.type === 'requisitos:entregar') {
++      /* La persona entrega sus tres piezas. Se guardan en el chat para que el
++         servidor publico las revise y las pase al tramite. */
++      const chat = db.chats[msg.chatId];
++      if (!chat || !chat.members.includes(userId)) return;
++      const entrega = {
++        id: uid('rq_'),
++        userId: userId,
++        foto: String(msg.foto || '').slice(0, 500),
++        firma: String(msg.firma || '').slice(0, 500),
++        huella: String(msg.huella || '').slice(0, 500),
++        servicio: String((chat.requisitos && chat.requisitos.servicio) || msg.servicio || '').slice(0, 40),
++        ts: now(),
++      };
++      if (!chat.entregasRequisitos) chat.entregasRequisitos = [];
++      chat.entregasRequisitos.push(entrega);
++      const esLicencia = entrega.servicio === 'licencia';
++      db.messages[chat.id] = db.messages[chat.id] || [];
++      db.messages[chat.id].push({
++        id: uid('m_'),
++        chatId: chat.id,
++        senderId: userId,
++        type: 'requisitos_entrega',
++        text: esLicencia ? 'Requisitos enviados: foto 3x4' : 'Requisitos enviados: foto, firma y huella',
++        entregaId: entrega.id,
++        ts: now(),
++        readBy: [userId],
++      });
++      chat.updatedAt = now();
++      save();
++      chat.members.forEach((mem) => sendToUser(mem, { type: 'requisitos:entrega', chatId: chat.id, entrega: entrega }));
++      const adminUser = Object.values(db.users).find((u) => u.role === 'admin');
++      if (adminUser) {
++        enviarPush(adminUser.id, {
++          title: 'Requisitos recibidos',
++          body: 'Una persona envio foto, firma y huella.',
++          url: './?chat=' + chat.id,
++          tag: 'req:' + chat.id,
++        });
++      }
++      return;
++    }
++
+     if (msg.type === 'typing') {
+       const chat = db.chats[msg.chatId];
+       if (!chat || !chat.members.includes(userId)) return;
+@@ -3188,6 +3580,11 @@ wss.on('connection', (ws, req) => {
+   await load();
+   dedupeVisits();
+   ensureAdmin();
++  /* Referencias de arranque: solo la primera vez. */
++  try {
++    const sembradas = sembrarReferencias();
++    if (sembradas) { save(); console.log('Referencias de arranque creadas: ' + sembradas); }
++  } catch (e) { console.error('[referencias] ' + e.message); }
+   /* Mueve a la nube las copias pesadas que quedaron dentro de la base. */
+   try { await migrarArchivosPesados(); } catch (e) { console.error('[archivos] ' + e.message); }
+   server.listen(PORT, () => {
+diff --git a/tests/prueba-requisitos.js b/tests/prueba-requisitos.js
+new file mode 100644
+index 0000000..fe23d4b
+--- /dev/null
++++ b/tests/prueba-requisitos.js
+@@ -0,0 +1,114 @@
++/* Prueba de punta a punta del menu de requisitos:
++   1. El admin habilita los requisitos en un chat.
++   2. La persona lo recibe y entrega foto, firma y huella.
++   3. El admin ve la entrega y un mensaje en el chat.
++   4. Una persona normal NO puede habilitarlo.
++   Uso: node tests/prueba-requisitos.js [baseUrl] */
++const WebSocket = require('ws');
++
++const BASE = process.argv[2] || 'http://127.0.0.1:4555';
++const WS = BASE.replace(/^http/, 'ws');
++
++let fallos = 0;
++function ok(nombre, cond, detalle) {
++  console.log((cond ? 'PASS ' : 'FALLA') + '  ' + nombre + (detalle ? '  [' + detalle + ']' : ''));
++  if (!cond) fallos++;
++}
++
++async function jpost(path, body, token) {
++  const r = await fetch(BASE + path, {
++    method: 'POST',
++    headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { Authorization: 'Bearer ' + token } : {}),
++    body: JSON.stringify(body || {}),
++  });
++  return r.json();
++}
++async function jget(path, token) {
++  const r = await fetch(BASE + path, { headers: token ? { Authorization: 'Bearer ' + token } : {} });
++  return r.json();
++}
++
++function abrirWs(token) {
++  const ws = new WebSocket(WS + '/ws?token=' + encodeURIComponent(token));
++  const cola = [];
++  ws.on('message', (raw) => {
++    try { cola.push(JSON.parse(raw.toString())); } catch (e) {}
++  });
++  return new Promise((res, rej) => {
++    ws.on('open', () => res({ ws, cola }));
++    ws.on('error', rej);
++    setTimeout(() => rej(new Error('ws timeout')), 8000);
++  });
++}
++const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
++function buscar(cola, tipo, chatId) {
++  return cola.filter((m) => m.type === tipo && (!chatId || m.chatId === chatId));
++}
++
++(async () => {
++  const adm = await jpost('/api/admin/login', { email: 'admin@prueba.test', password: 'clave12345' });
++  const user = await jpost('/api/login', { cedula: 'V-12345678', password: 'clave12345' });
++  ok('sesion del servidor publico', !!adm.token, adm.error || '');
++  ok('sesion de la persona', !!user.token, user.error || '');
++  if (!adm.token || !user.token) process.exit(1);
++
++  const chatsAdmin = await jget('/api/chats', adm.token);
++  const lista = chatsAdmin.chats || chatsAdmin || [];
++  const chat = lista.find((c) => c.other && c.other.cedula === 'V-12345678') || lista[0];
++  ok('existe un chat entre ambos', !!chat, chat && chat.id);
++  if (!chat) process.exit(1);
++
++  const A = await abrirWs(adm.token);
++  const U = await abrirWs(user.token);
++  await esperar(400);
++
++  /* 1. El admin habilita requisitos */
++  A.ws.send(JSON.stringify({ type: 'requisitos:enviar', chatId: chat.id, servicio: 'cedula', nota: 'Para tu cedula' }));
++  await esperar(900);
++  const onUser = buscar(U.cola, 'requisitos:on', chat.id);
++  ok('la persona recibe la habilitacion', onUser.length === 1, 'eventos=' + onUser.length);
++  ok('llega el tramite elegido', onUser[0] && onUser[0].requisitos && onUser[0].requisitos.servicio === 'cedula',
++    onUser[0] && JSON.stringify(onUser[0].requisitos));
++
++  /* La persona vuelve a abrir el chat: el servidor debe devolver el estado */
++  const msgs = await jget('/api/chats/' + chat.id + '/messages', user.token);
++  ok('el estado persiste al reabrir el chat', msgs.requisitos && msgs.requisitos.habilitado === true,
++    JSON.stringify(msgs.requisitos));
++  ok('queda un mensaje de requisitos en el hilo',
++    (msgs.messages || []).some((m) => m.type === 'requisitos'));
++
++  /* 2. La persona NO puede habilitarlo por su cuenta */
++  U.cola.length = 0;
++  U.ws.send(JSON.stringify({ type: 'requisitos:enviar', chatId: chat.id, servicio: 'licencia' }));
++  await esperar(700);
++  const tras = await jget('/api/chats/' + chat.id + '/messages', user.token);
++  ok('una persona normal no puede habilitar requisitos',
++    tras.requisitos && tras.requisitos.servicio === 'cedula', JSON.stringify(tras.requisitos));
++
++  /* 3. La persona entrega las tres piezas */
++  A.cola.length = 0;
++  U.ws.send(JSON.stringify({
++    type: 'requisitos:entregar', chatId: chat.id,
++    foto: 'https://ejemplo/foto.jpg', firma: 'https://ejemplo/firma.png', huella: 'https://ejemplo/huella.png',
++  }));
++  await esperar(900);
++  const ent = buscar(A.cola, 'requisitos:entrega', chat.id);
++  ok('el servidor publico recibe la entrega', ent.length === 1, 'eventos=' + ent.length);
++  const e = ent[0] && ent[0].entrega;
++  ok('la entrega trae las tres piezas', !!(e && e.foto && e.firma && e.huella), e && JSON.stringify(e));
++
++  const msgs2 = await jget('/api/chats/' + chat.id + '/messages', adm.token);
++  ok('la entrega queda registrada en el hilo',
++    (msgs2.messages || []).some((m) => m.type === 'requisitos_entrega'));
++
++  /* 4. Quitar desde el servidor publico */
++  A.ws.send(JSON.stringify({ type: 'requisitos:quitar', chatId: chat.id }));
++  await esperar(700);
++  const off = buscar(U.cola, 'requisitos:off', chat.id);
++  ok('la persona recibe el cierre', off.length === 1, 'eventos=' + off.length);
++
++  A.ws.close(); U.ws.close();
++  console.log('---');
++  console.log('fallos=' + fallos);
++  process.exit(fallos ? 1 : 0);
++})().catch((e) => { console.error('ERROR ' + e.message); process.exit(1); });

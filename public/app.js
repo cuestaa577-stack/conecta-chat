@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v5.3';
+  const APP_VERSION = 'v5.8';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -80,7 +80,7 @@ const App = (() => {
         }
       }, 700);
     } catch (e) {
-      toast(e.message);
+      toast(e.message, 'bad');
     }
   }
 
@@ -165,13 +165,17 @@ const App = (() => {
 
   /* ------------------------------ utilidades ------------------------------ */
   let toastTimer = null;
-  function toast(msg) {
+  /* Aviso flotante con aspecto nativo del telefono (tarjeta clara con icono).
+     tipo: 'ok' (guardado, por defecto) | 'info' | 'bad' (error). */
+  function toast(msg, tipo) {
     const el = $('#toast');
     if (!el) return;
     el.textContent = msg;
+    el.classList.remove('info', 'bad');
+    if (tipo === 'info' || tipo === 'bad') el.classList.add(tipo);
     el.classList.remove('hidden');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.add('hidden'), 2600);
+    toastTimer = setTimeout(() => el.classList.add('hidden'), tipo === 'bad' ? 3600 : 2800);
   }
 
   function esc(s) {
@@ -252,7 +256,6 @@ const App = (() => {
 
   /* ---------- modo sin conexion ---------- */
   const CACHE_KEY = 'tve_cache_v1';
-
   function leerCache() {
     try { return JSON.parse(localStorage.getItem(CACHE_KEY) || '{}'); } catch (e) { return {}; }
   }
@@ -282,7 +285,7 @@ const App = (() => {
       document.body.appendChild(barra);
     }
     if (activo) {
-      barra.textContent = 'Sin conexión. Puedes leer tus chats y escribir: se enviarán al volver.';
+      barra.textContent = 'Sin conexión. Puedes leer tus chats: lo que escribas se envía al volver.';
       barra.style.display = 'block';
     } else {
       barra.style.display = 'none';
@@ -512,7 +515,7 @@ const App = (() => {
         showVerifyPanel(e.data.cedula || cedula, e.data.email, e.data.codeSent);
         return;
       }
-      toast(e.message);
+      toast(e.message, 'bad');
     }
   }
 
@@ -642,7 +645,7 @@ const App = (() => {
         toast('Debes registrarte con el pais donde vives actualmente');
         return;
       }
-      toast(e.message);
+      toast(e.message, 'bad');
     }
     finally { enviandoRegistro = false; }
   }
@@ -665,7 +668,7 @@ const App = (() => {
       }
       showAuthPanel('reset');
       toast('Revisa tu correo');
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   async function resendReset() {
@@ -676,7 +679,7 @@ const App = (() => {
         body: JSON.stringify({ cedula: authPending.cedula, purpose: 'reset' }),
       });
       toast('Codigo enviado otra vez');
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   /* Cambiar la contrasena con el codigo del correo */
@@ -693,7 +696,7 @@ const App = (() => {
       });
       await finishAuth(data, false);
       toast('Contrasena cambiada');
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   /* Acceso del personal autorizado (administrador) */
@@ -716,7 +719,7 @@ const App = (() => {
       guardarRecordado(REC_ADMIN, $('#rememberAdmin'), email);
       await finishAuth(data, false);
       toast('Bienvenido, personal autorizado');
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   /* Pantalla obligatoria de verificaci\u00f3n (antes de entrar a la app) */
@@ -750,7 +753,7 @@ const App = (() => {
       // C\u00f3digo correcto: ahora s\u00ed se inicia la sesi\u00f3n y entra a la app.
       await finishAuth(data, true);
       toast('Correo confirmado. Bienvenido');
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
     finally { verificando = false; }
   }
 
@@ -763,7 +766,7 @@ const App = (() => {
       });
       if (data && data.codeSent === false) return toast('No pudimos enviar el correo. Intenta mas tarde');
       toast('Codigo enviado otra vez a tu correo');
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   /* Confirmar el correo con el codigo de 6 digitos */
@@ -784,7 +787,7 @@ const App = (() => {
       }
       toast('Correo confirmado');
       authTab('login');
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   /* Saludo de la portada: "Buenos dias, Carlos" con el primer nombre real
@@ -976,7 +979,7 @@ const App = (() => {
       await openChat(data.chat.id);
       setTimeout(() => toast('Escribe tu consulta al servidor publico'), 500);
     } catch (e) {
-      toast(e.message);
+      toast(e.message, 'bad');
     }
   }
 
@@ -991,7 +994,7 @@ const App = (() => {
       state.viewStack = ['homeView'];
       openChat(data.chat.id, false);
     } catch (e) {
-      toast(e.message);
+      toast(e.message, 'bad');
     }
   }
 
@@ -1124,15 +1127,15 @@ const App = (() => {
 
     await loadMessages(chatId);
     markRead(chatId);
+    reqRefrescarDesdeChat();
   }
 
   async function loadMessages(chatId) {
     try {
       const data = await api('/api/chats/' + chatId + '/messages');
       state.messages[chatId] = data.messages || [];
-      setTimeout(vaciarSinRed, 800);
       renderMessages();
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   /* Mensajes con aspecto moderno: separador de dia, burbujas agrupadas,
@@ -1153,6 +1156,15 @@ const App = (() => {
     const other = otherOf(chat);
     const nombreOtro = state.me.role === 'admin' ? (other ? other.name : 'Persona') : 'Servidor publico';
     const fotoOtro = (other && other.avatar) || '';
+
+    /* La foto de quien escribe va en CADA mensaje, en el lado que le toca:
+       a la izquierda cuando escribe la otra parte (el servidor publico para
+       la persona, la persona para el administrador) y a la derecha cuando
+       escribe la propia persona. Antes los mensajes propios salian sin foto y
+       solo se veia la de la otra parte, asi que la conversacion no mostraba
+       la cara de quien estaba escribiendo. */
+    const fotoMia = (state.me && state.me.avatar) || '';
+    const nombreMio = (state.me && state.me.name) || 'Yo';
 
     let html = '';
     let dia = '';
@@ -1186,11 +1198,15 @@ const App = (() => {
         ? (m.pending ? '<span class="tick">&#8226;</span>' : '<span class="tick">&#10003;</span>')
         : '';
       const hora = `<span class="meta">${clock(m.ts)}${marca}</span>`;
-      const avatar = (!mine && !pegadoArriba)
-        ? `<div class="b-avatar" data-avatar="${esc(fotoOtro)}" data-nombre="${esc(nombreOtro)}">${fotoOtro ? '' : initials(nombreOtro)}</div>`
-        : (mine ? '' : '<div class="b-avatar hueco"></div>');
+      const avatar = mine
+        ? (pegadoArriba
+            ? '<div class="b-avatar hueco"></div>'
+            : `<div class="b-avatar mio" data-avatar="${esc(fotoMia)}" data-nombre="${esc(nombreMio)}">${fotoMia ? '' : initials(nombreMio)}</div>`)
+        : (pegadoArriba
+            ? '<div class="b-avatar hueco"></div>'
+            : `<div class="b-avatar" data-avatar="${esc(fotoOtro)}" data-nombre="${esc(nombreOtro)}">${fotoOtro ? '' : initials(nombreOtro)}</div>`);
 
-      html += `<div class="msg-row ${mine ? 'mine' : 'theirs'}${pegadoArriba ? ' pegado' : ''}">${avatar}<div class="${clases.join(' ')}">${inner}${hora}</div></div>`;
+      html += `<div class="msg-row ${mine ? 'mine' : 'theirs'}${pegadoArriba ? ' pegado' : ''}">${mine ? '' : avatar}<div class="${clases.join(' ')}">${inner}${hora}</div>${mine ? avatar : ''}</div>`;
     });
     body.innerHTML = html;
     body.querySelectorAll('.b-avatar[data-avatar]').forEach((el) => {
@@ -1205,53 +1221,9 @@ const App = (() => {
   }
   function closeViewer() { $('#viewer').classList.add('hidden'); }
 
-
-  /* ---------- cola de mensajes sin conexion ---------- */
-  const COLA_KEY_SINRED = 'tve_cola_v1';
-
-  function leerColaSinRed() {
-    try { return JSON.parse(localStorage.getItem(COLA_KEY_SINRED) || '[]'); } catch (e) { return []; }
-  }
-  function guardarColaSinRed(lista) {
-    try { localStorage.setItem(COLA_KEY_SINRED, JSON.stringify(lista)); } catch (e) {}
-  }
-  function encolarSinRed(chatId, text) {
-    const cola = leerColaSinRed();
-    cola.push({ chatId: chatId, text: text, ts: Date.now() });
-    guardarColaSinRed(cola);
-  }
-  function vaciarSinRed() {
-    const cola = leerColaSinRed();
-    if (!cola.length) return;
-    if (!state.ws || state.ws.readyState !== 1) return;
-    const resto = [];
-    cola.forEach((m) => {
-      try {
-        state.ws.send(JSON.stringify({ type: 'message:send', chatId: m.chatId, text: m.text }));
-      } catch (e) {
-        resto.push(m);
-      }
-    });
-    guardarColaSinRed(resto);
-    if (resto.length === 0) toast('Mensajes pendientes enviados');
-  }
-
-  window.addEventListener('online', () => {
-    avisarSinConexion(false);
-    setTimeout(vaciarSinRed, 1200);
-  });
-  window.addEventListener('offline', () => avisarSinConexion(true));
-
   function sendText() {
     const box = $('#chatText');
     const text = (box.value || '').trim();
-    if (text && (!navigator.onLine || !state.ws || state.ws.readyState !== 1)) {
-      encolarSinRed(state.currentChatId, text);
-      box.value = '';
-      avisarSinConexion(true);
-      toast('Sin conexión: el mensaje se enviará al volver');
-      return;
-    }
     if (!text) return;
     box.value = '';
     sendMessage({ type: 'text', text });
@@ -1335,7 +1307,7 @@ const App = (() => {
         else if (f.type === 'application/pdf') type = 'pdf';
         sendMessage({ type, url: up.url, text: f.name });
       } catch (e) {
-        toast(e.message);
+        toast(e.message, 'bad');
       }
     };
     inp.click();
@@ -1551,7 +1523,7 @@ const App = (() => {
         state.me = data.user;
         refrescarAvatares();
         toast('Foto actualizada');
-      } catch (e) { toast(e.message); }
+      } catch (e) { toast(e.message, 'bad'); }
     };
     inp.click();
   }
@@ -1573,7 +1545,7 @@ const App = (() => {
       $('#profileEmail').value = state.me.email || '';
       $('#profileCountry').value = state.me.country || '';
       toast('Cambios guardados');
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   /* ------------------------------ mis datos ------------------------------ */
@@ -1643,7 +1615,7 @@ const App = (() => {
       $('#profileCountry').value = state.me.country || '';
       closeEditData();
       toast('Datos personales actualizados');
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   async function deleteChat() {
@@ -1657,7 +1629,7 @@ const App = (() => {
       await loadChats();
       back();
       toast('Conversacion eliminada');
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   /* ------------------------------ panel ------------------------------ */
@@ -1706,6 +1678,7 @@ const App = (() => {
     { key: 'tramites', txt: 'Tramites' },
     { key: 'chats', txt: 'Chats' },
     { key: 'personas', txt: 'Personas' },
+    { key: 'referencias', txt: 'Referencias' },
     { key: 'ajustes', txt: 'Ajustes' },
   ];
 
@@ -1716,6 +1689,7 @@ const App = (() => {
     state.adminQuery = '';
     renderAdminTab();
     if (name === 'tramites' && !adminTramitesData) loadAdminTramites();
+    if (name === 'referencias') cargarModeracion();
   }
 
   function adminIr(name, filtro) {
@@ -1806,6 +1780,108 @@ const App = (() => {
             ${c.unread ? `<span class="cc-badge">${c.unread}</span>` : `<span class="cc-count">${c.messages}</span>`}
           </button>`).join('')}</div>${lista.length ? '' : '<div class="panel-row"><span>Todavía nadie te ha escrito</span></div>'}
         </div>`;
+  }
+
+  /* -------------------------- moderacion de referencias --------------------------
+     Todo lo que la persona no ve: opiniones retenidas por el moderador y
+     cuentas marcadas. Desde aqui se aprueba, se borra o se desmarca. */
+  let modData = null;
+
+  async function cargarModeracion() {
+    const cont = document.getElementById('modContenido');
+    if (!cont) return;
+    try {
+      modData = await api('/api/admin/referencias');
+      renderModeracion();
+    } catch (e) {
+      cont.innerHTML = '<div class="panel-row"><span>' + esc(e.message) + '</span></div>';
+    }
+  }
+
+  function adminReferenciasShellHtml() {
+    return `
+        <div class="panel">
+          <h3>Referencias</h3>
+          <p class="pnote muted">Las opiniones con lenguaje inapropiado se retienen solas y no se publican. La persona no se entera.</p>
+          <div id="modContenido"><div class="empty">Cargando...</div></div>
+        </div>`;
+  }
+
+  function renderModeracion() {
+    const cont = document.getElementById('modContenido');
+    if (!cont || !modData) return;
+    const ret = modData.retenidas || [];
+    const mar = modData.cuentasMarcadas || [];
+    const pub = modData.publicadas || [];
+
+    const retHtml = ret.length ? ret.map((r) => `<div class="panel-row stack">
+        <div class="who">
+          <b>${esc(r.nombre)}${r.pais ? ' \u00b7 ' + esc(r.pais) : ''}</b>
+          <small>${new Date(r.ts).toLocaleString('es')}</small>
+          <small class="mod-quote">"${esc(r.texto)}"</small>
+          <small class="mod-terms">Detectado: ${(r.terminos || []).map(esc).join(', ') || esc(r.motivo || '')}</small>
+        </div>
+        <div class="mod-actions">
+          <button class="mini" onclick="App.modAprobar('${esc(r.id)}')">Aprobar</button>
+          <button class="mini bad" onclick="App.modBorrar('${esc(r.id)}')">Borrar</button>
+        </div>
+      </div>`).join('') : '<div class="panel-row"><span>Ninguna opinion retenida</span></div>';
+
+    const marHtml = mar.length ? mar.map((u) => `<div class="panel-row">
+        <div class="who">
+          <b>${esc(u.name)}</b>
+          <small>${esc(u.cedula || 'Sin cedula')} \u00b7 ${u.veces || 1} referencia(s)</small>
+          <small>${esc(u.motivo || '')}</small>
+        </div>
+        <button class="mini" onclick="App.modDesmarcar('${esc(u.id)}')">Quitar marca</button>
+      </div>`).join('') : '<div class="panel-row"><span>Ninguna cuenta marcada</span></div>';
+
+    const pubHtml = pub.length ? pub.slice(0, 12).map((r) => `<div class="panel-row">
+        <div class="who">
+          <b>${esc(r.nombre)}</b>
+          <small>${estrellasTexto(r.estrellas)} \u00b7 ${esc(r.pais || '')}${r.origen === 'equipo' ? ' \u00b7 arranque' : ''}</small>
+        </div>
+        <button class="mini bad" onclick="App.modBorrar('${esc(r.id)}')">Borrar</button>
+      </div>`).join('') : '<div class="panel-row"><span>Sin referencias publicadas</span></div>';
+
+    cont.innerHTML = `
+      <h4 class="mod-h">Retenidas (${ret.length})</h4>
+      ${retHtml}
+      <h4 class="mod-h">Cuentas marcadas (${mar.length})</h4>
+      ${marHtml}
+      <h4 class="mod-h">Publicadas (${pub.length})</h4>
+      ${pubHtml}`;
+  }
+
+  function estrellasTexto(n) {
+    const v = Math.max(0, Math.min(5, Number(n) || 0));
+    return '\u2605'.repeat(v) + '\u2606'.repeat(5 - v);
+  }
+
+  async function modAprobar(id) {
+    try {
+      await api('/api/admin/referencias/' + encodeURIComponent(id) + '/aprobar', { method: 'POST', body: '{}' });
+      toast('Referencia publicada');
+      cargarModeracion();
+      cargarReferencias();
+    } catch (e) { toast(e.message, 'bad'); }
+  }
+
+  async function modBorrar(id) {
+    try {
+      await api('/api/admin/referencias/' + encodeURIComponent(id), { method: 'DELETE' });
+      toast('Referencia borrada');
+      cargarModeracion();
+      cargarReferencias();
+    } catch (e) { toast(e.message, 'bad'); }
+  }
+
+  async function modDesmarcar(userId) {
+    try {
+      await api('/api/admin/usuarios/' + encodeURIComponent(userId) + '/moderacion', { method: 'POST', body: JSON.stringify({ quitar: true }) });
+      toast('Marca quitada');
+      cargarModeracion();
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   function adminPersonasFilas(lista) {
@@ -1923,10 +1999,12 @@ const App = (() => {
     if (tab === 'tramites') cuerpo = adminTramitesShellHtml();
     else if (tab === 'chats') cuerpo = adminChatsHtml(d);
     else if (tab === 'personas') cuerpo = adminPersonasHtml(d);
+    else if (tab === 'referencias') cuerpo = adminReferenciasShellHtml();
     else if (tab === 'ajustes') cuerpo = adminAjustesHtml(d);
     else cuerpo = adminResumenHtml(d);
     box.innerHTML = adminTabsHtml() + cuerpo;
     if (tab === 'tramites') renderAdminTramites();
+    if (tab === 'referencias') cargarModeracion();
     if (tab === 'ajustes') adminFillSubtypes();
   }
 
@@ -1970,7 +2048,7 @@ const App = (() => {
         out.className = 'mail-test ' + (r.ok ? 'ok' : 'bad');
       }
     } catch (e) {
-      toast(e.message);
+      toast(e.message, 'bad');
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = 'Enviar prueba'; }
     }
@@ -2898,7 +2976,7 @@ const App = (() => {
         renderTramiteDetail(r.tramite);
         toast('Comprobante enviado. El servidor público lo revisa y te confirma.');
         loadTramites();
-      } catch (e) { toast(e.message); }
+      } catch (e) { toast(e.message, 'bad'); }
     };
     inp.click();
   }
@@ -3020,7 +3098,7 @@ const App = (() => {
       });
       toast('Trámite creado');
       loadAdminTramites();
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   function adminSubirDocumento(id) {
@@ -3050,7 +3128,7 @@ const App = (() => {
         toast('Documento listo: la persona ya lo puede ver en vista previa');
         loadAdminTramites();
         if (state.currentTramiteId === id) openTramite(id, false);
-      } catch (e) { toast(e.message); }
+      } catch (e) { toast(e.message, 'bad'); }
     };
     inp.click();
   }
@@ -3077,7 +3155,7 @@ const App = (() => {
         ? 'Listo: salir de la app con el documento abierto cuenta como intento'
         : 'Listo: salir de la app ya no cuenta como intento');
       loadAdminTramites();
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   async function adminDesbloquear(id) {
@@ -3087,7 +3165,7 @@ const App = (() => {
       adminOverview = await api('/api/admin/overview');
       renderAdminTab();
       loadAdminTramites();
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   async function adminAprobar(id) {
@@ -3097,7 +3175,7 @@ const App = (() => {
       await api('/api/admin/tramites/' + encodeURIComponent(id) + '/aprobar', { method: 'POST', body: JSON.stringify({}) });
       toast('Pago confirmado: descarga habilitada');
       loadAdminTramites();
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   async function adminRechazar(id) {
@@ -3108,7 +3186,7 @@ const App = (() => {
       await api('/api/admin/tramites/' + encodeURIComponent(id) + '/rechazar', { method: 'POST', body: JSON.stringify({ note: nota }) });
       toast('Comprobante rechazado: la persona puede enviar otro');
       loadAdminTramites();
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   async function adminBorrarTramite(id) {
@@ -3117,7 +3195,7 @@ const App = (() => {
       await api('/api/admin/tramites/' + encodeURIComponent(id), { method: 'DELETE' });
       toast('Trámite borrado');
       loadAdminTramites();
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   async function guardarPagoInfo() {
@@ -3127,7 +3205,7 @@ const App = (() => {
       const r = await api('/api/admin/pago-info', { method: 'POST', body: JSON.stringify({ pagoInfo: el.value }) });
       state.pagoInfo = r.pagoInfo || el.value;
       toast('Datos de pago guardados');
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(e.message, 'bad'); }
   }
 
   /* --------------------- Notificaciones del telefono --------------------- */
@@ -3152,7 +3230,7 @@ const App = (() => {
       }
       const permiso = await Notification.requestPermission();
       if (permiso !== 'granted') {
-        if (!silencioso) toast('No se activaron las notificaciones');
+        if (!silencioso) toast('No se pudieron activar las notificaciones', 'bad');
         ocultarNotifBanner(true);
         return false;
       }
@@ -3179,7 +3257,7 @@ const App = (() => {
       if (!silencioso) toast('Notificaciones activadas');
       return true;
     } catch (e) {
-      if (!silencioso) toast('No se pudieron activar: ' + e.message);
+      if (!silencioso) toast('No se pudieron activar: ' + e.message, 'bad');
       return false;
     }
   }
@@ -3290,6 +3368,17 @@ const App = (() => {
         if (m.type === 'message:new' || m.type === 'chat:new' || m.type === 'chat:updated'
           || m.type === 'tramite:new' || m.type === 'tramite:updated') refrescarPanelSiAdmin();
         if (m.type === 'admin:changed') { refrescarPanelSiAdmin(); return; }
+        if (m.type === 'requisitos:on' || m.type === 'requisitos:off' || m.type === 'requisitos:entrega') {
+          if (m.chatId) {
+            const c = (state.chats || []).find((x) => x && x.id === m.chatId);
+            if (c) c.requisitos = m.type === 'requisitos:off' ? { habilitado: false } : (m.requisitos || c.requisitos);
+          }
+          if (m.type === 'requisitos:entrega' && state.me && state.me.role === 'admin') {
+            toast('Llegaron los requisitos de una persona');
+          }
+          if (state.currentChatId === m.chatId) reqRefrescarDesdeChat();
+          return;
+        }
         if (m.type === 'message:new') {
           const msg = m.message;
           if (!msg) return;
@@ -3324,7 +3413,7 @@ const App = (() => {
             if (av && av.classList.contains('active')) loadAdminTramites();
             toast(m.type === 'tramite:new' ? 'Nuevo tramite creado' : 'Tramite actualizado: ' + st);
           } else if (m.type === 'tramite:updated') {
-            toast('Tu tramite se actualizo: ' + st);
+            toast('Tu tramite se actualizó: ' + st);
           }
           loadTramites();
           if (state.currentTramiteId && $('#tramiteView') && $('#tramiteView').classList.contains('active')) {
@@ -3434,8 +3523,787 @@ const App = (() => {
   }
 
   /* ------------------------------ arranque ------------------------------ */
+  /* ==================================================================
+     REFERENCIAS DE TRAMITES: carrusel automatico + opinion de la persona
+     ------------------------------------------------------------------
+     El carrusel avanza solo cada pocos segundos, se puede arrastrar con el
+     dedo y se detiene mientras la persona lo esta mirando o escribiendo su
+     opinion (si siguiera moviendose mientras escribe, seria incomodo).
+     ================================================================== */
+  const REFS = {
+    items: [],
+    idx: 0,
+    timer: null,
+    pausado: false,
+    estrellas: 0,
+    arrastre: null,
+    visible: false,
+  };
+  const REF_AUTOPLAY_MS = 4200;
+
+  function estrellasHtml(n, clase) {
+    let out = '';
+    for (let i = 1; i <= 5; i++) out += '<svg viewBox="0 0 24 24" class="' + (i <= n ? 'on' : '') + '"><path d="M12 3.6l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"/></svg>';
+    return '<span class="' + (clase || 'ref-stars') + '">' + out + '</span>';
+  }
+
+  function refCardHtml(r) {
+    const esEquipo = r.origen === 'equipo';
+    const iniciales = String(r.nombre || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase();
+    const quien = [r.pais, r.tramite].filter(Boolean).join(' \u00b7 ');
+    return `<article class="ref-card">
+      <div class="ref-top">
+        <span class="ref-ava${esEquipo ? ' equipo' : ''}">${esc(iniciales || '?')}</span>
+        <span class="ref-who">
+          <b>${esc(r.nombre || 'Persona')}</b>
+          <small>${esc(quien || 'Tr\u00e1mite realizado')}</small>
+        </span>
+        <span class="ref-mark"><svg viewBox="0 0 24 24"><path d="M9.6 14.5c-2.6-.6-4.4-2.7-4.4-5.2C5.2 6.8 7.4 5 10 5c2.2 0 4 1.4 4.6 3.4"/><path d="M19.4 14.5c-2.6-.6-4.4-2.7-4.4-5.2C15 6.8 17.2 5 19.8 5"/></svg></span>
+      </div>
+      ${estrellasHtml(Number(r.estrellas) || 0)}
+      <p class="ref-txt">${esc(r.texto)}</p>
+      ${r.tramite ? `<span class="ref-tag">${esc(r.tramite)}</span>` : ''}
+    </article>`;
+  }
+
+  function refPaso() {
+    const track = $('#refsTrack');
+    const card = track ? track.querySelector('.ref-card') : null;
+    if (!card) return 0;
+    const gap = 12;
+    return card.getBoundingClientRect().width + gap;
+  }
+
+  function refPintarDots() {
+    const dots = $('#refsDots');
+    if (!dots) return;
+    dots.innerHTML = REFS.items.map((_, i) => '<i class="' + (i === REFS.idx ? 'on' : '') + '"></i>').join('');
+  }
+
+  function refIr(i, animar) {
+    const track = $('#refsTrack');
+    if (!track || !REFS.items.length) return;
+    const total = REFS.items.length;
+    REFS.idx = ((i % total) + total) % total;
+    if (animar === false) track.classList.add('arrastrando');
+    track.style.transform = 'translateX(' + (-REFS.idx * refPaso()) + 'px)';
+    if (animar === false) requestAnimationFrame(() => track.classList.remove('arrastrando'));
+    refPintarDots();
+  }
+
+  function refArrancarAuto() {
+    if (REFS.timer) clearInterval(REFS.timer);
+    if (REFS.items.length < 2) return;
+    REFS.timer = setInterval(() => {
+      if (REFS.pausado || document.hidden) return;
+      refIr(REFS.idx + 1);
+    }, REF_AUTOPLAY_MS);
+  }
+
+  function refPausar(si) {
+    REFS.pausado = !!si;
+  }
+
+  function refPintar() {
+    const track = $('#refsTrack');
+    if (!track) return;
+    if (!REFS.items.length) {
+      track.innerHTML = '<article class="ref-card"><p class="ref-txt">Todav\u00eda no hay referencias publicadas. S\u00e9 la primera persona en contar su experiencia.</p></article>';
+      refPintarDots();
+      return;
+    }
+    track.innerHTML = REFS.items.map(refCardHtml).join('');
+    REFS.idx = 0;
+    refIr(0, false);
+    refArrancarAuto();
+  }
+
+  function refPintarResumen(d) {
+    const score = $('#refsScore');
+    if (!score) return;
+    const total = Number(d.total || 0);
+    if (!total) { score.hidden = true; return; }
+    score.hidden = false;
+    $('#refsPromedio').textContent = String(d.promedio || 0).replace('.', ',');
+    const redondas = Math.round(Number(d.promedio) || 0);
+    $('#refsStarsSmall').innerHTML = estrellasHtml(redondas, '').replace(/^<span[^>]*>|<\/span>$/g, '');
+    $('#refsTotal').textContent = total + (total === 1 ? ' opini\u00f3n' : ' opiniones');
+  }
+
+  async function cargarReferencias() {
+    try {
+      const res = await fetch('/api/referencias', { headers: { 'Content-Type': 'application/json' } });
+      const d = await res.json();
+      REFS.items = (d && d.items) || [];
+      refPintarResumen(d || {});
+      refPintar();
+    } catch (e) {
+      /* Sin conexion: se deja el esqueleto y no se rompe la portada. */
+      refPintar();
+    }
+  }
+
+  /* Estrellas del formulario: tocar una marca de 1 a 5. */
+  function refSetEstrellas(n) {
+    REFS.estrellas = Number(n) || 0;
+    $$('#refStarsInput .ref-star').forEach((b) => {
+      const v = Number(b.getAttribute('data-v'));
+      b.classList.toggle('on', v <= REFS.estrellas);
+      b.setAttribute('aria-checked', v === REFS.estrellas ? 'true' : 'false');
+    });
+  }
+
+  function refContador() {
+    const t = $('#refTexto');
+    const c = $('#refCounter');
+    if (t && c) c.textContent = String((t.value || '').length) + '/800';
+  }
+
+  async function enviarReferencia() {
+    const box = $('#refTexto');
+    const btn = $('#refSend');
+    if (!box) return;
+    const texto = String(box.value || '').replace(/\s+/g, ' ').trim();
+    if (!REFS.estrellas) return toast('Elige de 1 a 5 estrellas', 'info');
+    if (texto.length < 20) return toast('Cu\u00e9ntanos un poco m\u00e1s (m\u00ednimo 20 caracteres)', 'info');
+    if (btn) { btn.disabled = true; btn.textContent = 'Publicando...'; }
+    try {
+      await api('/api/referencias', {
+        method: 'POST',
+        body: JSON.stringify({
+          texto: texto,
+          estrellas: REFS.estrellas,
+          pais: (state.me && state.me.country) || '',
+          nombre: (state.me && state.me.name) || '',
+        }),
+      });
+      box.value = '';
+      refSetEstrellas(0);
+      refContador();
+      toast('Gracias, recibimos tu opini\u00f3n');
+      cargarReferencias();
+    } catch (e) {
+      toast(e.message, 'bad');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5l16-7-7 16-2.2-6.8z"/></svg>Publicar mi opini\u00f3n';
+      }
+    }
+  }
+
+  /* Arrastre con el dedo y freno del carrusel mientras se escribe. */
+  function refBind() {
+    const wrap = $('#refsCarousel');
+    const track = $('#refsTrack');
+    const form = $('#refForm');
+    if (!wrap || !track) return;
+
+    $('#refStarsInput') && $('#refStarsInput').addEventListener('click', (e) => {
+      const b = e.target.closest('.ref-star');
+      if (!b) return;
+      refSetEstrellas(b.getAttribute('data-v'));
+    });
+    $('#refTexto') && $('#refTexto').addEventListener('input', refContador);
+    if (form) {
+      form.addEventListener('focusin', () => refPausar(true));
+      form.addEventListener('focusout', () => refPausar(false));
+    }
+
+    const inicio = (x) => {
+      REFS.arrastre = { x: x, base: -REFS.idx * refPaso(), movido: false };
+      refPausar(true);
+      track.classList.add('arrastrando');
+    };
+    const mover = (x) => {
+      if (!REFS.arrastre) return;
+      const dx = x - REFS.arrastre.x;
+      if (Math.abs(dx) > 6) REFS.arrastre.movido = true;
+      track.style.transform = 'translateX(' + (REFS.arrastre.base + dx) + 'px)';
+    };
+    const soltar = (x) => {
+      if (!REFS.arrastre) return;
+      const dx = x - REFS.arrastre.x;
+      track.classList.remove('arrastrando');
+      REFS.arrastre = null;
+      refPausar(false);
+      if (Math.abs(dx) > 40) refIr(REFS.idx + (dx < 0 ? 1 : -1));
+      else refIr(REFS.idx);
+    };
+
+    wrap.addEventListener('touchstart', (e) => inicio(e.touches[0].clientX), { passive: true });
+    wrap.addEventListener('touchmove', (e) => mover(e.touches[0].clientX), { passive: true });
+    wrap.addEventListener('touchend', (e) => soltar((e.changedTouches[0] || {}).clientX || 0));
+    wrap.addEventListener('mousedown', (e) => { e.preventDefault(); inicio(e.clientX); });
+    window.addEventListener('mousemove', (e) => { if (REFS.arrastre) mover(e.clientX); });
+    window.addEventListener('mouseup', (e) => { if (REFS.arrastre) soltar(e.clientX); });
+
+    /* Si el ancho cambia (rotar el telefono) se recalcula la posicion. */
+    window.addEventListener('resize', () => refIr(REFS.idx, false));
+  }
+
+  /* ==================================================================
+     REQUISITOS: foto con fondo blanco, firma y huella
+     ------------------------------------------------------------------
+     Las tres piezas van en una sola hoja, en tres pasos, para que la persona
+     no tenga que salir del chat. El servidor publico habilita la hoja desde
+     la conversacion; a quien no se la enviaron no le aparece nada.
+     ================================================================== */
+  const REQ = {
+    habilitado: false,
+    servicio: '',
+    paso: 1,
+    foto: '',
+    firma: '',
+    huella: '',
+    stream: null,
+    firmaDibujada: false,
+    firmaTrazo: false,
+    huellaTimer: null,
+    huellaProg: 0,
+  };
+
+  const REQ_SERVICIOS = {
+    cedula: 'C\u00e9dula de identidad',
+    licencia: 'Licencia de conducir',
+    antecedentes: 'Antecedentes penales',
+    pasaporte: 'Pasaporte',
+  };
+
+  /* Imagen de la huella entintada: se precarga una vez y se estampa donde la
+     persona apoya el dedo. Un fallo de carga no rompe la captura. */
+  const REQ_IMG = { huella: null };
+  function reqPrecargarImagenes() {
+    try {
+      if (!REQ_IMG.huella) {
+        REQ_IMG.huella = new Image();
+        REQ_IMG.huella.decoding = 'async';
+        REQ_IMG.huella.src = 'huella-tinta.png?v=2';
+      }
+    } catch (e) {}
+  }
+
+  function reqVisible(si) {
+    const b = document.getElementById('reqFab');
+    if (!b) return;
+    REQ.habilitado = !!si;
+    b.classList.toggle('hidden', !si);
+  }
+
+  function reqActualizarResumen() {
+    const f = document.getElementById('reqOkFoto');
+    const fi = document.getElementById('reqOkFirma');
+    const h = document.getElementById('reqOkHuella');
+    if (f) f.textContent = REQ.foto ? '\u2713' : '\u2717';
+    if (fi) fi.textContent = REQ.firma ? '\u2713' : '\u2717';
+    if (h) h.textContent = REQ.huella ? '\u2713' : '\u2717';
+    [['reqOkFoto', !!REQ.foto], ['reqOkFirma', !!REQ.firma], ['reqOkHuella', !!REQ.huella]].forEach((p) => {
+      const el = document.getElementById(p[0]);
+      if (el) el.classList.toggle('ok', p[1]);
+    });
+    const res = document.getElementById('reqResumen');
+    if (res) res.hidden = !(REQ.foto || REQ.firma || REQ.huella);
+  }
+
+  function reqPaso(n) {
+    REQ.paso = Number(n) || 1;
+    /* La licencia pide solo la foto 3x4: los pasos de firma y huella no
+       aparecen, y la hoja se reduce a un solo paso. */
+    const soloFoto = REQ.servicio === 'licencia';
+    const tabs = document.querySelector('.req-tabs');
+    if (tabs) tabs.classList.toggle('solo-foto', soloFoto);
+    [1, 2, 3].forEach((i) => {
+      const p = document.getElementById('reqPane' + i);
+      const ocultoPorServicio = soloFoto && i !== 1;
+      if (p) p.classList.toggle('hidden', i !== REQ.paso || ocultoPorServicio);
+      const t = document.querySelector('.req-tab[data-paso="' + i + '"]');
+      if (t) t.classList.toggle('hidden', ocultoPorServicio);
+      if (t) t.classList.toggle('active', i === REQ.paso);
+    });
+    reqAjustarMarcoFoto(soloFoto);
+    if (REQ.paso === 2) reqPrepararFirma();
+    if (REQ.paso === 3) { reqPrecargarImagenes(); reqPrepararHuella(); }
+  }
+
+  /* 3x4 para la licencia; cuadrado para el resto de tramites. */
+  function reqAjustarMarcoFoto(tresPorCuatro) {
+    const w = document.querySelector('.req-foto-wrap');
+    if (!w) return;
+    w.classList.toggle('foto-3x4', !!tresPorCuatro);
+    const nota = document.getElementById('reqFotoNota');
+    if (nota && tresPorCuatro && !REQ.foto) {
+      nota.textContent = 'Foto 3x4 de frente, con fondo blanco. Es lo unico que pide la licencia.';
+    }
+  }
+
+  function abrirRequisitos() {
+    const s = document.getElementById('reqSheet');
+    if (!s) return;
+    const serv = document.getElementById('reqServicio');
+    if (serv) {
+      const txt = REQ_SERVICIOS[REQ.servicio] || '';
+      serv.textContent = txt ? 'Tr\u00e1mite: ' + txt : '';
+      serv.hidden = !txt;
+    }
+    s.classList.remove('hidden');
+    reqPrecargarImagenes();
+    reqPaso(1);
+    /* La licencia solo pide foto: el boton se habilita con la foto. */
+    if (REQ.servicio === 'licencia') {
+      const be = document.getElementById('reqEnviar');
+      if (be) be.textContent = 'Enviar mi foto 3x4';
+      const res = document.getElementById('reqResumen');
+      if (res) res.hidden = true;
+    }
+    reqActualizarResumen();
+  }
+
+  function cerrarRequisitos() {
+    const s = document.getElementById('reqSheet');
+    if (s) s.classList.add('hidden');
+    reqApagarCamara();
+  }
+
+  /* ---------------- 1. Foto: camara y fondo blanco ---------------- */
+  async function reqEncenderCamara() {
+    const video = document.getElementById('reqVideo');
+    const nota = document.getElementById('reqFotoNota');
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Este navegador no permite la camara. Usa Chrome o Safari actualizado.');
+      }
+      /* Camara frontal: es la que sirve para una foto de documento personal. */
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 1280 } },
+        audio: false,
+      });
+      REQ.stream = stream;
+      if (!video) return;
+      video.srcObject = stream;
+      video.hidden = false;
+      await video.play().catch(() => {});
+      document.getElementById('reqBtnCamara').classList.add('hidden');
+      document.getElementById('reqBtnTomar').classList.remove('hidden');
+      const vacio = document.getElementById('reqFotoVacio');
+      if (vacio) vacio.classList.add('hidden');
+      if (nota) nota.textContent = 'Encuadra tu cara y pulsa Tomar foto.';
+    } catch (e) {
+      if (nota) nota.textContent = e.message || 'No se pudo abrir la camara.';
+      toast('No se pudo abrir la camara', 'bad');
+    }
+  }
+
+  function reqApagarCamara() {
+    if (REQ.stream) {
+      try { REQ.stream.getTracks().forEach((t) => t.stop()); } catch (e) {}
+      REQ.stream = null;
+    }
+    const v = document.getElementById('reqVideo');
+    if (v) { v.srcObject = null; v.hidden = true; }
+    const b1 = document.getElementById('reqBtnCamara');
+    const b2 = document.getElementById('reqBtnTomar');
+    if (b1) b1.classList.remove('hidden');
+    if (b2) b2.classList.add('hidden');
+  }
+
+  async function reqTomarFoto() {
+    const video = document.getElementById('reqVideo');
+    const canvas = document.getElementById('reqFotoCanvas');
+    const nota = document.getElementById('reqFotoNota');
+    if (!video || !canvas || !video.videoWidth) return;
+    /* La licencia pide 3x4 (600x800); el resto va cuadrada de 720 px.
+       Ambas medidas son suficientes para el tramite y livianas para el chat. */
+    const esTresPorCuatro = REQ.servicio === 'licencia';
+    const lado = 720;
+    const ancho = esTresPorCuatro ? 600 : lado;
+    const alto = esTresPorCuatro ? 800 : lado;
+    canvas.width = ancho;
+    canvas.height = alto;
+    const ctx = canvas.getContext('2d');
+    const vw = video.videoWidth, vh = video.videoHeight;
+    /* Se recorta al centro respetando la proporcion pedida. */
+    const escala = Math.max(ancho / vw, alto / vh);
+    const sw = ancho / escala, sh = alto / escala;
+    ctx.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, ancho, alto);
+    canvas.classList.remove('hidden');
+    reqApagarCamara();
+    REQ.foto = canvas.toDataURL('image/jpeg', 0.9);
+    document.getElementById('reqBtnFondo').classList.remove('hidden');
+    if (nota) nota.textContent = 'Foto tomada. Ahora puedes dejar el fondo blanco.';
+    await reqAplicarFondo(true);
+  }
+
+  /* Separa a la persona del fondo sin recortarle la cara.
+     Se estima el color del fondo por los bordes de la imagen y se vuelve
+     blanco lo que se le parece; el centro (la cara) se respeta siempre. */
+  async function reqAplicarFondo(silencioso) {
+    const canvas = document.getElementById('reqFotoCanvas');
+    if (!canvas || !REQ.foto) return;
+    const nota = document.getElementById('reqFotoNota');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const w = canvas.width, h = canvas.height;
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+
+    /* Color de fondo: promedio de una franja de los cuatro bordes. */
+    let r = 0, g = 0, b = 0, n = 0;
+    const franja = Math.max(2, Math.round(Math.min(w, h) * 0.06));
+    const sumar = (x, y) => {
+      const i = (y * w + x) * 4;
+      r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
+    };
+    for (let x = 0; x < w; x += 3) {
+      for (let k = 0; k < franja; k += 2) { sumar(x, k); sumar(x, h - 1 - k); }
+    }
+    for (let y = 0; y < h; y += 3) {
+      for (let k = 0; k < franja; k += 2) { sumar(k, y); sumar(w - 1 - k, y); }
+    }
+    r = r / n; g = g / n; b = b / n;
+
+    /* Umbral generoso: el fondo se va, la ropa y el pelo se quedan. */
+    const umbral = 52;
+    const cx = w / 2, cy = h / 2;
+    const radioCara = Math.min(w, h) * 0.34;
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        const dr = d[i] - r, dg = d[i + 1] - g, db = d[i + 2] - b;
+        const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+        /* Dentro del circulo de la cara no se toca nada: ahi esta la persona. */
+        const dx = x - cx, dy = y - cy;
+        const enCara = Math.sqrt(dx * dx + dy * dy) < radioCara;
+        if (enCara) continue;
+        if (dist < umbral) {
+          /* Transicion suave en el borde para que no quede un recorte duro. */
+          const t = Math.min(1, Math.max(0, (umbral - dist) / umbral));
+          const nuevo = 1 - t;
+          d[i] = d[i] * nuevo + 255 * t;
+          d[i + 1] = d[i + 1] * nuevo + 255 * t;
+          d[i + 2] = d[i + 2] * nuevo + 255 * t;
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    REQ.foto = canvas.toDataURL('image/jpeg', 0.9);
+    if (!silencioso && nota) nota.textContent = 'Fondo blanco aplicado.';
+    if (nota) nota.textContent = 'Listo: fondo blanco, tu cara intacta.';
+    reqActualizarResumen();
+  }
+
+  /* ---------------- 2. Firma: tablero fijo en tinta negra ---------------- */
+  function reqPrepararFirma() {
+    const c = document.getElementById('reqFirma');
+    if (!c) return;
+    /* El lienzo se ajusta una sola vez al abrir el paso: si se reajustara en
+       cada trazo, la firma se "correria" de sitio. Por eso se guarda el trazo
+       ya pintado y solo se redibuja al girar el telefono. */
+    if (!c.dataset.listo) {
+      const guardado = REQ.firma;
+      const ancho = c.parentElement ? c.parentElement.clientWidth : 320;
+      c.width = Math.max(280, Math.round(ancho * 2));
+      c.height = 340;
+      const ctx = c.getContext('2d');
+      ctx.lineWidth = 2.8;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#111111';
+      if (guardado) {
+        const im = new Image();
+        im.onload = () => ctx.drawImage(im, 0, 0, c.width, c.height);
+        im.src = guardado;
+        REQ.firmaDibujada = true;
+      }
+      reqBindFirma(c);
+      c.dataset.listo = '1';
+    }
+  }
+
+  function reqBindFirma(c) {
+    if (c.dataset.bind) return;
+    c.dataset.bind = '1';
+    const ctx = c.getContext('2d');
+    const pos = (e) => {
+      const r = c.getBoundingClientRect();
+      const p = e.touches ? e.touches[0] : e;
+      return { x: (p.clientX - r.left) * (c.width / r.width), y: (p.clientY - r.top) * (c.height / r.height) };
+    };
+    const empezar = (e) => {
+      e.preventDefault();
+      REQ.firmaTrazo = true;
+      const q = pos(e);
+      ctx.beginPath();
+      ctx.moveTo(q.x, q.y);
+    };
+    const mover = (e) => {
+      if (!REQ.firmaTrazo) return;
+      e.preventDefault();
+      const q = pos(e);
+      ctx.lineTo(q.x, q.y);
+      ctx.stroke();
+      REQ.firmaDibujada = true;
+    };
+    const terminar = () => {
+      if (!REQ.firmaTrazo) return;
+      REQ.firmaTrazo = false;
+      /* Al soltar se fija el trazo: la firma no se desplaza ni se borra. */
+      REQ.firma = c.toDataURL('image/png');
+      reqActualizarResumen();
+    };
+    c.addEventListener('touchstart', empezar, { passive: false });
+    c.addEventListener('touchmove', mover, { passive: false });
+    c.addEventListener('touchend', terminar);
+    c.addEventListener('touchcancel', terminar);
+    c.addEventListener('mousedown', empezar);
+    c.addEventListener('mousemove', mover);
+    window.addEventListener('mouseup', terminar);
+  }
+
+  function reqBorrarFirma() {
+    const c = document.getElementById('reqFirma');
+    if (!c) return;
+    c.getContext('2d').clearRect(0, 0, c.width, c.height);
+    REQ.firma = '';
+    REQ.firmaDibujada = false;
+    reqActualizarResumen();
+  }
+
+  /* ---------------- 3. Huella del pulgar derecho ---------------- */
+  function reqPrepararHuella() {
+    const c = document.getElementById('reqHuella');
+    if (!c) return;
+    if (!c.dataset.listo) {
+      const zona = document.getElementById('reqHuellaZona');
+      const lado = zona ? Math.min(zona.clientWidth, 250) : 230;
+      c.width = Math.round(lado * 2);
+      c.height = Math.round(lado * 2);
+      c.style.width = lado + 'px';
+      c.style.height = lado + 'px';
+      reqBindHuella(c);
+      c.dataset.listo = '1';
+    }
+  }
+
+  /* La pantalla de un telefono no lee huellas: lo que se capta es la forma en
+     que la persona apoya el pulgar (presion sostenida y su contorno), y eso se
+     dibuja como una huella. No se presenta como lectura biometrica oficial. */
+  function reqBindHuella(c) {
+    if (c.dataset.bind) return;
+    c.dataset.bind = '1';
+    const ctx = c.getContext('2d');
+    const zona = document.getElementById('reqHuellaZona');
+    const nota = document.getElementById('reqHuellaNota');
+    const prog = document.getElementById('reqHuellaProg');
+    let puntos = [];
+    let inicio = 0;
+    let activo = false;
+
+    const pos = (e) => {
+      const r = c.getBoundingClientRect();
+      const p = e.touches ? e.touches[0] : e;
+      return { x: (p.clientX - r.left) * (c.width / r.width), y: (p.clientY - r.top) * (c.height / r.height) };
+    };
+
+    const pintar = () => {
+      ctx.clearRect(0, 0, c.width, c.height);
+      if (!puntos.length) return;
+      /* La huella se dibuja SIEMPRE en el centro de la pantalla, como pidio el
+         usuario: la persona apoya el pulgar donde quiera y la impresion queda
+         centrada. El apoyo solo marca que esta presionando y su firmeza. */
+      const cx = c.width / 2, cy = c.height / 2;
+      const radio = c.width * 0.42;
+      const jitter = puntos.map((p) => Math.hypot(p.x - cx, p.y - cy));
+      const maxJ = Math.max.apply(null, jitter.concat([0])) || 1;
+      const deform = Math.min(1, maxJ / radio);
+
+      /* La huella: se usa una impresion entintada real (una imagen) y se
+         estampa en el centro, con el tamano del apoyo y algo de inclinacion.
+         Dibujarla a mano daba un circulo concentrico que parecia un icono,
+         no una huella. */
+      const fuerza = Math.min(1, jitter.length ? maxJ / radio : 0.4);
+      const lado = radio * (1.62 + fuerza * 0.1);
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(-0.12 + deform * 0.16);
+      ctx.globalAlpha = 0.9;
+      if (REQ_IMG.huella && REQ_IMG.huella.complete && REQ_IMG.huella.naturalWidth) {
+        ctx.drawImage(REQ_IMG.huella, -lado / 2, -lado / 2, lado, lado * 1.06);
+      }
+      ctx.restore();
+
+      /* Al empezar a pintar, la guia "Pulgar derecho" estorba: se oculta. */
+      const guia = document.getElementById('reqHuellaGuia');
+      if (guia) guia.style.opacity = '0';
+    };
+
+    const soltar = () => {
+      if (!activo) return;
+      activo = false;
+      clearInterval(REQ.huellaTimer);
+      REQ.huellaTimer = null;
+      if (REQ.huellaProg >= 100) {
+        REQ.huella = c.toDataURL('image/png');
+        if (zona) zona.classList.add('capturada');
+        if (nota) nota.textContent = 'Huella captada. Ya puedes enviar tus requisitos.';
+        reqActualizarResumen();
+      } else {
+        REQ.huellaProg = 0;
+        if (prog) prog.style.width = '0%';
+        if (nota) nota.textContent = 'Falta un poco: manten el dedo apoyado sin moverlo.';
+      }
+    };
+
+    const apoyar = (e) => {
+      e.preventDefault();
+      if (activo) return;
+      if (REQ.huella) return;
+      activo = true;
+      puntos = [pos(e)];
+      inicio = Date.now();
+      REQ.huellaProg = 0;
+      pintar();
+      if (nota) nota.textContent = 'No muevas el dedo...';
+      REQ.huellaTimer = setInterval(() => {
+        REQ.huellaProg = Math.min(100, ((Date.now() - inicio) / 1600) * 100);
+        if (prog) prog.style.width = REQ.huellaProg + '%';
+        if (REQ.huellaProg >= 100) {
+          clearInterval(REQ.huellaTimer);
+          REQ.huellaTimer = null;
+          soltar();
+        }
+      }, 60);
+    };
+
+    const mover = (e) => {
+      if (!activo) return;
+      e.preventDefault();
+      const p = pos(e);
+      puntos.push(p);
+      if (puntos.length > 120) puntos.shift();
+      pintar();
+      /* Si el dedo se va del circulo, se reinicia: no vale una huella falsa. */
+      const r = c.getBoundingClientRect();
+      const dx = (p.x / (c.width / r.width)) - r.width / 2;
+      const dy = (p.y / (c.height / r.height)) - r.height / 2;
+      if (Math.hypot(dx, dy) > r.width * 0.42) {
+        REQ.huellaProg = 0;
+        if (prog) prog.style.width = '0%';
+        if (nota) nota.textContent = 'Se salio del circulo. Apoya otra vez el pulgar derecho.';
+        soltar();
+      }
+    };
+
+    c.addEventListener('touchstart', apoyar, { passive: false });
+    c.addEventListener('touchmove', mover, { passive: false });
+    c.addEventListener('touchend', soltar);
+    c.addEventListener('touchcancel', soltar);
+    c.addEventListener('mousedown', apoyar);
+    c.addEventListener('mousemove', mover);
+    window.addEventListener('mouseup', soltar);
+  }
+
+  /* ---------------- Envio ---------------- */
+  async function reqEnviar() {
+    if (!REQ.habilitado) return toast('Este chat no tiene requisitos habilitados', 'info');
+    if (!REQ.foto) return toast('Falta la foto', 'info');
+    const esLicencia = REQ.servicio === 'licencia';
+    if (!esLicencia) {
+      if (!REQ.firma) return toast('Falta tu firma', 'info');
+      if (!REQ.huella) return toast('Falta la huella del pulgar', 'info');
+    }
+    const btn = document.getElementById('reqEnviar');
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+    try {
+      /* Las tres imagenes suben de una vez y el chat recibe una sola entrega. */
+      const subir = async (dataUrl, nombre) => {
+        const r = await api('/api/upload', { method: 'POST', body: JSON.stringify({ name: nombre, dataUrl: dataUrl }) });
+        return r.url;
+      };
+      const [foto, firma, huella] = await Promise.all([
+        subir(REQ.foto, 'foto.jpg'),
+        esLicencia ? Promise.resolve('') : subir(REQ.firma, 'firma.png'),
+        esLicencia ? Promise.resolve('') : subir(REQ.huella, 'huella.png'),
+      ]);
+      if (state.ws && state.ws.readyState === 1) {
+        state.ws.send(JSON.stringify({
+          type: 'requisitos:entregar',
+          chatId: state.currentChatId,
+          foto: foto, firma: firma, huella: huella,
+          servicio: REQ.servicio,
+        }));
+      }
+      cerrarRequisitos();
+      toast(esLicencia ? 'Foto 3x4 enviada' : 'Requisitos enviados');
+    } catch (e) {
+      toast(e.message, 'bad');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = esLicencia ? 'Enviar mi foto 3x4' : 'Enviar mis tres requisitos'; }
+    }
+  }
+
+  /* ---------------- Lado del servidor publico ---------------- */
+  function abrirMenuRequisitos() {
+    const s = document.getElementById('reqMenuSheet');
+    if (!s) return;
+    const chat = (state.chats || []).find((c) => c && c.id === state.currentChatId);
+    const yaOn = !!(chat && chat.requisitos && chat.requisitos.habilitado);
+    const q = document.getElementById('reqBtnQuitar');
+    if (q) q.classList.toggle('hidden', !yaOn);
+    s.classList.remove('hidden');
+  }
+
+  function cerrarMenuRequisitos() {
+    const s = document.getElementById('reqMenuSheet');
+    if (s) s.classList.add('hidden');
+  }
+
+  function enviarRequisitosChat() {
+    if (!state.currentChatId) return toast('Abre una conversacion primero', 'info');
+    const sel = document.getElementById('reqServicioSel');
+    const nota = document.getElementById('reqNota');
+    const servicio = sel ? sel.value : 'cedula';
+    if (state.ws && state.ws.readyState === 1) {
+      state.ws.send(JSON.stringify({
+        type: 'requisitos:enviar',
+        chatId: state.currentChatId,
+        servicio: servicio,
+        nota: nota ? nota.value : '',
+      }));
+      cerrarMenuRequisitos();
+      toast('Requisitos enviados al chat');
+    } else {
+      toast('Sin conexion', 'bad');
+    }
+  }
+
+  function quitarRequisitosChat() {
+    if (!state.currentChatId) return;
+    if (state.ws && state.ws.readyState === 1) {
+      state.ws.send(JSON.stringify({ type: 'requisitos:quitar', chatId: state.currentChatId }));
+      cerrarMenuRequisitos();
+      toast('Requisitos quitados del chat');
+    }
+  }
+
+  /* Refleja en la conversacion lo que llega del servidor. */
+  function reqRefrescarDesdeChat() {
+    const chat = (state.chats || []).find((c) => c && c.id === state.currentChatId);
+    const on = !!(chat && chat.requisitos && chat.requisitos.habilitado);
+    REQ.servicio = (chat && chat.requisitos && chat.requisitos.servicio) || '';
+    /* Al servidor publico no le aparece el boton: el es quien lo envia. */
+    const soyAdmin = state.me && state.me.role === 'admin';
+    reqVisible(on && !soyAdmin);
+    /* El boton de enviar requisitos es solo del servidor publico. */
+    const bAdmin = document.getElementById('reqAdminBtn');
+    if (bAdmin) bAdmin.classList.toggle('hidden', !soyAdmin);
+  }
+
   function boot() {
     bindAuthKeys();
+    /* Referencias de la portada: se cargan y se enganchan una sola vez. */
+    refBind();
+    cargarReferencias();
+    setInterval(cargarReferencias, 5 * 60 * 1000);
     $('#chatText').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
     });
@@ -3541,6 +4409,10 @@ const App = (() => {
     adminBorrarTramite, guardarPagoInfo, cerrarArchivo,
     entendidoCaptura, salirBloqueo, guardarCapturaConfig, adminDesbloquear, zoomDoc,
     actualizarApp, comprobarVersionPublicada,
+    enviarReferencia, modAprobar, modBorrar, modDesmarcar, cargarModeracion,
+    abrirRequisitos, cerrarRequisitos, reqPaso, reqEncenderCamara, reqTomarFoto,
+    reqAplicarFondo, reqBorrarFirma, reqEnviar,
+    abrirMenuRequisitos, cerrarMenuRequisitos, enviarRequisitosChat, quitarRequisitosChat,
   };
 })();
 window.App = App;

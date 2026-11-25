@@ -396,6 +396,9 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
   flex: 0 0 auto; box-shadow: 0 1px 3px rgba(16, 24, 40, .14);
 }
 .b-avatar.hueco { background: transparent; box-shadow: none; }
+/* La foto de la propia persona: mismo tamano, con un anillo suave para
+   distinguirla de la del servidor publico. */
+.b-avatar.mio { box-shadow: 0 1px 3px rgba(16, 24, 40, .14), 0 0 0 1.5px rgba(31, 95, 158, .22); }
 
 .bubble {
   max-width: 79%; padding: 9px 13px 6px; border-radius: 18px; font-size: 14.6px; line-height: 1.45;
@@ -579,11 +582,264 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .viewer { position: fixed; inset: 0; background: rgba(0, 0, 0, .92); display: flex; align-items: center; justify-content: center; z-index: 80; padding: 12px; }
 .viewer img { max-width: 100%; max-height: 100%; border-radius: 8px; }
 
+/* Aviso flotante, estilo nativo de telefono: tarjeta clara, icono, titulo y
+   texto legible. Antes era una caja negra con letra de 13px que se leia mal. */
 .toast {
-  position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
-  background: rgba(16, 24, 40, .94); color: #fff; font-size: 13.5px;
-  padding: 10px 16px; border-radius: 999px; z-index: 90; max-width: 88%; text-align: center;
+  position: fixed; left: 12px; right: 12px; bottom: calc(18px + env(safe-area-inset-bottom));
+  margin: 0 auto; max-width: 440px;
+  display: flex; align-items: center; gap: 11px;
+  background: rgba(255, 255, 255, .97);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  backdrop-filter: blur(14px) saturate(180%);
+  color: #101828; font-size: 15px; font-weight: 600; line-height: 1.35;
+  padding: 13px 16px; border-radius: 18px;
+  border: 1px solid rgba(16, 24, 40, .07);
+  box-shadow: 0 12px 34px rgba(11, 27, 58, .24), 0 2px 6px rgba(11, 27, 58, .10);
+  z-index: 90; text-align: left;
+  transform: translateY(0) scale(1); opacity: 1;
+  transition: transform .26s cubic-bezier(.2, .9, .3, 1), opacity .22s ease;
 }
+.toast.hidden { display: flex !important; pointer-events: none; opacity: 0; transform: translateY(16px) scale(.97); }
+.toast::before {
+  content: ''; flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
+  background: linear-gradient(180deg, #34c759, #22a94a) center/16px 16px no-repeat;
+  /* chulo blanco dibujado dentro del circulo verde */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12.5l4.5 4.5L19 7.5'/></svg>");
+  background-size: 16px 16px; background-position: center; background-repeat: no-repeat;
+  box-shadow: 0 2px 6px rgba(34, 169, 74, .34);
+}
+/* Aviso de informacion (no es un guardado): circulo azul con una "i". */
+.toast.info::before {
+  background-image: linear-gradient(180deg, #2f79bb, #1f5f9e);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round'><path d='M12 10.6v6'/><circle cx='12' cy='7.4' r='1.2' fill='%23fff' stroke='none'/></svg>"), linear-gradient(180deg, #2f79bb, #1f5f9e);
+  background-size: 17px 17px, 100% 100%; background-position: center, center; background-repeat: no-repeat, no-repeat;
+  box-shadow: 0 2px 6px rgba(31, 95, 158, .34);
+}
+/* Aviso de error: mismo formato, circulo rojo con una "!". */
+.toast.bad::before {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.8' stroke-linecap='round'><path d='M12 7v6.4'/><circle cx='12' cy='17' r='1.2' fill='%23fff' stroke='none'/></svg>"), linear-gradient(180deg, #e05252, #b91c1c);
+  background-size: 17px 17px, 100% 100%; background-position: center, center; background-repeat: no-repeat, no-repeat;
+  box-shadow: 0 2px 6px rgba(185, 28, 28, .34);
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast { transition: none; }
+}
+
+/* ---------------- Referencias de tramites (carrusel) ---------------- */
+.refs { margin: 22px 14px 8px; }
+.refs-head { text-align: center; margin-bottom: 14px; }
+.refs-title { font-size: 16.5px; font-weight: 800; letter-spacing: -.01em; color: var(--navy); }
+.refs-sub { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+.refs-score { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 9px; }
+.refs-prom { font-size: 15px; font-weight: 800; color: var(--text); }
+.refs-count { font-size: 12px; color: var(--muted); }
+.refs-stars { display: inline-flex; gap: 2px; }
+.refs-stars svg { width: 13px; height: 13px; fill: #e3e8ef; stroke: none; }
+.refs-stars svg.on { fill: var(--gold); }
+
+.refs-carousel {
+  position: relative; overflow: hidden; border-radius: 18px;
+  /* El degradado de los bordes avisa que hay mas tarjetas a los lados. */
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+}
+.refs-track {
+  display: flex; gap: 12px; padding: 4px 14px 10px;
+  will-change: transform; transition: transform .55s cubic-bezier(.4, 0, .2, 1);
+}
+.refs-track.arrastrando { transition: none; }
+.ref-card {
+  flex: 0 0 84%; max-width: 330px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+  padding: 14px 15px 12px; box-shadow: 0 6px 18px rgba(11, 27, 58, .08);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.ref-top { display: flex; align-items: center; gap: 10px; }
+.ref-ava {
+  width: 38px; height: 38px; border-radius: 50%; flex: 0 0 auto;
+  background: linear-gradient(135deg, var(--navy-2), var(--navy)); color: #fff;
+  font-size: 14px; font-weight: 800; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 8px rgba(31, 95, 158, .26);
+}
+.ref-ava.equipo { background: linear-gradient(135deg, #12805c, #0d6650); }
+.ref-who { min-width: 0; flex: 1; }
+.ref-who b { display: block; font-size: 14px; line-height: 1.2; color: var(--text); }
+.ref-who small { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.ref-mark { flex: 0 0 auto; width: 18px; height: 18px; opacity: .5; }
+.ref-mark svg { width: 18px; height: 18px; stroke: var(--navy); }
+.ref-stars { display: flex; gap: 2px; }
+.ref-stars svg { width: 14px; height: 14px; fill: #e3e8ef; stroke: none; }
+.ref-stars svg.on { fill: var(--gold); }
+.ref-txt { font-size: 13.8px; line-height: 1.5; color: var(--text); margin: 0; }
+.ref-tag {
+  align-self: flex-start; font-size: 10.5px; font-weight: 700; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--navy); background: var(--blue-soft);
+  padding: 4px 9px; border-radius: 999px;
+}
+.ref-skel {
+  flex: 0 0 84%; max-width: 330px; height: 158px; border-radius: 16px;
+  background: linear-gradient(100deg, #eef3f9 30%, #f7fafd 50%, #eef3f9 70%);
+  background-size: 200% 100%; animation: refShimmer 1.3s linear infinite;
+}
+@keyframes refShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .ref-skel { animation: none; } }
+
+.refs-dots { display: flex; justify-content: center; gap: 6px; margin: 2px 0 16px; }
+.refs-dots i { width: 6px; height: 6px; border-radius: 50%; background: #c6d4e4; transition: width .2s ease, background .2s ease; }
+.refs-dots i.on { width: 18px; border-radius: 999px; background: var(--navy); }
+
+/* Formulario de opinion */
+.ref-form {
+  background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+  padding: 14px; box-shadow: 0 6px 18px rgba(11, 27, 58, .07);
+}
+.ref-form-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 11px; }
+.ref-form-head svg { width: 22px; height: 22px; flex: 0 0 auto; stroke: var(--navy); margin-top: 2px; }
+.ref-form-head b { display: block; font-size: 14.5px; color: var(--text); }
+.ref-form-head small { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+.ref-stars-input { display: flex; gap: 4px; margin-bottom: 11px; }
+.ref-star { background: none; border: none; padding: 4px; cursor: pointer; line-height: 0; }
+.ref-star svg { width: 27px; height: 27px; fill: #e3e8ef; stroke: none; transition: fill .15s ease, transform .12s ease; }
+.ref-star:hover svg, .ref-star.on svg { fill: var(--gold); }
+.ref-star:active svg { transform: scale(.9); }
+.ref-input-wrap { display: block; position: relative; margin-bottom: 11px; }
+.ref-input-wrap textarea {
+  width: 100%; font: inherit; font-size: 14px; line-height: 1.5; color: var(--text);
+  padding: 11px 12px 24px; border: 1px solid var(--border); border-radius: 12px;
+  background: #fbfdff; resize: vertical; min-height: 78px;
+}
+.ref-input-wrap textarea:focus { outline: none; border-color: var(--navy-2); background: #fff; box-shadow: 0 0 0 3px rgba(31, 95, 158, .12); }
+.ref-counter { position: absolute; right: 10px; bottom: 7px; font-size: 11px; color: var(--muted); }
+.ref-send { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.ref-send svg { width: 18px; height: 18px; stroke: currentColor; }
+.ref-send[disabled] { opacity: .6; }
+.ref-note { font-size: 11.5px; margin: 9px 0 0; text-align: center; }
+
+/* Opinion del equipo */
+.ref-team {
+  margin-top: 14px; padding: 15px 15px 8px;
+  background: linear-gradient(160deg, #f4f9ff, #eaf3fc 70%, #f7fbff);
+  border: 1px solid #d5e6f7; border-radius: 16px;
+}
+.ref-team-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.ref-team-logo { width: 34px; height: 34px; object-fit: contain; border-radius: 9px; background: #fff; padding: 3px; box-shadow: 0 2px 6px rgba(11, 27, 58, .1); }
+.ref-team-head b { display: block; font-size: 14.5px; color: var(--navy); }
+.ref-team-head small { display: block; font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+.ref-team > p { font-size: 12.8px; line-height: 1.5; color: #33415c; margin: 0 0 9px; }
+.ref-team-list { margin: 0; padding: 0 0 6px; list-style: none; display: flex; flex-direction: column; gap: 9px; }
+.ref-team-list li {
+  position: relative; padding-left: 20px; font-size: 12.8px; line-height: 1.5; color: #33415c;
+}
+.ref-team-list li::before {
+  content: ''; position: absolute; left: 2px; top: 6px; width: 8px; height: 8px; border-radius: 50%;
+  background: linear-gradient(135deg, #f4c542, #d4a72c);
+}
+.ref-team-list b { color: var(--text); }
+
+/* ---------------- Requisitos: boton flotante y hoja de tres pasos ----------------
+   El boton solo existe cuando el servidor publico habilito los requisitos en
+   esta conversacion. Queda por encima de la caja de escribir, a la derecha. */
+.req-fab {
+  position: absolute; right: 14px; bottom: 86px; z-index: 12;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 11px 15px; border: 0; border-radius: 999px;
+  background: linear-gradient(135deg, #12805c, #0d6650); color: #fff;
+  font: inherit; font-size: 13px; font-weight: 700;
+  box-shadow: 0 10px 24px rgba(13, 102, 80, .34), 0 2px 6px rgba(11, 27, 58, .16);
+  cursor: pointer;
+}
+.req-fab svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.req-fab:active { transform: scale(.97); }
+
+.req-card { max-height: 92vh; overflow-y: auto; }
+.req-serv {
+  margin: 2px 0 10px; padding: 8px 11px; border-radius: 10px;
+  background: #eef7f1; color: #0d6650; font-size: 12.5px; font-weight: 700;
+}
+.req-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 13px; }
+.req-tab {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 9px 4px; border: 1px solid var(--border); border-radius: 11px;
+  background: #fbfdff; color: #5c6b82; font: inherit; font-size: 12.5px; font-weight: 700;
+  cursor: pointer;
+}
+.req-tab.active { background: var(--navy); border-color: var(--navy); color: #fff; }
+.req-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; border-radius: 50%; font-size: 10.5px;
+  background: rgba(11, 27, 58, .1); color: inherit;
+}
+.req-tab.active .req-num { background: rgba(255, 255, 255, .26); }
+.req-help { font-size: 12.8px; line-height: 1.5; color: #46536a; margin: 0 0 11px; }
+.req-note { font-size: 11.5px; margin: 9px 0 0; text-align: center; }
+.req-row { display: flex; gap: 8px; margin-top: 10px; }
+.req-row .btn { flex: 1 1 auto; width: auto; }
+
+/* Foto */
+.req-foto-wrap {
+  position: relative; width: 100%; aspect-ratio: 1 / 1; max-height: 300px;
+  border-radius: 14px; overflow: hidden; background: #f4f7fb;
+  border: 1px solid var(--border); display: flex; align-items: center; justify-content: center;
+}
+.req-foto-wrap video, .req-foto-canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
+.req-foto-canvas.hidden { display: none; }
+.req-foto-vacio {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 7px; color: #8b9ab1; font-size: 12.5px;
+}
+.req-foto-vacio svg { width: 38px; height: 38px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+
+/* Firma: el lienzo llena el recuadro y el trazo queda fijo donde se pinta */
+.req-firma-wrap {
+  position: relative; background: #fff; border: 1.5px dashed #b9c8da;
+  border-radius: 14px; overflow: hidden; touch-action: none;
+}
+.req-firma-canvas { display: block; width: 100%; height: 170px; touch-action: none; cursor: crosshair; }
+.req-guia {
+  position: absolute; left: 0; right: 0; bottom: 12px; text-align: center;
+  font-size: 12px; color: #a9b6c8; pointer-events: none; letter-spacing: .02em;
+}
+
+/* Huella */
+.req-huella-wrap { display: flex; justify-content: center; }
+.req-huella {
+  position: relative; width: 230px; height: 230px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%, #f7fbff, #e9f2fb 70%, #dfeaf6);
+  border: 1.5px solid #c9d9ea; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; touch-action: none;
+}
+.req-huella.capturada { border-color: #12805c; box-shadow: 0 0 0 3px rgba(18, 128, 92, .14); }
+.req-huella-canvas { display: block; touch-action: none; }
+.req-huella-guia {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 6px;
+  color: #8ba0ba; font-size: 11.5px; pointer-events: none;
+}
+.req-huella-guia svg { width: 34px; height: 34px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.req-huella-prog {
+  position: absolute; left: 0; bottom: 0; height: 4px; width: 0%;
+  background: linear-gradient(90deg, #12805c, #34c759); transition: width .06s linear;
+}
+
+/* Resumen de las tres piezas */
+.req-resumen {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin: 14px 0 10px;
+}
+.req-mini {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px; border-radius: 10px; background: #f7fafd; border: 1px solid var(--border);
+  font-size: 12px; font-weight: 600; color: #46536a;
+}
+.req-mini i { font-style: normal; font-weight: 800; color: #b9c4d3; }
+.req-mini i.ok { color: #12805c; }
+.req-enviar { width: 100%; margin-top: 6px; }
+
+/* Modo horizontal: la tarjeta ocupa menos y se ve mas de una */
+@media (min-width: 620px) {
+  .ref-card { flex-basis: 46%; }
+  .ref-skel { flex-basis: 46%; }
+}
+
 
 /* horario y telefono de atencion */
 .inst-info{
@@ -675,6 +931,14 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .mini:active { background: var(--blue-soft); }
 .mini.ok { background: #e6f7ef; border-color: #bfe6d4; color: #0f6b4c; }
 .mini.bad { background: #fdeaea; border-color: #f6d4d4; color: var(--red); }
+
+/* Moderacion de referencias: filas con la cita y los terminos detectados. */
+.panel-row.stack { flex-direction: column; align-items: stretch; gap: 9px; }
+.panel-row.stack .mod-actions { display: flex; gap: 7px; justify-content: flex-end; }
+.mod-quote { display: block; margin-top: 5px; font-style: italic; color: #33415c; line-height: 1.45; }
+.mod-terms { display: block; margin-top: 5px; color: var(--red); font-weight: 600; }
+.mod-h { margin: 18px 0 8px; font-size: 12.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.mod-h:first-child { margin-top: 4px; }
 
 /* ---------------- visor seguro del documento ---------------- */
 .doc-viewer {
@@ -823,7 +1087,7 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .site-footer .footer-legal { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.3); font-size: 12px; color: rgba(255,255,255,.92); }
 
 /* Panel del servidor publico: pestanas, filtros y buscador */
-.admin-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding: 9px 0 12px; }
+.admin-tabs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; padding: 9px 0 12px; }
 .admin-tab {
   position: relative; border: 1px solid var(--border); background: var(--card);
   color: var(--text); font: inherit; font-size: 11.5px; font-weight: 600;
@@ -992,16 +1256,19 @@ body.con-actualizacion .view.active { padding-top: 54px; }
 
 /* Aviso de notificaciones */
 .notif-banner {
-  position: fixed; left: 10px; right: 10px; bottom: 74px; z-index: 78;
+  position: fixed; left: 10px; right: 10px; bottom: 74px; z-index: 58;
   display: flex; align-items: center; gap: 10px; padding: 11px 12px;
   background: var(--card, #fff); border: 1px solid var(--border, #e2e6ee);
   border-radius: 14px; box-shadow: 0 10px 26px rgba(11, 27, 58, .18);
 }
 .notif-banner.hidden { display: none; }
-.notif-txt { flex: 1; min-width: 0; }
+.notif-txt { flex: 1 1 auto; min-width: 0; }
 .notif-txt b { display: block; font-size: 13px; color: var(--navy, #0b1b3a); }
 .notif-txt small { display: block; font-size: 11.5px; line-height: 1.35; opacity: .7; margin-top: 2px; }
-.notif-go { flex-shrink: 0; padding: 9px 14px; font-size: 12.5px; }
+/* El boton hereda .btn, que es width:100%. Dentro de esta fila flex eso le
+   robaba todo el ancho al texto y lo dejaba en una columna de 0px: por eso se
+   veia una torre de letras sueltas. Aqui vuelve a su ancho natural. */
+.notif-go { width: auto; flex: 0 0 auto; padding: 9px 14px; font-size: 12.5px; margin-top: 0; white-space: nowrap; }
 .notif-x { flex-shrink: 0; }
 
 /* Barra de sin conexion */
@@ -1011,3 +1278,19 @@ body.con-actualizacion .view.active { padding-top: 54px; }
   font-size: 12px; font-weight: 600; padding: 7px 12px;
 }
 .offline-bar.hidden { display: none; }
+
+/* Boton del servidor publico en la cabecera del chat: solo lo ve el admin. */
+.req-admin-btn { color: #0d6650; }
+.req-admin-btn.hidden { display: none; }
+
+/* La licencia pide solo foto: la barra de pasos queda con una sola opcion. */
+.req-tabs.solo-foto { grid-template-columns: 1fr; }
+.req-tabs.solo-foto .req-tab.hidden { display: none; }
+
+/* Marco 3x4 para la foto de la licencia. */
+.req-foto-wrap.foto-3x4 { aspect-ratio: 3 / 4; max-height: 340px; }
+.req-foto-wrap.foto-3x4 video, .req-foto-wrap.foto-3x4 .req-foto-canvas { object-fit: cover; }
+
+/* La huella se pinta en tinta negra: el fondo se deja claro para que el
+   trazo negro se lea como una huella entintada sobre papel. */
+.req-huella-canvas { background: #fff; border-radius: 50%; }

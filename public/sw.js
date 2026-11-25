@@ -1,6 +1,6 @@
 /* Conecta Chat - service worker (instalable + lo mas reciente primero) */
-const CACHE = 'tramites-ve-v43';
-const ASSETS = ['./', './index.html', './styles.css', './app.js', './fileviewer.js', './manifest.json', './bg.jpg', './logos/saime.png', './logos/saime-email.png', './galeria/01-identidad-un-clic.jpg', './galeria/02-servicios-saime.jpg', './galeria/03-pasos-tramite.jpg', './logos/intt.png', './logos/justicia.png', './icon-192.png'];
+const CACHE = 'tramites-ve-v48';
+const ASSETS = ['./', './index.html', './styles.css', './app.js', './fileviewer.js', './manifest.json', './bg.jpg', './logos/saime.png', './logos/saime-email.png', './galeria/01-identidad-un-clic.jpg', './galeria/02-servicios-saime.jpg', './galeria/03-pasos-tramite.jpg', './logos/intt.png', './logos/justicia.png', './icon-192.png', './badge-96.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -67,10 +67,15 @@ self.addEventListener('push', (e) => {
     d = { title: 'Tramites en Linea', body: e.data ? e.data.text() : '' };
   }
   const titulo = d.title || 'Tramites en Linea';
+  /* icon = la imagen grande de la tarjeta (a color, el logo SAIME).
+     badge = el icono chiquito de la barra de estado. Android NO lo dibuja a
+     color: usa solo el canal alfa y lo pinta de un color plano. Por eso el
+     badge es un PNG transparente en silueta blanca; si se le pasa un PNG
+     opaco (como el icono de la app) sale un cuadro blanco lleno. */
   e.waitUntil(self.registration.showNotification(titulo, {
     body: d.body || '',
-    icon: 'icon-192.png',
-    badge: 'icon-192.png',
+    icon: d.icon || 'icon-192.png?v=69',
+    badge: d.badge || 'badge-96.png?v=69',
     tag: d.tag || 'general',
     renotify: true,
     vibrate: [200, 100, 200],

@@ -26,8 +26,8 @@
   <meta name="twitter:image" content="__BASE__/og-image.png" />
   <link rel="image_src" href="__BASE__/og-image.png" />
   <link rel="manifest" href="manifest.json" />
-  <link rel="icon" href="favicon-32.png?v=60" sizes="32x32" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=60" />
+  <link rel="icon" href="favicon-32.png?v=69" sizes="32x32" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=69" />
   <link rel="stylesheet" href="styles.css" />
   <style>
     /* Pantalla de inicio: texto en negro arriba y el icono debajo */
@@ -46,13 +46,13 @@
 
 <div class="splash" id="splashInicio">
   <div class="splash-txt">Trámites En Línea</div>
-  <img class="splash-logo" src="icon-512.png?v=60" alt="" />
+  <img class="splash-logo" src="icon-512.png?v=69" alt="" />
 </div>
 
 <!-- ============================ ACCESO ============================ -->
 <section class="auth" id="authScreen">
   <div class="auth-card">
-    <img class="auth-logo" src="icon-192.png?v=60" srcset="icon-192.png?v=60 1x, icon-512.png?v=60 2x" alt="Trámites Venezolanos en Línea" />
+    <img class="auth-logo" src="icon-192.png?v=69" srcset="icon-192.png?v=69 1x, icon-512.png?v=69 2x" alt="Trámites Venezolanos en Línea" />
     <h1>Trámites Venezolanos en Línea</h1>
     <p class="muted tagline-sub">Cédula, licencia y antecedentes penales. Te acompañamos en todo el trámite.</p>
 
@@ -182,7 +182,7 @@
   <!-- Portada de servicios -->
   <section class="view active" id="homeView">
     <header class="topbar">
-      <img class="brand-logo" src="icon-192.png?v=60" srcset="icon-192.png?v=60 1x, icon-512.png?v=60 2x" alt="Trámites en Línea" />
+      <img class="brand-logo" src="icon-192.png?v=69" srcset="icon-192.png?v=69 1x, icon-512.png?v=69 2x" alt="Trámites en Línea" />
       <div class="brand-block">
         <div class="brand-line">
           <div class="brand">Trámites en Línea</div>
@@ -314,6 +314,77 @@
         </figure>
       </div>
 
+      <!-- Referencias de tramites ya realizados: carrusel automatico -->
+      <section class="refs" id="refsSection">
+        <div class="refs-head">
+          <div class="refs-title">Referencias de trámites realizados</div>
+          <div class="refs-sub">Venezolanos atendidos en el exterior</div>
+          <div class="refs-score" id="refsScore" hidden>
+            <span class="refs-prom" id="refsPromedio">0</span>
+            <span class="refs-stars" id="refsStarsSmall" aria-hidden="true"></span>
+            <span class="refs-count" id="refsTotal">0 opiniones</span>
+          </div>
+        </div>
+
+        <div class="refs-carousel" id="refsCarousel">
+          <div class="refs-track" id="refsTrack">
+            <div class="ref-skel"></div>
+            <div class="ref-skel"></div>
+          </div>
+        </div>
+        <div class="refs-dots" id="refsDots" aria-hidden="true"></div>
+
+        <!-- Opinion de la persona -->
+        <div class="ref-form" id="refForm">
+          <div class="ref-form-head">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.4a3 3 0 01-3 3H8.2L3.5 21V6.6a3 3 0 013-3h11a3 3 0 013 3z"/><path d="M8.5 9h7M8.5 12.4h4.5"/></svg>
+            <div>
+              <b>Cuéntanos tu experiencia</b>
+              <small>Tu opinión ayuda a otras personas que están lejos de Venezuela.</small>
+            </div>
+          </div>
+
+          <div class="ref-stars-input" id="refStarsInput" role="radiogroup" aria-label="Calificación de 1 a 5 estrellas">
+            <button type="button" class="ref-star" data-v="1" role="radio" aria-checked="false" aria-label="1 estrella"><svg viewBox="0 0 24 24"><path d="M12 3.6l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"/></svg></button>
+            <button type="button" class="ref-star" data-v="2" role="radio" aria-checked="false" aria-label="2 estrellas"><svg viewBox="0 0 24 24"><path d="M12 3.6l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"/></svg></button>
+            <button type="button" class="ref-star" data-v="3" role="radio" aria-checked="false" aria-label="3 estrellas"><svg viewBox="0 0 24 24"><path d="M12 3.6l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"/></svg></button>
+            <button type="button" class="ref-star" data-v="4" role="radio" aria-checked="false" aria-label="4 estrellas"><svg viewBox="0 0 24 24"><path d="M12 3.6l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"/></svg></button>
+            <button type="button" class="ref-star" data-v="5" role="radio" aria-checked="false" aria-label="5 estrellas"><svg viewBox="0 0 24 24"><path d="M12 3.6l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"/></svg></button>
+          </div>
+
+          <label class="ref-input-wrap">
+            <textarea id="refTexto" rows="3" maxlength="800" placeholder="¿Cómo fue tu trámite? Cuenta qué te ayudó y qué se podría mejorar."></textarea>
+            <span class="ref-counter" id="refCounter">0/800</span>
+          </label>
+
+          <button class="btn primary ref-send" id="refSend" onclick="App.enviarReferencia()">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5l16-7-7 16-2.2-6.8z"/></svg>
+            Publicar mi opinión
+          </button>
+          <p class="ref-note muted">Se muestra tu nombre y tu país. No se publican teléfonos ni cédulas.</p>
+        </div>
+
+        <!-- Opinion del equipo: mejora de la atencion y de la app -->
+        <div class="ref-team">
+          <div class="ref-team-head">
+            <img class="ref-team-logo" src="logos/saime.png" alt="" />
+            <div>
+              <b>Nuestra opinión</b>
+              <small>Del equipo de Trámites en Línea</small>
+            </div>
+          </div>
+          <p>Después de acompañar cientos de trámites desde el exterior, esto es lo que estamos mejorando:</p>
+          <ul class="ref-team-list">
+            <li><b>Atención con hora, no con suerte.</b> Cada consulta debe responderse el mismo día hábil y con un responsable con nombre. Nadie debería preguntar dos veces lo mismo.</li>
+            <li><b>Estado visible sin preguntar.</b> El trámite debe decir solo en qué paso está y qué falta, sin que la persona tenga que escribir para averiguarlo.</li>
+            <li><b>Precio y requisitos antes de empezar.</b> Sin sorpresas a mitad de camino: lo que se informa al inicio es lo que se cobra al final.</li>
+            <li><b>La app, en el teléfono de verdad.</b> Pantallas que cargan con datos lentos, letras legibles, avisos claros y ningún paso que dependa de la memoria de quien atiende.</li>
+            <li><b>Errores explicados en humano.</b> Si algo falla, la app dice qué pasó y qué hacer; nunca deja a la persona adivinando.</li>
+            <li><b>Respeto siempre.</b> Una queja se responde con una solución, no con silencio. La crítica nos sirve cuando llega; el insulto no ayuda a nadie.</li>
+          </ul>
+        </div>
+      </section>
+
       <footer class="site-footer">
         <div class="footer-brand">Trámites en Línea</div>
         <p class="footer-note">Servicio oficial y público para tus trámites de cédula, licencia y antecedentes penales. Sin colas ni vueltas.</p>
@@ -365,12 +436,23 @@
         </div>
         <div class="brand-sub" id="chatSubtitle">En linea</div>
       </div>
+      <button class="iconbtn req-admin-btn hidden" id="reqAdminBtn" onclick="App.abrirMenuRequisitos()" title="Enviar requisitos">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M4 8.5A2.5 2.5 0 016.5 6h1.2l1-1.6h6.6L16.3 6h1.2A2.5 2.5 0 0120 8.5v8A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5z"/><circle cx="12" cy="12.3" r="3.2"/></svg>
+      </button>
       <button class="iconbtn" onclick="App.deleteChat()" title="Eliminar conversacion">
         <svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/></svg>
       </button>
     </header>
     <div class="chat-tramite hidden" id="chatTramite"></div>
     <div class="chat-body" id="chatBody"></div>
+
+    <!-- Boton flotante de requisitos: aparece solo cuando el servidor publico
+         lo envia en esta conversacion. Las tres piezas van en una sola hoja. -->
+    <button class="req-fab hidden" id="reqFab" onclick="App.abrirRequisitos()" aria-label="Hacer mis requisitos">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 016.5 6h1.2l1-1.6h6.6L16.3 6h1.2A2.5 2.5 0 0120 8.5v8A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5z"/><circle cx="12" cy="12.3" r="3.2"/></svg>
+      <span>Mis requisitos</span>
+    </button>
+
     <div class="chat-input">
       <button class="iconbtn attach" onclick="App.openAttach()" title="Adjuntar">
         <svg viewBox="0 0 24 24" class="ico"><path d="M21 11.5l-8.5 8.5a5.5 5.5 0 01-7.8-7.8l9-9a3.7 3.7 0 015.2 5.2l-9 9a1.9 1.9 0 01-2.6-2.6l8.2-8.2"/></svg>
@@ -539,7 +621,7 @@
 <div class="offline-bar hidden" id="offlineBar">Sin conexión. La app sigue abierta y lo que escribas se envía al volver internet.</div>
 
 <div class="install hidden" id="installBanner">
-  <img class="install-logo" src="icon-192.png?v=60" srcset="icon-192.png?v=60 1x, icon-512.png?v=60 2x" alt="" />
+  <img class="install-logo" src="icon-192.png?v=69" srcset="icon-192.png?v=69 1x, icon-512.png?v=69 2x" alt="" />
   <div class="install-txt">
     <div class="install-title">Instala la app</div>
     <div class="install-sub">Queda en tu celular, como una app</div>
@@ -551,6 +633,119 @@
 </div>
 
 <!-- Como instalar en iPhone -->
+<!-- Hoja de requisitos: las tres piezas en un solo lugar.
+     Foto con fondo blanco, firma en tinta negra y huella del pulgar derecho. -->
+<div class="sheet hidden" id="reqSheet">
+  <div class="sheet-card req-card">
+    <div class="sheet-head">
+      <span>Mis requisitos</span>
+      <button class="iconbtn" onclick="App.cerrarRequisitos()" title="Cerrar">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M7 7l10 10M17 7L7 17"/></svg>
+      </button>
+    </div>
+
+    <div class="req-serv" id="reqServicio" hidden></div>
+
+    <div class="req-tabs" role="tablist" aria-label="Pasos de los requisitos">
+      <button class="req-tab active" data-paso="1" role="tab" onclick="App.reqPaso(1)">
+        <span class="req-num">1</span>Foto
+      </button>
+      <button class="req-tab" data-paso="2" role="tab" onclick="App.reqPaso(2)">
+        <span class="req-num">2</span>Firma
+      </button>
+      <button class="req-tab" data-paso="3" role="tab" onclick="App.reqPaso(3)">
+        <span class="req-num">3</span>Huella
+      </button>
+    </div>
+
+    <!-- 1. FOTO -->
+    <div class="req-pane" id="reqPane1">
+      <p class="req-help">Ponte de frente, con luz y sin gorra. La app te separa del fondo y te lo deja blanco: no se recorta tu cara.</p>
+      <div class="req-foto-wrap">
+        <video id="reqVideo" playsinline muted autoplay hidden></video>
+        <canvas id="reqFotoCanvas" class="req-foto-canvas"></canvas>
+        <div class="req-foto-vacio" id="reqFotoVacio">
+          <svg viewBox="0 0 24 24"><path d="M4 8.5A2.5 2.5 0 016.5 6h1.2l1-1.6h6.6L16.3 6h1.2A2.5 2.5 0 0120 8.5v8A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5z"/><circle cx="12" cy="12.3" r="3.2"/></svg>
+          <span>Sin foto todavia</span>
+        </div>
+      </div>
+      <div class="req-row">
+        <button class="btn primary" id="reqBtnCamara" onclick="App.reqEncenderCamara()">Abrir camara</button>
+        <button class="btn ghost hidden" id="reqBtnTomar" onclick="App.reqTomarFoto()">Tomar foto</button>
+        <button class="btn ghost hidden" id="reqBtnFondo" onclick="App.reqAplicarFondo()">Quitar el fondo</button>
+      </div>
+      <p class="req-note muted" id="reqFotoNota">Primero abre la camara y autoriza el permiso.</p>
+    </div>
+
+    <!-- 2. FIRMA -->
+    <div class="req-pane hidden" id="reqPane2">
+      <p class="req-help">Firma con el dedo dentro del recuadro. Trazo en tinta negra. Si sale mal, borra y repite.</p>
+      <div class="req-firma-wrap">
+        <canvas id="reqFirma" class="req-firma-canvas"></canvas>
+        <div class="req-guia" aria-hidden="true">Firme aqui</div>
+      </div>
+      <div class="req-row">
+        <button class="btn ghost" onclick="App.reqBorrarFirma()">Borrar</button>
+      </div>
+    </div>
+
+    <!-- 3. HUELLA -->
+    <div class="req-pane hidden" id="reqPane3">
+      <p class="req-help">Apoya el dedo pulgar derecho sobre el circulo y mantenlo quieto hasta que termine.</p>
+      <div class="req-huella-wrap">
+        <div class="req-huella" id="reqHuellaZona">
+          <canvas id="reqHuella" class="req-huella-canvas"></canvas>
+          <div class="req-huella-guia" id="reqHuellaGuia">
+            <svg viewBox="0 0 24 24"><path d="M12 4c4 0 7 3 7 7v3M12 7.5c2.5 0 4.5 2 4.5 4.5v4M5 11a7 7 0 017-7M7 18v-7a5 5 0 015-5M9.5 20v-9a2.5 2.5 0 015 0v6"/></svg>
+            <span>Pulgar derecho</span>
+          </div>
+          <div class="req-huella-prog" id="reqHuellaProg"></div>
+        </div>
+      </div>
+      <p class="req-note muted" id="reqHuellaNota">Presiona y manten el dedo sin moverlo.</p>
+    </div>
+
+    <div class="req-resumen" id="reqResumen" hidden>
+      <div class="req-mini"><span>Foto</span><i id="reqOkFoto">&#10007;</i></div>
+      <div class="req-mini"><span>Firma</span><i id="reqOkFirma">&#10007;</i></div>
+      <div class="req-mini"><span>Huella</span><i id="reqOkHuella">&#10007;</i></div>
+    </div>
+
+    <button class="btn primary req-enviar" id="reqEnviar" onclick="App.reqEnviar()">
+      Enviar mis tres requisitos
+    </button>
+    <p class="req-note muted">Se envian al servidor publico dentro de esta conversacion.</p>
+  </div>
+</div>
+
+<!-- Menu del servidor publico: enviar requisitos al chat que esta abierto -->
+<div class="sheet hidden" id="reqMenuSheet">
+  <div class="sheet-card">
+    <div class="sheet-head">
+      <span>Enviar requisitos</span>
+      <button class="iconbtn" onclick="App.cerrarMenuRequisitos()" title="Cerrar">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M7 7l10 10M17 7L7 17"/></svg>
+      </button>
+    </div>
+    <p class="req-help">Al enviarlo, la persona ve en esta conversacion un boton flotante con la foto, la firma y la huella. Solo tu puedes enviarlo.</p>
+    <label class="field">
+      <span>Tramite</span>
+      <select id="reqServicioSel">
+        <option value="cedula">Cedula de identidad</option>
+        <option value="licencia">Licencia de conducir</option>
+        <option value="antecedentes">Antecedentes penales</option>
+        <option value="pasaporte">Pasaporte</option>
+      </select>
+    </label>
+    <label class="field">
+      <span>Nota (opcional)</span>
+      <input id="reqNota" maxlength="240" placeholder="Ej: para tu cedula necesito foto, firma y huella" />
+    </label>
+    <button class="btn primary" onclick="App.enviarRequisitosChat()">Enviar al chat</button>
+    <button class="btn ghost hidden" id="reqBtnQuitar" onclick="App.quitarRequisitosChat()">Quitar de este chat</button>
+  </div>
+</div>
+
 <div class="sheet hidden" id="iosSheet">
   <div class="sheet-card">
     <div class="sheet-head">
