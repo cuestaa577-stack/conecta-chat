@@ -343,7 +343,13 @@ npm start
 
 Abre http://localhost:10000
 
-## Desplegar en Render
+## Desplegar en Hyperlift
+
+La app está publicada en **Hyperlift** (servicio Docker). Ver **[HYPERLIFT.md](./HYPERLIFT.md)**:
+variables de entorno obligatorias, comprobación con `/api/health` y por qué Supabase es
+imprescindible en un contenedor efímero.
+
+## Desplegar en Render (opcional, ya no es el hosting)
 
 1. New → Web Service con este repositorio.
 2. Build command: `npm install`
