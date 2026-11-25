@@ -3975,15 +3975,46 @@ const App = (() => {
     }
     r = r / n; g = g / n; b = b / n;
 
-    const umbral = 58;
+    const umbral = 46;
     const umbral2 = umbral * umbral;
+
+    /* Brillo por pixel y deteccion de bordes fuertes. El relleno NO cruza un
+       borde: asi no se mete por el contorno de la persona, de la ropa o del
+       pelo aunque tengan un color parecido al fondo. */
+    const lum = new Uint8Array(w * h);
+    for (let p = 0; p < w * h; p++) {
+      const i = p * 4;
+      lum[p] = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
+    }
+    const borde = new Uint8Array(w * h);
+    const corte = 26;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const p = y * w + x;
+        const gx = Math.abs(lum[p + 1] - lum[p - 1]);
+        const gy = Math.abs(lum[p + w] - lum[p - w]);
+        if (gx + gy > corte) borde[p] = 1;
+      }
+    }
+
+    /* Lo que nunca se blanquea: la piel y las zonas muy oscuras. Es un seguro
+       para que la cara y el cuerpo queden siempre enteros. */
+    const protegido = new Uint8Array(w * h);
+    for (let p = 0; p < w * h; p++) {
+      const i = p * 4;
+      const R = d[i], G = d[i + 1], B = d[i + 2];
+      const piel = R > 90 && G > 40 && B > 20 && R > G && R > B && (R - Math.min(G, B)) > 14;
+      if (piel || lum[p] < 55) protegido[p] = 1;
+    }
+
     const esFondo = (p) => {
+      if (borde[p] || protegido[p]) return false;
       const i = p * 4;
       const dr = d[i] - r, dg = d[i + 1] - g, db = d[i + 2] - b;
       return (dr * dr + dg * dg + db * db) < umbral2;
     };
 
-    /* Relleno por difusion desde los cuatro bordes. */
+    /* Relleno por difusion desde el borde exterior de la imagen. */
     const visto = new Uint8Array(w * h);
     const fondo = new Uint8Array(w * h);
     const pila = new Int32Array(w * h);
@@ -4004,35 +4035,38 @@ const App = (() => {
       if (y < h - 1) pila[sp++] = p + w;
     }
 
-    /* Se pinta el fondo de blanco puro. */
+    /* Control de cordura: si la persona que queda es muy pequena, el relleno
+       se la comio; y si casi no se blanqueo nada, el fondo no se distinguia.
+       En los dos casos se entrega la foto original, nunca una foto tapada. */
+    let cuenta = 0;
+    for (let p = 0; p < w * h; p++) if (fondo[p]) cuenta++;
+    const persona = w * h - cuenta;
+    if (persona < w * h * 0.10 || cuenta < w * h * 0.02) {
+      REQ.foto = canvas.toDataURL('image/jpeg', 0.9);
+      reqMostrarFotoBlanca();
+      if (nota) nota.textContent = 'No se pudo separar el fondo con claridad: la foto queda tal cual, sin taparte.';
+      reqActualizarResumen();
+      return;
+    }
+
+    /* Fondo a blanco puro. */
     for (let p = 0; p < w * h; p++) {
       if (!fondo[p]) continue;
       const i = p * 4;
       d[i] = 255; d[i + 1] = 255; d[i + 2] = 255;
     }
 
-    /* Suavizado: los pixeles de la persona que tocan el fondo se aclaran un
-       poco si su color se parece al fondo. Quita el borde de sierra sin
-       comerse el contorno del pelo ni de la ropa. */
-    const anchoBorde = 2;
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
+    /* Suavizado fino del contorno (1 pixel), solo donde el color se parece al
+       fondo: quita el borde de sierra sin aclarar la cara ni la ropa. */
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
         const p = y * w + x;
-        if (fondo[p]) continue;
-        let toca = false;
-        for (let dy = -anchoBorde; dy <= anchoBorde && !toca; dy++) {
-          for (let dx = -anchoBorde; dx <= anchoBorde; dx++) {
-            const nx = x + dx, ny = y + dy;
-            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-            if (fondo[ny * w + nx]) { toca = true; break; }
-          }
-        }
-        if (!toca) continue;
+        if (fondo[p] || protegido[p]) continue;
+        if (!(fondo[p - 1] || fondo[p + 1] || fondo[p - w] || fondo[p + w])) continue;
         const i = p * 4;
         const dr = d[i] - r, dg = d[i + 1] - g, db = d[i + 2] - b;
-        const dist = Math.sqrt(dr * dr + dg * dg + db * db);
-        if (dist > umbral * 1.8) continue;
-        const t = 0.55;
+        if (Math.sqrt(dr * dr + dg * dg + db * db) > umbral * 1.3) continue;
+        const t = 0.25;
         d[i] = d[i] * (1 - t) + 255 * t;
         d[i + 1] = d[i + 1] * (1 - t) + 255 * t;
         d[i + 2] = d[i + 2] * (1 - t) + 255 * t;
@@ -4042,7 +4076,7 @@ const App = (() => {
     ctx.putImageData(img, 0, 0);
     REQ.foto = canvas.toDataURL('image/jpeg', 0.92);
     reqMostrarFotoBlanca();
-    if (nota) nota.textContent = 'Listo: fondo blanco, tu cara intacta.';
+    if (nota) nota.textContent = 'Listo: fondo blanco detras de ti, la persona entera.';
     if (!silencioso) toast('Fondo blanco aplicado', 'ok');
     reqActualizarResumen();
   }
@@ -4177,13 +4211,17 @@ const App = (() => {
          Dibujarla a mano daba un circulo concentrico que parecia un icono,
          no una huella. */
       const fuerza = Math.min(1, jitter.length ? maxJ / radio : 0.4);
-      const lado = radio * (1.62 + fuerza * 0.1);
+      /* La huella va DERECHA (sin inclinacion) y del tamano del molde del
+         dedo. Se estampa dos veces para que la tinta quede bien marcada. */
+      const altoH = radio * (1.78 + fuerza * 0.06);
+      const anchoH = altoH * 0.82;
       ctx.save();
       ctx.translate(cx, cy);
-      ctx.rotate(-0.12 + deform * 0.16);
-      ctx.globalAlpha = 0.9;
       if (REQ_IMG.huella && REQ_IMG.huella.complete && REQ_IMG.huella.naturalWidth) {
-        ctx.drawImage(REQ_IMG.huella, -lado / 2, -lado / 2, lado, lado * 1.06);
+        ctx.globalAlpha = 1;
+        ctx.drawImage(REQ_IMG.huella, -anchoH / 2, -altoH / 2, anchoH, altoH);
+        ctx.globalAlpha = 0.5;
+        ctx.drawImage(REQ_IMG.huella, -anchoH / 2, -altoH / 2, anchoH, altoH);
       }
       ctx.restore();
 
