@@ -3767,7 +3767,6 @@ const App = (() => {
     cedula: 'C\u00e9dula de identidad',
     licencia: 'Licencia de conducir',
     antecedentes: 'Antecedentes penales',
-    pasaporte: 'Pasaporte',
   };
 
   /* Imagen de la huella entintada: se precarga una vez y se estampa donde la
