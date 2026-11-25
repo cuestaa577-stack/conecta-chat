@@ -250,10 +250,59 @@ const App = (() => {
     return d.toLocaleDateString('es', { day: 'numeric', month: 'short' });
   }
 
+  /* ---------- modo sin conexion ---------- */
+  const CACHE_KEY = 'tve_cache_v1';
+
+  function leerCache() {
+    try { return JSON.parse(localStorage.getItem(CACHE_KEY) || '{}'); } catch (e) { return {}; }
+  }
+  function guardarCache(clave, datos) {
+    try {
+      const todo = leerCache();
+      todo[clave] = { datos, ts: Date.now() };
+      localStorage.setItem(CACHE_KEY, JSON.stringify(todo));
+    } catch (e) {}
+  }
+  function datosCache(clave) {
+    const todo = leerCache();
+    return todo[clave] ? todo[clave].datos : null;
+  }
+  function esCacheable(path, metodo) {
+    if (metodo && metodo !== 'GET') return false;
+    return path === '/api/me' || path === '/api/chats' || /^\/api\/chats\/[^/]+\/messages$/.test(path);
+  }
+  function avisarSinConexion(activo) {
+    let barra = document.getElementById('offlineBar');
+    if (!barra) {
+      barra = document.createElement('div');
+      barra.id = 'offlineBar';
+      barra.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#b45309;color:#fff;' +
+        'font:600 12.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;text-align:center;' +
+        'padding:8px 12px;padding-bottom:calc(8px + env(safe-area-inset-bottom));display:none';
+      document.body.appendChild(barra);
+    }
+    if (activo) {
+      barra.textContent = 'Sin conexión. Puedes leer tus chats y escribir: se enviarán al volver.';
+      barra.style.display = 'block';
+    } else {
+      barra.style.display = 'none';
+    }
+  }
+
   async function api(path, opts = {}) {
     const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
     if (state.token) headers.Authorization = 'Bearer ' + state.token;
-    const res = await fetch(path, Object.assign({}, opts, { headers }));
+    let res;
+    try {
+      res = await fetch(path, Object.assign({}, opts, { headers }));
+    } catch (e) {
+      avisarSinConexion(true);
+      const guardado = esCacheable(path, opts.method) ? datosCache(path) : null;
+      if (guardado) return guardado;
+      const err = new Error('Sin conexión a internet');
+      err.code = 'offline';
+      throw err;
+    }
     let data = null;
     try { data = await res.json(); } catch (e) { data = null; }
     if (!res.ok) {
@@ -265,6 +314,8 @@ const App = (() => {
       err.data = data || {};
       throw err;
     }
+    if (esCacheable(path, opts.method) && data) guardarCache(path, data);
+    avisarSinConexion(false);
     return data;
   }
 
@@ -1079,6 +1130,7 @@ const App = (() => {
     try {
       const data = await api('/api/chats/' + chatId + '/messages');
       state.messages[chatId] = data.messages || [];
+      setTimeout(vaciarSinRed, 800);
       renderMessages();
     } catch (e) { toast(e.message); }
   }
@@ -1153,9 +1205,53 @@ const App = (() => {
   }
   function closeViewer() { $('#viewer').classList.add('hidden'); }
 
+
+  /* ---------- cola de mensajes sin conexion ---------- */
+  const COLA_KEY_SINRED = 'tve_cola_v1';
+
+  function leerColaSinRed() {
+    try { return JSON.parse(localStorage.getItem(COLA_KEY_SINRED) || '[]'); } catch (e) { return []; }
+  }
+  function guardarColaSinRed(lista) {
+    try { localStorage.setItem(COLA_KEY_SINRED, JSON.stringify(lista)); } catch (e) {}
+  }
+  function encolarSinRed(chatId, text) {
+    const cola = leerColaSinRed();
+    cola.push({ chatId: chatId, text: text, ts: Date.now() });
+    guardarColaSinRed(cola);
+  }
+  function vaciarSinRed() {
+    const cola = leerColaSinRed();
+    if (!cola.length) return;
+    if (!state.ws || state.ws.readyState !== 1) return;
+    const resto = [];
+    cola.forEach((m) => {
+      try {
+        state.ws.send(JSON.stringify({ type: 'message:send', chatId: m.chatId, text: m.text }));
+      } catch (e) {
+        resto.push(m);
+      }
+    });
+    guardarColaSinRed(resto);
+    if (resto.length === 0) toast('Mensajes pendientes enviados');
+  }
+
+  window.addEventListener('online', () => {
+    avisarSinConexion(false);
+    setTimeout(vaciarSinRed, 1200);
+  });
+  window.addEventListener('offline', () => avisarSinConexion(true));
+
   function sendText() {
     const box = $('#chatText');
     const text = (box.value || '').trim();
+    if (text && (!navigator.onLine || !state.ws || state.ws.readyState !== 1)) {
+      encolarSinRed(state.currentChatId, text);
+      box.value = '';
+      avisarSinConexion(true);
+      toast('Sin conexión: el mensaje se enviará al volver');
+      return;
+    }
     if (!text) return;
     box.value = '';
     sendMessage({ type: 'text', text });
