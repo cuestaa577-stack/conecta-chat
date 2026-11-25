@@ -74,11 +74,15 @@ const App = (() => {
       /* Los datos del formulario llegan al servidor publico como primer mensaje. */
       if (s.nombres || s.cedula) {
         const lineas = ['Datos del solicitante'];
+        const tipo = [s.serviceLabel, s.subtypeLabel, s.grade].filter(Boolean).join(' \u00b7 ');
+        if (tipo) lineas.push('Tramite: ' + tipo);
         if (s.nombres) lineas.push('Nombres: ' + s.nombres);
         if (s.apellidos) lineas.push('Apellidos: ' + s.apellidos);
         if (s.cedula) lineas.push('Cedula: ' + s.cedula);
         if (s.birthDate) lineas.push('Fecha de nacimiento: ' + s.birthDate);
         if (s.bloodType) lineas.push('Tipo de sangre: ' + s.bloodType);
+        const valor = precioDelTramite(s.service, s.subtype, s.grade);
+        if (valor) lineas.push('Valor: ' + valor);
         sendMessage({ type: 'text', text: lineas.join('\n') });
       }
       setTimeout(() => {
