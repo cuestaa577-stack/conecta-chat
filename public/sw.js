@@ -1,5 +1,5 @@
 /* Conecta Chat - service worker (instalable + lo mas reciente primero) */
-const CACHE = 'tramites-ve-v41';
+const CACHE = 'tramites-ve-v42';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './fileviewer.js', './manifest.json', './bg.jpg', './logos/saime.png', './logos/saime-email.png', './galeria/01-identidad-un-clic.jpg', './galeria/02-servicios-saime.jpg', './galeria/03-pasos-tramite.jpg', './logos/intt.png', './logos/justicia.png', './icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -56,4 +56,36 @@ self.addEventListener('fetch', (e) => {
       return res;
     }).catch(() => cached))
   );
+});
+
+
+/* ---------------- Notificaciones push ----------------
+   Llegan aunque la app este cerrada. El telefono pone el sonido y la vibracion. */
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) {
+    d = { title: 'Tramites en Linea', body: e.data ? e.data.text() : '' };
+  }
+  const titulo = d.title || 'Tramites en Linea';
+  e.waitUntil(self.registration.showNotification(titulo, {
+    body: d.body || '',
+    icon: 'icon-192.png',
+    badge: 'icon-192.png',
+    tag: d.tag || 'general',
+    renotify: true,
+    vibrate: [200, 100, 200],
+    data: { url: d.url || './' }
+  }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const destino = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil((async () => {
+    const lista = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of lista) {
+      if ('focus' in c) { try { await c.focus(); } catch (err) {} return; }
+    }
+    if (self.clients.openWindow) return self.clients.openWindow(destino);
+  })());
 });

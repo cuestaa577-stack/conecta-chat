@@ -2746,7 +2746,15 @@ app.post('/api/tramites/:id/comprobante', auth, (req, res) => {
   tramiteHistorial(t, 'pago_en_revision', 'La persona envio el comprobante de pago', req.user.id);
   save();
   const admin = Object.values(db.users).find((u) => u.role === 'admin');
-  if (admin) sendToUser(admin.id, { type: 'tramite:updated', tramite: tramiteView(t, admin) });
+  if (admin) {
+    sendToUser(admin.id, { type: 'tramite:updated', tramite: tramiteView(t, admin) });
+    enviarPush(admin.id, {
+      title: 'Comprobante de pago por revisar',
+      body: (req.user.name || 'Una persona') + ' envio su comprobante',
+      url: './?panel=tramites',
+      tag: 'tramite:' + t.id
+    });
+  }
   res.json({ tramite: tramiteView(t, req.user) });
 });
 
@@ -2800,6 +2808,12 @@ app.post('/api/admin/tramites', auth, adminOnly, (req, res) => {
   tramitesDb()[t.id] = t;
   save();
   sendToUser(user.id, { type: 'tramite:new', tramite: tramiteView(t, user) });
+  enviarPush(user.id, {
+    title: 'Tienes un tramite nuevo',
+    body: 'El servidor publico abrio un tramite para ti. Entra a verlo.',
+    url: './?panel=tramites',
+    tag: 'tramite:' + t.id
+  });
   res.json({ tramite: tramiteView(t, req.user) });
 });
 
@@ -2826,7 +2840,15 @@ app.post('/api/admin/tramites/:id/documento', auth, adminOnly, (req, res) => {
   tramiteHistorial(t, 'listo', 'Documento cargado: la persona ya puede verlo en vista previa', req.user.id);
   save();
   const owner = db.users[t.userId];
-  if (owner) sendToUser(owner.id, { type: 'tramite:updated', tramite: tramiteView(t, owner) });
+  if (owner) {
+    sendToUser(owner.id, { type: 'tramite:updated', tramite: tramiteView(t, owner) });
+    enviarPush(owner.id, {
+      title: 'Tu tramite cambio de estado',
+      body: 'Ahora esta: ' + (TRAMITE_ESTADO_TXT[t.status] || t.status),
+      url: './?panel=tramites',
+      tag: 'tramite:' + t.id
+    });
+  }
   res.json({ tramite: tramiteView(t, req.user) });
 });
 
@@ -2851,7 +2873,15 @@ app.post('/api/admin/tramites/:id/estado', auth, adminOnly, (req, res) => {
   tramiteHistorial(t, estado, b.note || 'Estado actualizado por el servidor publico', req.user.id);
   save();
   const owner = db.users[t.userId];
-  if (owner) sendToUser(owner.id, { type: 'tramite:updated', tramite: tramiteView(t, owner) });
+  if (owner) {
+    sendToUser(owner.id, { type: 'tramite:updated', tramite: tramiteView(t, owner) });
+    enviarPush(owner.id, {
+      title: 'Tu tramite cambio de estado',
+      body: 'Ahora esta: ' + (TRAMITE_ESTADO_TXT[t.status] || t.status),
+      url: './?panel=tramites',
+      tag: 'tramite:' + t.id
+    });
+  }
   res.json({ tramite: tramiteView(t, req.user) });
 });
 
@@ -2868,7 +2898,15 @@ app.post('/api/admin/tramites/:id/aprobar', auth, adminOnly, (req, res) => {
   tramiteHistorial(t, 'aprobado', 'Pago confirmado: la descarga quedo habilitada', req.user.id);
   save();
   const owner = db.users[t.userId];
-  if (owner) sendToUser(owner.id, { type: 'tramite:updated', tramite: tramiteView(t, owner) });
+  if (owner) {
+    sendToUser(owner.id, { type: 'tramite:updated', tramite: tramiteView(t, owner) });
+    enviarPush(owner.id, {
+      title: 'Tu tramite cambio de estado',
+      body: 'Ahora esta: ' + (TRAMITE_ESTADO_TXT[t.status] || t.status),
+      url: './?panel=tramites',
+      tag: 'tramite:' + t.id
+    });
+  }
   res.json({ tramite: tramiteView(t, req.user) });
 });
 
@@ -2886,7 +2924,15 @@ app.post('/api/admin/tramites/:id/rechazar', auth, adminOnly, (req, res) => {
   tramiteHistorial(t, 'rechazado', nota, req.user.id);
   save();
   const owner = db.users[t.userId];
-  if (owner) sendToUser(owner.id, { type: 'tramite:updated', tramite: tramiteView(t, owner) });
+  if (owner) {
+    sendToUser(owner.id, { type: 'tramite:updated', tramite: tramiteView(t, owner) });
+    enviarPush(owner.id, {
+      title: 'Tu tramite cambio de estado',
+      body: 'Ahora esta: ' + (TRAMITE_ESTADO_TXT[t.status] || t.status),
+      url: './?panel=tramites',
+      tag: 'tramite:' + t.id
+    });
+  }
   res.json({ tramite: tramiteView(t, req.user) });
 });
 
@@ -2940,6 +2986,89 @@ function estaEnLinea(userId) {
   for (const ws of set) if (ws.readyState === 1) return true;
   return false;
 }
+
+
+/* ---------------- Notificaciones push (sonido del celular) ----------------
+   Se generan las claves VAPID la primera vez y se guardan en los ajustes, asi
+   no hay que configurar nada en Render. Cada persona guarda su suscripcion y
+   el servidor le manda el aviso cuando le escriben o cuando su tramite cambia. */
+let webpush = null;
+try { webpush = require('web-push'); } catch (e) { webpush = null; }
+
+function pushAjustes() {
+  if (!db.settings || typeof db.settings !== 'object') db.settings = {};
+  if (!db.settings.push || typeof db.settings.push !== 'object') db.settings.push = {};
+  const p = db.settings.push;
+  if (!p.subs || typeof p.subs !== 'object') p.subs = {};
+  return p;
+}
+
+function pushListo() {
+  if (!webpush) return false;
+  const p = pushAjustes();
+  if (!p.publicKey || !p.privateKey) {
+    const par = webpush.generateVAPIDKeys();
+    p.publicKey = par.publicKey;
+    p.privateKey = par.privateKey;
+    save();
+    console.log('Notificaciones push: claves creadas');
+  }
+  try {
+    webpush.setVapidDetails('mailto:' + (process.env.ADMIN_EMAIL || 'admin@example.com'), p.publicKey, p.privateKey);
+    return true;
+  } catch (e) { return false; }
+}
+
+async function enviarPush(userId, datos) {
+  try {
+    if (!pushListo()) return;
+    const p = pushAjustes();
+    const subs = p.subs[userId];
+    if (!Array.isArray(subs) || !subs.length) return;
+    const cuerpo = JSON.stringify({
+      title: String(datos.title || 'Tramites en Linea').slice(0, 80),
+      body: String(datos.body || '').slice(0, 180),
+      url: datos.url || './',
+      tag: datos.tag || 'general'
+    });
+    const vivas = [];
+    for (let i = 0; i < subs.length; i++) {
+      try { await webpush.sendNotification(subs[i], cuerpo); vivas.push(subs[i]); }
+      catch (e) {
+        /* 404 / 410: la suscripcion ya no existe en ese telefono. */
+        if (e && (e.statusCode === 404 || e.statusCode === 410)) continue;
+        vivas.push(subs[i]);
+      }
+    }
+    p.subs[userId] = vivas;
+    save();
+  } catch (e) { /* una notificacion nunca rompe el chat */ }
+}
+
+app.get('/api/push/key', (req, res) => {
+  if (!pushListo()) return res.status(503).json({ error: 'Notificaciones no disponibles' });
+  res.json({ publicKey: pushAjustes().publicKey });
+});
+
+app.post('/api/push/subscribe', auth, (req, res) => {
+  const s = req.body && req.body.subscription;
+  if (!s || !s.endpoint) return res.status(400).json({ error: 'Suscripcion no valida' });
+  const p = pushAjustes();
+  const lista = Array.isArray(p.subs[req.user.id]) ? p.subs[req.user.id] : [];
+  p.subs[req.user.id] = lista.filter((x) => x.endpoint !== s.endpoint).concat([s]).slice(-4);
+  save();
+  res.json({ ok: true });
+});
+
+app.post('/api/push/unsubscribe', auth, (req, res) => {
+  const endpoint = req.body && req.body.endpoint;
+  const p = pushAjustes();
+  if (Array.isArray(p.subs[req.user.id])) {
+    p.subs[req.user.id] = p.subs[req.user.id].filter((x) => x.endpoint !== endpoint);
+    save();
+  }
+  res.json({ ok: true });
+});
 
 function sendToUser(userId, payload) {
   const set = sockets.get(userId);
@@ -3001,6 +3130,16 @@ wss.on('connection', (ws, req) => {
       chat.updatedAt = now();
       save();
       chat.members.forEach((mem) => sendToUser(mem, { type: 'message:new', message: m, chatId: chat.id }));
+      /* Aviso al telefono de quien recibe, aunque tenga la app cerrada. */
+      const autor = db.users[userId];
+      chat.members.filter((mem) => mem !== userId).forEach((mem) => {
+        enviarPush(mem, {
+          title: (autor && autor.name) || 'Mensaje nuevo',
+          body: m.type === 'text' ? m.text : 'Te envio un archivo',
+          url: './?chat=' + chat.id,
+          tag: 'chat:' + chat.id
+        });
+      });
       return;
     }
 

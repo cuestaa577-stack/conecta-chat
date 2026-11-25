@@ -2,7 +2,7 @@
   "name": "Trámites en Línea",
   "short_name": "Trámites en Línea",
   "description": "Cédula, licencia y antecedentes penales en línea. Tus trámites, sin colas ni vueltas.",
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -33,5 +33,10 @@
       "type": "image/png",
       "purpose": "maskable"
     }
-  ]
+  ],
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "portrait"
 }

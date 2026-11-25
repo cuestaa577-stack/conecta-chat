@@ -523,6 +523,21 @@
 </div>
 
 <!-- Instalar la app -->
+<!-- Aviso para activar las notificaciones -->
+<div class="notif-banner hidden" id="notifBanner">
+  <div class="notif-txt">
+    <b>Activa las notificaciones</b>
+    <small>Te avisamos con sonido cuando te escriban o cambie tu trámite.</small>
+  </div>
+  <button class="btn primary notif-go" onclick="App.notifActivar()">Activar</button>
+  <button class="iconbtn notif-x" onclick="App.ocultarNotifBanner(true)" title="Ahora no">
+    <svg viewBox="0 0 24 24" class="ico"><path d="M7 7l10 10M17 7L7 17"/></svg>
+  </button>
+</div>
+
+<!-- Sin conexion -->
+<div class="offline-bar hidden" id="offlineBar">Sin conexión. La app sigue abierta y lo que escribas se envía al volver internet.</div>
+
 <div class="install hidden" id="installBanner">
   <img class="install-logo" src="icon-192.png?v=60" srcset="icon-192.png?v=60 1x, icon-512.png?v=60 2x" alt="" />
   <div class="install-txt">

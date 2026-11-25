@@ -396,3 +396,17 @@ python3 scripts/make-icon.py
 Para cambiarlo, reemplaza esa imagen y vuelve a correr el script. Despues sube el
 numero de version (`?v=`) en `index.html` y `manifest.json`, y el nombre de la cache
 en `sw.js`, para que el icono nuevo llegue a los telefonos que ya tienen la app instalada.
+
+## Notificaciones y uso sin conexión
+
+- **Notificaciones reales:** al entrar, la app ofrece activarlas. Usan Web Push con claves VAPID
+  que se generan solas en el primer arranque y quedan guardadas en los ajustes, así que no hay que
+  configurar nada en Render. Avisan cuando alguien escribe y cuando un trámite cambia de estado.
+  El sonido y la vibración los pone el teléfono.
+- **Sin conexión:** el service worker guarda la app completa, así que abre y se navega sin datos.
+  Los mensajes que se escriban sin red quedan en una cola en el teléfono y salen solos al volver
+  internet. Lo que no puede pasar es que el mensaje llegue a la otra persona mientras el teléfono
+  está sin red: eso no lo permite ninguna app.
+- **Sin barra de direcciones:** solo al instalar la app (menú del navegador → *Instalar aplicación*)
+  se abre a pantalla completa. Una pestaña normal siempre muestra la dirección; para que deje de
+  decir `onrender.com` hay que ponerle un dominio propio al servicio en Render.

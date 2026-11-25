@@ -1186,7 +1186,16 @@ const App = (() => {
         localId: local.id,
       }));
     } else {
-      toast('Sin conexion, intenta de nuevo');
+      /* Sin conexion: el mensaje queda guardado y sale solo al volver la red. */
+      colaEnviar({
+        type: 'message:send',
+        chatId: state.currentChatId,
+        kind: local.type,
+        text: local.text,
+        url: local.url,
+        localId: local.id,
+      });
+      toast('Sin conexión: se enviará al volver internet');
     }
   }
 
@@ -3025,6 +3034,139 @@ const App = (() => {
     } catch (e) { toast(e.message); }
   }
 
+  /* --------------------- Notificaciones del telefono --------------------- */
+  function notifSoportada() {
+    return typeof Notification !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
+  }
+
+  function base64aBytes(base64) {
+    const limpio = (base64 || '').replace(/-/g, '+').replace(/_/g, '/');
+    const relleno = limpio + '='.repeat((4 - (limpio.length % 4)) % 4);
+    const crudo = atob(relleno);
+    const salida = new Uint8Array(crudo.length);
+    for (let i = 0; i < crudo.length; i++) salida[i] = crudo.charCodeAt(i);
+    return salida;
+  }
+
+  async function notifActivar(silencioso) {
+    try {
+      if (!notifSoportada()) {
+        if (!silencioso) toast('Este navegador no permite notificaciones');
+        return false;
+      }
+      const permiso = await Notification.requestPermission();
+      if (permiso !== 'granted') {
+        if (!silencioso) toast('No se activaron las notificaciones');
+        ocultarNotifBanner(true);
+        return false;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const r = await fetch('/api/push/key');
+      if (!r.ok) {
+        if (!silencioso) toast('El servidor todavía no tiene las notificaciones listas');
+        return false;
+      }
+      const datos = await r.json();
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: base64aBytes(datos.publicKey),
+        });
+      }
+      await api('/api/push/subscribe', {
+        method: 'POST',
+        body: JSON.stringify({ subscription: sub.toJSON ? sub.toJSON() : sub }),
+      });
+      try { localStorage.setItem('tve_notif', '1'); } catch (e) {}
+      ocultarNotifBanner(true);
+      if (!silencioso) toast('Notificaciones activadas');
+      return true;
+    } catch (e) {
+      if (!silencioso) toast('No se pudieron activar: ' + e.message);
+      return false;
+    }
+  }
+
+  function mostrarNotifBanner() {
+    const el = $('#notifBanner');
+    if (!el) return;
+    if (!notifSoportada()) return;
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') return;
+    try { if (localStorage.getItem('tve_notif_no') === '1') return; } catch (e) {}
+    el.classList.remove('hidden');
+  }
+
+  function ocultarNotifBanner(recordar) {
+    const el = $('#notifBanner');
+    if (el) el.classList.add('hidden');
+    if (recordar) { try { localStorage.setItem('tve_notif_no', '1'); } catch (e) {} }
+  }
+
+  /* Sonido corto dentro de la app cuando llega un mensaje con la app abierta. */
+  function pitido() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const osc = ctx.createOscillator();
+      const gan = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 880;
+      gan.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gan.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.02);
+      gan.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3);
+      osc.connect(gan).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.32);
+    } catch (e) {}
+  }
+
+  /* --------------------- Cola de mensajes sin conexion --------------------- */
+  const COLA_KEY = 'tve_cola';
+
+  function colaLeer() {
+    try { const l = JSON.parse(localStorage.getItem(COLA_KEY) || '[]'); return Array.isArray(l) ? l : []; }
+    catch (e) { return []; }
+  }
+
+  function colaGuardar(lista) {
+    try { localStorage.setItem(COLA_KEY, JSON.stringify(lista.slice(-60))); } catch (e) {}
+    pintarOffline();
+  }
+
+  function colaEnviar(envio) {
+    const lista = colaLeer();
+    lista.push(envio);
+    colaGuardar(lista);
+  }
+
+  function colaVaciar() {
+    if (!state.ws || state.ws.readyState !== 1) return;
+    const lista = colaLeer();
+    if (!lista.length) return;
+    lista.forEach((envio) => {
+      try { state.ws.send(JSON.stringify(envio)); } catch (e) {}
+    });
+    colaGuardar([]);
+    toast('Se enviaron ' + lista.length + ' mensaje' + (lista.length === 1 ? '' : 's') + ' pendiente' + (lista.length === 1 ? '' : 's'));
+  }
+
+  function pintarOffline() {
+    const barra = $('#offlineBar');
+    if (!barra) return;
+    const sinRed = (typeof navigator !== 'undefined' && navigator.onLine === false);
+    const pendientes = colaLeer().length;
+    if (sinRed || pendientes) {
+      barra.textContent = sinRed
+        ? 'Sin conexión. La app sigue abierta y lo que escribas se envía al volver internet.'
+        : 'Tienes ' + pendientes + ' mensaje' + (pendientes === 1 ? '' : 's') + ' por enviar. Se manda al recuperar la conexión.';
+      barra.classList.remove('hidden');
+    } else {
+      barra.classList.add('hidden');
+    }
+  }
+
   /* ------------------------------ WebSocket ------------------------------ */
   /* El panel se refresca al instante cuando llega algo por el WebSocket, sin
      esperar al sondeo de cada 5 segundos. */
@@ -3043,6 +3185,8 @@ const App = (() => {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
       const ws = new WebSocket(proto + '://' + location.host + '/ws?token=' + encodeURIComponent(state.token));
       state.ws = ws;
+      ws.onopen = () => { pintarOffline(); colaVaciar(); };
+      ws.onclose = () => { pintarOffline(); };
       ws.onmessage = (ev) => {
         let m = null;
         try { m = JSON.parse(ev.data); } catch (e) { return; }
@@ -3062,6 +3206,7 @@ const App = (() => {
           if (idx >= 0) list[idx] = msg;
           else list.push(msg);
           if (msg.chatId === state.currentChatId) { renderMessages(); markRead(msg.chatId); }
+          if (msg.senderId !== (state.me && state.me.id) && !document.hidden) pitido();
           loadChats();
         } else if (m.type === 'presence') {
           /* Se conecto o se desconecto: se actualiza la conversacion y la
@@ -3198,6 +3343,15 @@ const App = (() => {
     $('#chatText').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
     });
+    /* Notificaciones: si ya dio permiso se vuelve a suscribir sola; si no,
+       se le muestra el aviso para activarlas. */
+    window.addEventListener('online', () => { pintarOffline(); colaVaciar(); });
+    window.addEventListener('offline', pintarOffline);
+    pintarOffline();
+    if (notifSoportada()) {
+      if (Notification.permission === 'granted') notifActivar(true);
+      else setTimeout(mostrarNotifBanner, 2500);
+    }
     // Si ya la tiene instalada y aun no tiene cuenta, empieza en el registro
     authTab(isStandalone() && !state.token ? 'register' : 'login');
     logVisit();
@@ -3284,7 +3438,7 @@ const App = (() => {
     openProfile, pickAvatar, saveProfileChanges, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat,
     openAdmin, openChatFromAdmin, openFirstChat,
     adminTab, adminIr, adminFiltrar, adminBuscarPersona, adminBuscarTramite, salirPanel,
-    viewImage, closeViewer, logout,
+    viewImage, closeViewer, logout, notifActivar, ocultarNotifBanner,
     installApp, dismissInstall, closeIosSheet, testMail, shareApp, consultarPrecio, countryChanged, cargarPaisDetectado, editCountryChanged,
     openTramites, loadTramites, openTramite, openTramiteChat, subirComprobante, avisoDescarga,
     adminFillSubtypes, crearTramite, adminSubirDocumento, adminAprobar, adminRechazar,
