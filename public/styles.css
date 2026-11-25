@@ -1104,17 +1104,17 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .site-footer .footer-legal { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.3); font-size: 12px; color: rgba(255,255,255,.92); }
 
 /* Panel del servidor publico: pestanas, filtros y buscador */
+/* Seis pestanas, todas visibles a la vez: dos filas de tres. */
 .admin-tabs {
-  display: flex; flex-wrap: nowrap; gap: 4px; padding: 9px 0 12px;
-  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
+  padding: 9px 0 12px;
 }
-.admin-tabs::-webkit-scrollbar { display: none; }
 .admin-tab {
-  position: relative; flex: 0 0 auto; border: 1px solid var(--border); background: var(--card);
-  color: var(--text); font: inherit; font-size: 11.5px; font-weight: 600;
-  padding: 9px 11px; border-radius: 10px; cursor: pointer; text-align: center;
-  white-space: nowrap; max-width: none;
+  position: relative; display: block; width: 100%;
+  border: 1px solid var(--border); background: var(--card);
+  color: var(--text); font: inherit; font-size: 11px; font-weight: 600;
+  line-height: 1.25; padding: 9px 6px; border-radius: 10px; cursor: pointer;
+  text-align: center; white-space: nowrap; overflow: visible;
 }
 .admin-tab.active { background: var(--blue); border-color: var(--blue); color: #fff; }
 .admin-tab .cnt {
