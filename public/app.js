@@ -266,6 +266,18 @@ const App = (() => {
       localStorage.setItem(CACHE_KEY, JSON.stringify(todo));
     } catch (e) {}
   }
+  /* Borra del cache local todo lo que empiece por ese prefijo. Se usa al
+     eliminar algo: asi lo borrado no puede reaparecer al recargar. */
+  function borrarCache(prefijo) {
+    try {
+      const todo = leerCache();
+      let cambio = false;
+      Object.keys(todo).forEach((k) => {
+        if (k === prefijo || k.indexOf(prefijo) === 0) { delete todo[k]; cambio = true; }
+      });
+      if (cambio) localStorage.setItem(CACHE_KEY, JSON.stringify(todo));
+    } catch (e) {}
+  }
   function datosCache(clave) {
     const todo = leerCache();
     return todo[clave] ? todo[clave].datos : null;
@@ -324,6 +336,9 @@ const App = (() => {
 
   /* ------------------------------ navegacion ------------------------------ */
   function showView(name, remember = true) {
+    /* Se guarda donde esta la persona: al recargar o deslizar para actualizar
+       vuelve al mismo sitio, no al inicio. */
+    try { localStorage.setItem('tve_vista', name); } catch (e) {}
     if (remember) {
       const current = $('.view.active');
       if (current && current.id !== name + 'View') state.viewStack.push(current.id);
@@ -864,9 +879,25 @@ const App = (() => {
       const data = await api('/api/me');
       state.me = data.user;
       await enterApp();
+      restaurarVista();
     } catch (e) {
       logout(true);
     }
+  }
+
+  /* Vuelve a dejar a la persona donde estaba antes de recargar. */
+  async function restaurarVista() {
+    try {
+      const vista = localStorage.getItem('tve_vista') || '';
+      const chat = localStorage.getItem('tve_chat') || '';
+      if (vista === 'chat' && chat && (state.chats || []).some((c) => c && c.id === chat)) {
+        await openChat(chat, false);
+        return;
+      }
+      if (!vista || vista === 'home' || vista === 'auth' || vista === 'chat') return;
+      if (!document.getElementById(vista + 'View')) return;
+      showView(vista, false);
+    } catch (e) {}
   }
 
   /* ------------------------------ visitas ------------------------------ */
@@ -1101,6 +1132,7 @@ const App = (() => {
   }
 
   async function openChat(chatId, remember = true) {
+    try { localStorage.setItem('tve_chat', chatId); localStorage.setItem('tve_vista', 'chat'); } catch (e) {}
     state.currentChatId = chatId;
     const chat = state.chats.find((c) => c.id === chatId);
     const other = otherOf(chat);
@@ -1636,6 +1668,9 @@ const App = (() => {
     if (!ok) return;
     try {
       await api('/api/chats/' + encodeURIComponent(state.currentChatId), { method: 'DELETE' });
+      /* Sin esto, el cache viejo devolvia la conversacion borrada al recargar. */
+      borrarCache('/api/chats');
+      try { localStorage.removeItem('tve_chat'); } catch (e) {}
       state.messages[state.currentChatId] = [];
       state.currentChatId = null;
       await loadChats();
@@ -4551,6 +4586,15 @@ const App = (() => {
     /* Notificaciones: si ya dio permiso se vuelve a suscribir sola; si no,
        se le muestra el aviso para activarlas. */
     window.addEventListener('online', () => { pintarOffline(); colaVaciar(); });
+    /* Al volver a la app se refresca en el sitio: se ven los cambios (mensajes
+       borrados, chats cerrados) sin recargar y sin salir a la pantalla inicial. */
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || !state.token) return;
+      try {
+        loadChats();
+        if (state.currentChatId) openChat(state.currentChatId, false);
+      } catch (e) {}
+    });
     window.addEventListener('offline', pintarOffline);
     pintarOffline();
     if (notifSoportada()) {
