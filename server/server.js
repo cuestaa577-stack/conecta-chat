@@ -1782,6 +1782,42 @@ app.get('/api/chats', auth, (req, res) => {
 });
 
 /* Inicia (o retoma) la conversacion con el administrador para un tramite */
+/* Primer mensaje del chat (los datos del formulario). Va por HTTP, no por el
+   WebSocket, para que llegue siempre aunque el socket este reconectando. */
+app.post('/api/chats/:id/mensaje', auth, (req, res) => {
+  const chat = db.chats[req.params.id];
+  if (!chat || !chat.members.includes(req.user.id)) return res.status(404).json({ error: 'Conversacion no encontrada' });
+  const texto = String((req.body && req.body.text) || '').slice(0, 4000);
+  if (!texto.trim()) return res.status(400).json({ error: 'El mensaje esta vacio' });
+  const m = {
+    id: uid('m_'),
+    clientId: String((req.body && req.body.localId) || ''),
+    chatId: chat.id,
+    senderId: req.user.id,
+    type: 'text',
+    text: texto,
+    url: '',
+    name: '',
+    duration: 0,
+    ts: now(),
+    readBy: [req.user.id],
+  };
+  if (!db.messages[chat.id]) db.messages[chat.id] = [];
+  db.messages[chat.id].push(m);
+  chat.updatedAt = now();
+  save();
+  chat.members.forEach((mem) => sendToUser(mem, { type: 'message:new', message: m, chatId: chat.id }));
+  chat.members.filter((mem) => mem !== req.user.id).forEach((mem) => {
+    enviarPush(mem, {
+      title: (req.user.name || 'Mensaje nuevo'),
+      body: texto.split('\n').slice(0, 2).join(' '),
+      url: './?chat=' + chat.id,
+      tag: 'chat:' + chat.id,
+    });
+  });
+  res.json({ message: m });
+});
+
 app.post('/api/chats/start', auth, (req, res) => {
   const tramite = req.body && req.body.tramite ? req.body.tramite : null;
   const admin = Object.values(db.users).find((u) => u.role === 'admin');

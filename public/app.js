@@ -58,6 +58,41 @@ const App = (() => {
     return precioEtiqueta(monto, state.me && state.me.country);
   }
 
+  /* Texto con la ficha del solicitante que recibe el gestor al abrir el chat. */
+  function fichaDelSolicitante(s) {
+    const lineas = ['Datos del solicitante'];
+    const tipo = [s.serviceLabel, s.subtypeLabel, s.grade].filter(Boolean).join(' \u00b7 ');
+    if (tipo) lineas.push('Tramite: ' + tipo);
+    if (s.nombres) lineas.push('Nombres: ' + s.nombres);
+    if (s.apellidos) lineas.push('Apellidos: ' + s.apellidos);
+    if (s.cedula) lineas.push('Cedula: ' + s.cedula);
+    if (s.birthDate) lineas.push('Fecha de nacimiento: ' + s.birthDate);
+    if (s.bloodType) lineas.push('Tipo de sangre: ' + s.bloodType);
+    const valor = precioDelTramite(s.service, s.subtype, s.grade);
+    if (valor) lineas.push('Valor: ' + valor);
+    return lineas.join('\n');
+  }
+
+  /* Lo manda por HTTP para que llegue siempre, aunque el socket este caido. */
+  async function enviarFichaAlChat(chatId, s) {
+    if (!chatId || !(s.nombres || s.cedula)) return;
+    try {
+      const r = await api('/api/chats/' + encodeURIComponent(chatId) + '/mensaje', {
+        method: 'POST',
+        body: JSON.stringify({ text: fichaDelSolicitante(s) }),
+      });
+      /* El servidor ya avisa por el socket; si el socket estaba caido, se pinta aqui. */
+      const msg = r && r.message;
+      if (msg) {
+        if (!state.messages[chatId]) state.messages[chatId] = [];
+        if (!state.messages[chatId].some((x) => x && x.id === msg.id)) {
+          state.messages[chatId].push(msg);
+          if (chatId === state.currentChatId) renderMessages();
+        }
+      }
+    } catch (e) { /* si falla, el chat sigue abierto */ }
+  }
+
   /* Abre el chat con el servidor publico para preguntar el precio del tramite
      elegido cuando el pais de la persona no tiene tarifa en la app. */
   async function consultarPrecio() {
@@ -71,20 +106,7 @@ const App = (() => {
       await loadChats();
       state.viewStack = ['homeView'];
       await openChat(data.chat.id, false);
-      /* Los datos del formulario llegan al servidor publico como primer mensaje. */
-      if (s.nombres || s.cedula) {
-        const lineas = ['Datos del solicitante'];
-        const tipo = [s.serviceLabel, s.subtypeLabel, s.grade].filter(Boolean).join(' \u00b7 ');
-        if (tipo) lineas.push('Tramite: ' + tipo);
-        if (s.nombres) lineas.push('Nombres: ' + s.nombres);
-        if (s.apellidos) lineas.push('Apellidos: ' + s.apellidos);
-        if (s.cedula) lineas.push('Cedula: ' + s.cedula);
-        if (s.birthDate) lineas.push('Fecha de nacimiento: ' + s.birthDate);
-        if (s.bloodType) lineas.push('Tipo de sangre: ' + s.bloodType);
-        const valor = precioDelTramite(s.service, s.subtype, s.grade);
-        if (valor) lineas.push('Valor: ' + valor);
-        sendMessage({ type: 'text', text: lineas.join('\n') });
-      }
+      await enviarFichaAlChat(data.chat.id, s);
       setTimeout(() => {
         const caja = $('#chatText');
         if (caja) {
@@ -1132,7 +1154,9 @@ const App = (() => {
       });
       await loadChats();
       state.viewStack = ['homeView'];
-      openChat(data.chat.id, false);
+      await openChat(data.chat.id, false);
+      /* La ficha del solicitante abre la conversacion en el panel del gestor. */
+      await enviarFichaAlChat(data.chat.id, s);
     } catch (e) {
       toast(e.message, 'bad');
     }
