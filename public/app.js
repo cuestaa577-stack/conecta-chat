@@ -3767,6 +3767,7 @@ const App = (() => {
     cedula: 'C\u00e9dula de identidad',
     licencia: 'Licencia de conducir',
     antecedentes: 'Antecedentes penales',
+    pasaporte: 'Pasaporte',
   };
 
   /* Imagen de la huella entintada: se precarga una vez y se estampa donde la
@@ -3905,6 +3906,16 @@ const App = (() => {
     if (b2) b2.classList.add('hidden');
   }
 
+  /* Muestra la foto ya recortada en el recuadro blanco de la derecha. */
+  function reqMostrarFotoBlanca() {
+    const img = document.getElementById('reqFotoBlanca');
+    const vacia = document.getElementById('reqFotoBlancaVacia');
+    if (!img || !REQ.foto) return;
+    img.src = REQ.foto;
+    img.hidden = false;
+    if (vacia) vacia.classList.add('hidden');
+  }
+
   async function reqTomarFoto() {
     const video = document.getElementById('reqVideo');
     const canvas = document.getElementById('reqFotoCanvas');
@@ -3924,17 +3935,22 @@ const App = (() => {
     const escala = Math.max(ancho / vw, alto / vh);
     const sw = ancho / escala, sh = alto / escala;
     ctx.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, ancho, alto);
-    canvas.classList.remove('hidden');
     reqApagarCamara();
+    const txt = document.getElementById('reqFotoVacioTxt');
+    if (txt) txt.textContent = 'Foto tomada';
+    const vacio = document.getElementById('reqFotoVacio');
+    if (vacio) vacio.classList.remove('hidden');
     REQ.foto = canvas.toDataURL('image/jpeg', 0.9);
     document.getElementById('reqBtnFondo').classList.remove('hidden');
-    if (nota) nota.textContent = 'Foto tomada. Ahora puedes dejar el fondo blanco.';
+    if (nota) nota.textContent = 'Foto tomada. Dejando el fondo blanco...';
     await reqAplicarFondo(true);
   }
 
-  /* Separa a la persona del fondo sin recortarle la cara.
-     Se estima el color del fondo por los bordes de la imagen y se vuelve
-     blanco lo que se le parece; el centro (la cara) se respeta siempre. */
+  /* Deja el fondo en blanco sin tocar a la persona.
+     Se rellena desde los bordes de la imagen: solo se blanquea el fondo que
+     esta conectado al borde, asi la ropa o el pelo de un color parecido al
+     fondo no se borran, y la cara nunca se alcanza. Despues se suaviza el
+     contorno para que no quede un recorte duro. */
   async function reqAplicarFondo(silencioso) {
     const canvas = document.getElementById('reqFotoCanvas');
     if (!canvas || !REQ.foto) return;
@@ -3944,7 +3960,7 @@ const App = (() => {
     const img = ctx.getImageData(0, 0, w, h);
     const d = img.data;
 
-    /* Color de fondo: promedio de una franja de los cuatro bordes. */
+    /* Color del fondo: promedio de una franja de los cuatro bordes. */
     let r = 0, g = 0, b = 0, n = 0;
     const franja = Math.max(2, Math.round(Math.min(w, h) * 0.06));
     const sumar = (x, y) => {
@@ -3959,34 +3975,75 @@ const App = (() => {
     }
     r = r / n; g = g / n; b = b / n;
 
-    /* Umbral generoso: el fondo se va, la ropa y el pelo se quedan. */
-    const umbral = 52;
-    const cx = w / 2, cy = h / 2;
-    const radioCara = Math.min(w, h) * 0.34;
+    const umbral = 58;
+    const umbral2 = umbral * umbral;
+    const esFondo = (p) => {
+      const i = p * 4;
+      const dr = d[i] - r, dg = d[i + 1] - g, db = d[i + 2] - b;
+      return (dr * dr + dg * dg + db * db) < umbral2;
+    };
 
+    /* Relleno por difusion desde los cuatro bordes. */
+    const visto = new Uint8Array(w * h);
+    const fondo = new Uint8Array(w * h);
+    const pila = new Int32Array(w * h);
+    let sp = 0;
+    for (let x = 0; x < w; x++) { pila[sp++] = x; pila[sp++] = (h - 1) * w + x; }
+    for (let y = 0; y < h; y++) { pila[sp++] = y * w; pila[sp++] = y * w + w - 1; }
+
+    while (sp > 0) {
+      const p = pila[--sp];
+      if (visto[p]) continue;
+      visto[p] = 1;
+      if (!esFondo(p)) continue;
+      fondo[p] = 1;
+      const x = p % w, y = (p - x) / w;
+      if (x > 0) pila[sp++] = p - 1;
+      if (x < w - 1) pila[sp++] = p + 1;
+      if (y > 0) pila[sp++] = p - w;
+      if (y < h - 1) pila[sp++] = p + w;
+    }
+
+    /* Se pinta el fondo de blanco puro. */
+    for (let p = 0; p < w * h; p++) {
+      if (!fondo[p]) continue;
+      const i = p * 4;
+      d[i] = 255; d[i + 1] = 255; d[i + 2] = 255;
+    }
+
+    /* Suavizado: los pixeles de la persona que tocan el fondo se aclaran un
+       poco si su color se parece al fondo. Quita el borde de sierra sin
+       comerse el contorno del pelo ni de la ropa. */
+    const anchoBorde = 2;
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
-        const i = (y * w + x) * 4;
+        const p = y * w + x;
+        if (fondo[p]) continue;
+        let toca = false;
+        for (let dy = -anchoBorde; dy <= anchoBorde && !toca; dy++) {
+          for (let dx = -anchoBorde; dx <= anchoBorde; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            if (fondo[ny * w + nx]) { toca = true; break; }
+          }
+        }
+        if (!toca) continue;
+        const i = p * 4;
         const dr = d[i] - r, dg = d[i + 1] - g, db = d[i + 2] - b;
         const dist = Math.sqrt(dr * dr + dg * dg + db * db);
-        /* Dentro del circulo de la cara no se toca nada: ahi esta la persona. */
-        const dx = x - cx, dy = y - cy;
-        const enCara = Math.sqrt(dx * dx + dy * dy) < radioCara;
-        if (enCara) continue;
-        if (dist < umbral) {
-          /* Transicion suave en el borde para que no quede un recorte duro. */
-          const t = Math.min(1, Math.max(0, (umbral - dist) / umbral));
-          const nuevo = 1 - t;
-          d[i] = d[i] * nuevo + 255 * t;
-          d[i + 1] = d[i + 1] * nuevo + 255 * t;
-          d[i + 2] = d[i + 2] * nuevo + 255 * t;
-        }
+        if (dist > umbral * 1.8) continue;
+        const t = 0.55;
+        d[i] = d[i] * (1 - t) + 255 * t;
+        d[i + 1] = d[i + 1] * (1 - t) + 255 * t;
+        d[i + 2] = d[i + 2] * (1 - t) + 255 * t;
       }
     }
+
     ctx.putImageData(img, 0, 0);
-    REQ.foto = canvas.toDataURL('image/jpeg', 0.9);
-    if (!silencioso && nota) nota.textContent = 'Fondo blanco aplicado.';
+    REQ.foto = canvas.toDataURL('image/jpeg', 0.92);
+    reqMostrarFotoBlanca();
     if (nota) nota.textContent = 'Listo: fondo blanco, tu cara intacta.';
+    if (!silencioso) toast('Fondo blanco aplicado', 'ok');
     reqActualizarResumen();
   }
 
