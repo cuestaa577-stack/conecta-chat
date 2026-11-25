@@ -788,6 +788,17 @@ body.has-install #chatMessages { padding-bottom: 96px; }
   align-items: center; justify-content: center; gap: 7px; color: #8b9ab1; font-size: 12.5px;
 }
 .req-foto-vacio svg { width: 38px; height: 38px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+/* Entrega de requisitos dentro del chat */
+.req-entrega { display: flex; flex-direction: column; gap: 6px; }
+.req-entrega-h { font-size: 12.5px; font-weight: 700; }
+.req-entrega-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.req-entrega-grid figure { margin: 0; }
+.req-entrega-grid img {
+  width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block;
+  border-radius: 8px; background: #fff; cursor: zoom-in;
+}
+.req-entrega-grid figcaption { font-size: 10.5px; text-align: center; opacity: .75; margin-top: 2px; }
+
 .req-foto-par { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .req-foto-par .req-foto-wrap { max-height: 300px; }
 .req-foto-resultado { background: #fff; }
