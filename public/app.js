@@ -3859,6 +3859,9 @@ const App = (() => {
     }
     s.classList.remove('hidden');
     reqPrecargarImagenes();
+    /* Se va cargando el recorte mientras la persona se acomoda: cuando toma la
+       foto ya esta listo y el fondo blanco sale en el acto. */
+    reqCargarSegmentador().catch(() => {});
     reqPaso(1);
     /* La licencia solo pide foto: el boton se habilita con la foto. */
     if (REQ.servicio === 'licencia') {
@@ -3925,7 +3928,11 @@ const App = (() => {
     if (!img || !REQ.foto) return;
     img.src = REQ.foto;
     img.hidden = false;
-    if (vacia) vacia.classList.add('hidden');
+    if (vacia) {
+      vacia.classList.add('hidden');
+      const t = vacia.querySelector('span');
+      if (t) t.textContent = 'Fondo blanco';
+    }
   }
 
   async function reqTomarFoto() {
@@ -3955,6 +3962,16 @@ const App = (() => {
     REQ.foto = canvas.toDataURL('image/jpeg', 0.9);
     document.getElementById('reqBtnFondo').classList.remove('hidden');
     if (nota) nota.textContent = 'Foto tomada. Dejando el fondo blanco...';
+    /* El recuadro de la derecha se pone blanco de una vez, con el aviso,
+       mientras se calcula el recorte. */
+    const img0 = document.getElementById('reqFotoBlanca');
+    const vacia0 = document.getElementById('reqFotoBlancaVacia');
+    if (img0) img0.hidden = true;
+    if (vacia0) {
+      vacia0.classList.remove('hidden');
+      const t0 = vacia0.querySelector('span');
+      if (t0) t0.textContent = 'Preparando...';
+    }
     await reqAplicarFondo(true);
   }
 
@@ -3977,15 +3994,21 @@ const App = (() => {
       const base = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
       const vision = await import(base);
       const fileset = await vision.FilesetResolver.forVisionTasks(base + '/wasm');
-      REQ_SEG.modelo = await vision.ImageSegmenter.createFromOptions(fileset, {
+      const crear = (delegate) => vision.ImageSegmenter.createFromOptions(fileset, {
         baseOptions: {
           modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite',
-          delegate: 'GPU',
+          delegate: delegate,
         },
         runningMode: 'IMAGE',
         outputCategoryMask: true,
         outputConfidenceMasks: false,
       });
+      /* Muchos telefonos fallan con la GPU: se reintenta en CPU. */
+      try {
+        REQ_SEG.modelo = await crear('GPU');
+      } catch (e) {
+        REQ_SEG.modelo = await crear('CPU');
+      }
       REQ_SEG.estado = 'listo';
       return REQ_SEG.modelo;
     } catch (e) {
@@ -4045,6 +4068,9 @@ const App = (() => {
     ctx.clearRect(0, 0, w, h);
     ctx.drawImage(salida, 0, 0);
     REQ.foto = canvas.toDataURL('image/jpeg', 0.94);
+    /* Si el modelo termino despues del limite de espera, igual se muestra. */
+    reqMostrarFotoBlanca();
+    reqActualizarResumen();
     return true;
   }
 
@@ -4054,9 +4080,14 @@ const App = (() => {
     const nota = document.getElementById('reqFotoNota');
     if (nota) nota.textContent = 'Dejando el fondo blanco...';
 
-    /* 1) Recorte real con el modelo. */
+    /* 1) Recorte real con el modelo (con limite de espera). */
     let listo = false;
-    try { listo = await reqFotoSobreBlanco(); } catch (e) { listo = false; }
+    try {
+      listo = await Promise.race([
+        reqFotoSobreBlanco(),
+        new Promise((res) => setTimeout(() => res(false), 9000)),
+      ]);
+    } catch (e) { listo = false; }
     if (listo) {
       reqMostrarFotoBlanca();
       if (nota) nota.textContent = 'Listo: fondo blanco solido detras de ti.';
