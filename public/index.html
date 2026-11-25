@@ -661,14 +661,22 @@
     <!-- 1. FOTO -->
     <div class="req-pane" id="reqPane1">
       <p class="req-help">Ponte de frente, con luz y sin gorra. La app te separa del fondo y te lo deja blanco: no se recorta tu cara.</p>
-      <div class="req-foto-wrap">
-        <video id="reqVideo" playsinline muted autoplay hidden></video>
-        <canvas id="reqFotoCanvas" class="req-foto-canvas"></canvas>
-        <div class="req-foto-vacio" id="reqFotoVacio">
-          <svg viewBox="0 0 24 24"><path d="M4 8.5A2.5 2.5 0 016.5 6h1.2l1-1.6h6.6L16.3 6h1.2A2.5 2.5 0 0120 8.5v8A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5z"/><circle cx="12" cy="12.3" r="3.2"/></svg>
-          <span>Sin foto todavia</span>
+      <div class="req-foto-par">
+        <div class="req-foto-wrap">
+          <video id="reqVideo" playsinline muted autoplay hidden></video>
+          <div class="req-foto-vacio" id="reqFotoVacio">
+            <svg viewBox="0 0 24 24"><path d="M4 8.5A2.5 2.5 0 016.5 6h1.2l1-1.6h6.6L16.3 6h1.2A2.5 2.5 0 0120 8.5v8A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5z"/><circle cx="12" cy="12.3" r="3.2"/></svg>
+            <span id="reqFotoVacioTxt">Sin foto todavia</span>
+          </div>
+        </div>
+        <div class="req-foto-wrap req-foto-resultado">
+          <img id="reqFotoBlanca" class="req-foto-blanca" alt="Foto con fondo blanco" hidden />
+          <div class="req-foto-vacio" id="reqFotoBlancaVacia">
+            <span>Fondo blanco</span>
+          </div>
         </div>
       </div>
+      <canvas id="reqFotoCanvas" class="req-foto-canvas hidden"></canvas>
       <div class="req-row">
         <button class="btn primary" id="reqBtnCamara" onclick="App.reqEncenderCamara()">Abrir camara</button>
         <button class="btn ghost hidden" id="reqBtnTomar" onclick="App.reqTomarFoto()">Tomar foto</button>
@@ -734,6 +742,7 @@
         <option value="cedula">Cedula de identidad</option>
         <option value="licencia">Licencia de conducir</option>
         <option value="antecedentes">Antecedentes penales</option>
+        <option value="pasaporte">Pasaporte</option>
       </select>
     </label>
     <label class="field">
