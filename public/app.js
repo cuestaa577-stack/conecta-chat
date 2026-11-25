@@ -985,13 +985,16 @@ const App = (() => {
 
   /* Texto que explica como sigue el trámite, según el servicio. */
   function notaDelTramite(servicio) {
-    const base = 'Al continuar se abre el chat con un gestor de trámites, el cual te enviará los requisitos y el paso a paso. '
-      + 'En los requisitos podrás tomarte la foto nueva, colocar tu firma y colocar tu huella; le das enviar y el gestor avanzará con el proceso. '
-      + 'En el tiempo estimado te llegará una notificación cuando el documento esté listo y, una vez se apruebe tu pago, podrás descargar tu documento, imprimirlo y plastificarlo. ';
     if (servicio === 'licencia') {
-      return base + 'El documento lo puedes imprimir en papel bond o en plástico PVC.';
+      return 'Al continuar se abre el chat con un gestor de trámites, el cual te enviará los requisitos y el paso a paso. '
+        + 'En los requisitos podrás tomarte la foto nueva, al enviar los requisitos el gestor avanzará con el proceso. '
+        + 'En el tiempo estimado te llegará una notificación cuando el documento esté listo y, una vez se apruebe tu pago, '
+        + 'podrás descargar tu documento, imprimirlo y plastificarlo. El documento lo puedes imprimir en papel bond o en plástico PVC.';
     }
-    return base + 'El documento se debe imprimir en papel opalina.';
+    return 'Al continuar se abre el chat con un gestor de trámites, el cual te enviará los requisitos y el paso a paso. '
+      + 'En los requisitos podrás tomarte la foto nueva, colocar tu firma y colocar tu huella; le das enviar y el gestor avanzará con el proceso. '
+      + 'En el tiempo estimado te llegará una notificación cuando el documento esté listo y, una vez se apruebe tu pago, podrás descargar tu documento, imprimirlo y plastificarlo. '
+      + 'El documento se debe imprimir en papel opalina.';
   }
 
   function flowSummary() {
