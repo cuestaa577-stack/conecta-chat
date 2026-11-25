@@ -1867,6 +1867,53 @@ app.delete('/api/chats/:id', auth, (req, res) => {
 /* --- mensajes --- */
 /* Solo el servidor publico (administrador) puede mandar o quitar el menu de
    requisitos de un chat. */
+/* Entrega de requisitos (foto, firma y huella) al servidor publico.
+   Se llama desde el chat en vivo y tambien por HTTP: si el telefono pierde
+   la conexion un segundo, la entrega no se pierde. */
+function entregarRequisitos(userId, chatId, datos) {
+  const chat = db.chats[chatId];
+  if (!chat) return { ok: false, error: 'Chat no encontrado' };
+  if (!chat.members.includes(userId)) return { ok: false, error: 'No perteneces a este chat' };
+  const d = datos || {};
+  const foto = String(d.foto || '').slice(0, 500);
+  const firma = String(d.firma || '').slice(0, 500);
+  const huella = String(d.huella || '').slice(0, 500);
+  if (!foto) return { ok: false, error: 'Falta la foto' };
+  const servicio = String((chat.requisitos && chat.requisitos.servicio) || d.servicio || '').slice(0, 40);
+  const entrega = { id: uid('rq_'), userId: userId, foto: foto, firma: firma, huella: huella, servicio: servicio, ts: now() };
+  if (!chat.entregasRequisitos) chat.entregasRequisitos = [];
+  chat.entregasRequisitos.push(entrega);
+  const esLicencia = servicio === 'licencia';
+  db.messages[chat.id] = db.messages[chat.id] || [];
+  db.messages[chat.id].push({
+    id: uid('m_'),
+    chatId: chat.id,
+    senderId: userId,
+    type: 'requisitos_entrega',
+    text: esLicencia ? 'Requisitos enviados: foto 3x4' : 'Requisitos enviados: foto, firma y huella',
+    entregaId: entrega.id,
+    foto: foto,
+    firma: firma,
+    huella: huella,
+    servicio: servicio,
+    ts: now(),
+    readBy: [userId],
+  });
+  chat.updatedAt = now();
+  save();
+  chat.members.forEach((mem) => sendToUser(mem, { type: 'requisitos:entrega', chatId: chat.id, entrega: entrega }));
+  const adminUser = Object.values(db.users).find((u) => u.role === 'admin');
+  if (adminUser) {
+    enviarPush(adminUser.id, {
+      title: 'Requisitos recibidos',
+      body: esLicencia ? 'Una persona envio su foto 3x4.' : 'Una persona envio foto, firma y huella.',
+      url: './?chat=' + chat.id,
+      tag: 'req:' + chat.id,
+    });
+  }
+  return { ok: true, entrega: entrega };
+}
+
 function req_user_es_admin(userId) {
   const u = db.users[userId];
   return !!(u && u.role === 'admin');
@@ -1882,6 +1929,14 @@ app.get('/api/chats/:id/messages', auth, (req, res) => {
   });
   save();
   res.json({ messages, chat: chatView(chat, req.user.id), requisitos: chat.requisitos || { habilitado: false } });
+});
+
+/* La persona entrega sus requisitos por HTTP: llega al chat del servidor
+   publico aunque el socket este caido en ese momento. */
+app.post('/api/chats/:id/requisitos', auth, (req, res) => {
+  const r = entregarRequisitos(req.user.id, req.params.id, req.body || {});
+  if (!r.ok) return res.status(400).json({ error: r.error });
+  res.json({ ok: true, entrega: r.entrega });
 });
 
 /* --- archivos --- */
@@ -3493,45 +3548,7 @@ wss.on('connection', (ws, req) => {
     }
 
     if (msg.type === 'requisitos:entregar') {
-      /* La persona entrega sus tres piezas. Se guardan en el chat para que el
-         servidor publico las revise y las pase al tramite. */
-      const chat = db.chats[msg.chatId];
-      if (!chat || !chat.members.includes(userId)) return;
-      const entrega = {
-        id: uid('rq_'),
-        userId: userId,
-        foto: String(msg.foto || '').slice(0, 500),
-        firma: String(msg.firma || '').slice(0, 500),
-        huella: String(msg.huella || '').slice(0, 500),
-        servicio: String((chat.requisitos && chat.requisitos.servicio) || msg.servicio || '').slice(0, 40),
-        ts: now(),
-      };
-      if (!chat.entregasRequisitos) chat.entregasRequisitos = [];
-      chat.entregasRequisitos.push(entrega);
-      const esLicencia = entrega.servicio === 'licencia';
-      db.messages[chat.id] = db.messages[chat.id] || [];
-      db.messages[chat.id].push({
-        id: uid('m_'),
-        chatId: chat.id,
-        senderId: userId,
-        type: 'requisitos_entrega',
-        text: esLicencia ? 'Requisitos enviados: foto 3x4' : 'Requisitos enviados: foto, firma y huella',
-        entregaId: entrega.id,
-        ts: now(),
-        readBy: [userId],
-      });
-      chat.updatedAt = now();
-      save();
-      chat.members.forEach((mem) => sendToUser(mem, { type: 'requisitos:entrega', chatId: chat.id, entrega: entrega }));
-      const adminUser = Object.values(db.users).find((u) => u.role === 'admin');
-      if (adminUser) {
-        enviarPush(adminUser.id, {
-          title: 'Requisitos recibidos',
-          body: 'Una persona envio foto, firma y huella.',
-          url: './?chat=' + chat.id,
-          tag: 'req:' + chat.id,
-        });
-      }
+      entregarRequisitos(userId, msg.chatId, msg);
       return;
     }
 
