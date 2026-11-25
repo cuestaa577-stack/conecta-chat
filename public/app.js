@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v5.8';
+  const APP_VERSION = 'v5.9';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -3450,11 +3450,17 @@ const App = (() => {
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') return;
     try { if (localStorage.getItem('tve_notif_no') === '1') return; } catch (e) {}
     el.classList.remove('hidden');
+    /* El aviso es fijo y ocupa la parte baja: el boton de requisitos sube para
+       que se pueda pulsar. Antes quedaba debajo y no habia forma de abrirlo. */
+    const fab = document.getElementById('reqFab');
+    if (fab) fab.classList.add('subir');
   }
 
   function ocultarNotifBanner(recordar) {
     const el = $('#notifBanner');
     if (el) el.classList.add('hidden');
+    const fab = document.getElementById('reqFab');
+    if (fab) fab.classList.remove('subir');
     if (recordar) { try { localStorage.setItem('tve_notif_no', '1'); } catch (e) {} }
   }
 
@@ -3948,7 +3954,6 @@ const App = (() => {
     cedula: 'C\u00e9dula de identidad',
     licencia: 'Licencia de conducir',
     antecedentes: 'Antecedentes penales',
-    pasaporte: 'Pasaporte',
   };
 
   /* Imagen de la huella entintada: se precarga una vez y se estampa donde la
@@ -3959,7 +3964,7 @@ const App = (() => {
       if (!REQ_IMG.huella) {
         REQ_IMG.huella = new Image();
         REQ_IMG.huella.decoding = 'async';
-        REQ_IMG.huella.src = 'huella-tinta.png?v=2';
+        REQ_IMG.huella.src = 'huella-tinta.png?v=3';
       }
     } catch (e) {}
   }
@@ -3969,15 +3974,20 @@ const App = (() => {
     if (!b) return;
     REQ.habilitado = !!si;
     b.classList.toggle('hidden', !si);
+    /* Si el aviso de notificaciones esta en pantalla, el boton sube para no
+       quedar debajo de el. */
+    const banner = document.getElementById('notifBanner');
+    const bannerAbierto = !!(banner && !banner.classList.contains('hidden'));
+    b.classList.toggle('subir', bannerAbierto);
   }
 
   function reqActualizarResumen() {
     const f = document.getElementById('reqOkFoto');
     const fi = document.getElementById('reqOkFirma');
     const h = document.getElementById('reqOkHuella');
-    if (f) f.textContent = REQ.foto ? '\u2713' : '\u2717';
-    if (fi) fi.textContent = REQ.firma ? '\u2713' : '\u2717';
-    if (h) h.textContent = REQ.huella ? '\u2713' : '\u2717';
+    if (f) f.textContent = REQ.foto ? 'Listo' : 'Pendiente';
+    if (fi) fi.textContent = REQ.firma ? 'Listo' : 'Pendiente';
+    if (h) h.textContent = REQ.huella ? 'Listo' : 'Pendiente';
     [['reqOkFoto', !!REQ.foto], ['reqOkFirma', !!REQ.firma], ['reqOkHuella', !!REQ.huella]].forEach((p) => {
       const el = document.getElementById(p[0]);
       if (el) el.classList.toggle('ok', p[1]);
@@ -4616,7 +4626,6 @@ const App = (() => {
 
   /* ---------------- Envio ---------------- */
   async function reqEnviar() {
-    if (!REQ.habilitado) return toast('Este chat no tiene requisitos habilitados', 'info');
     if (!REQ.foto) return toast('Falta la foto', 'info');
     const esLicencia = REQ.servicio === 'licencia';
     if (!esLicencia) {
@@ -4699,10 +4708,19 @@ const App = (() => {
   function reqRefrescarDesdeChat() {
     const chat = (state.chats || []).find((c) => c && c.id === state.currentChatId);
     const on = !!(chat && chat.requisitos && chat.requisitos.habilitado);
-    REQ.servicio = (chat && chat.requisitos && chat.requisitos.servicio) || '';
-    /* Al servidor publico no le aparece el boton: el es quien lo envia. */
     const soyAdmin = state.me && state.me.role === 'admin';
-    reqVisible(on && !soyAdmin);
+    /* El tramite del chat sirve de respaldo: si el servidor publico todavia no
+       pulso "Enviar requisitos", la persona igual ve el boton y puede hacer su
+       foto, su firma y su huella. Antes el boton dependia SOLO del envio del
+       servidor publico y, si no lo enviaba, la persona no veia nada. */
+    const delTramite = (chat && chat.tramite && chat.tramite.service) || '';
+    REQ.servicio = (chat && chat.requisitos && chat.requisitos.servicio) || delTramite || '';
+    /* En una conversacion directa con el servidor publico el boton SIEMPRE
+       esta disponible para la persona; al servidor publico no se le muestra
+       porque es el quien envia los requisitos. */
+    const esDirecto = !!(chat && chat.type === 'direct');
+    const disponible = on || esDirecto;
+    reqVisible(disponible && !soyAdmin);
     /* El boton de enviar requisitos es solo del servidor publico. */
     const bAdmin = document.getElementById('reqAdminBtn');
     if (bAdmin) bAdmin.classList.toggle('hidden', !soyAdmin);

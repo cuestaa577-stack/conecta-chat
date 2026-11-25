@@ -741,7 +741,7 @@ body.has-install #chatMessages { padding-bottom: 96px; }
    El boton solo existe cuando el servidor publico habilito los requisitos en
    esta conversacion. Queda por encima de la caja de escribir, a la derecha. */
 .req-fab {
-  position: absolute; right: 14px; bottom: 86px; z-index: 12;
+  position: absolute; right: 14px; bottom: 86px; z-index: 60;
   display: inline-flex; align-items: center; gap: 8px;
   padding: 11px 15px; border: 0; border-radius: 999px;
   background: linear-gradient(135deg, #12805c, #0d6650); color: #fff;
@@ -751,6 +751,10 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 }
 .req-fab svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .req-fab:active { transform: scale(.97); }
+/* Cuando el aviso de notificaciones esta en pantalla, el boton sube para no
+   quedar debajo: el aviso es fijo y ocupa el mismo alto. Antes el boton se
+   veia pero no se podia pulsar porque el aviso lo tapaba. */
+.req-fab.subir { bottom: 152px; }
 
 .req-card { max-height: 92vh; overflow-y: auto; }
 .req-serv {
@@ -848,7 +852,7 @@ body.has-install #chatMessages { padding-bottom: 96px; }
   padding: 8px 10px; border-radius: 10px; background: #f7fafd; border: 1px solid var(--border);
   font-size: 12px; font-weight: 600; color: #46536a;
 }
-.req-mini i { font-style: normal; font-weight: 800; color: #b9c4d3; }
+.req-mini i { font-style: normal; font-weight: 800; font-size: 11px; color: #b9c4d3; }
 .req-mini i.ok { color: #12805c; }
 .req-enviar { width: 100%; margin-top: 6px; }
 
@@ -1302,8 +1306,20 @@ body.con-actualizacion .view.active { padding-top: 54px; }
 }
 .offline-bar.hidden { display: none; }
 
-/* Boton del servidor publico en la cabecera del chat: solo lo ve el admin. */
-.req-admin-btn { color: #0d6650; }
+/* Boton del servidor publico en la cabecera del chat: solo lo ve el admin.
+   Lleva texto (no solo el icono) para que se encuentre a la primera: antes era
+   un icono de camara suelto y el servidor publico no lo reconocia como la
+   opcion de enviar la foto, la firma y la huella. */
+.req-admin-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 11px; border: 0; border-radius: 999px;
+  background: linear-gradient(135deg, #12805c, #0d6650); color: #fff;
+  font: inherit; font-size: 12px; font-weight: 700; white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(13, 102, 80, .28);
+  cursor: pointer;
+}
+.req-admin-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.req-admin-btn:active { transform: scale(.97); }
 .req-admin-btn.hidden { display: none; }
 
 /* La licencia pide solo foto: la barra de pasos queda con una sola opcion. */
