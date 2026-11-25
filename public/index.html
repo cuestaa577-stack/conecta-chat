@@ -700,7 +700,7 @@
 
     <!-- 3. HUELLA -->
     <div class="req-pane hidden" id="reqPane3">
-      <p class="req-help">Apoya el dedo pulgar derecho sobre el circulo y mantenlo quieto hasta que termine.</p>
+      <p class="req-help">Apoya el dedo pulgar derecho en el circulo y ruedalo despacio sin levantarlo. La huella se dibuja con el recorrido de tu dedo.</p>
       <div class="req-huella-wrap">
         <div class="req-huella" id="reqHuellaZona">
           <canvas id="reqHuella" class="req-huella-canvas"></canvas>
@@ -711,13 +711,59 @@
           <div class="req-huella-prog" id="reqHuellaProg"></div>
         </div>
       </div>
-      <p class="req-note muted" id="reqHuellaNota">Presiona y manten el dedo sin moverlo.</p>
+      <p class="req-note muted" id="reqHuellaNota">Apoya el pulgar y ruedalo despacio dentro del circulo.</p>
+      <button type="button" class="req-repetir hidden" id="reqHuellaRepetir">Repetir la huella</button>
+    </div>
+
+    <!-- 4. DATOS PERSONALES: es el unico requisito de antecedentes penales -->
+    <div class="req-pane hidden" id="reqPaneDatos">
+      <p class="req-help">Para los antecedentes penales solo necesitamos tus datos. No hay foto, ni firma, ni huella.</p>
+      <div class="req-form">
+        <label class="req-field">
+          <span>Nombres y apellidos</span>
+          <input id="reqDatosNombre" autocomplete="name" maxlength="80" placeholder="Como aparece en tu cedula" />
+        </label>
+        <label class="req-field">
+          <span>Cedula de identidad</span>
+          <input id="reqDatosCedula" inputmode="numeric" maxlength="12" placeholder="V-12345678" />
+        </label>
+        <label class="req-field">
+          <span>Fecha de nacimiento</span>
+          <input id="reqDatosNacimiento" type="date" />
+        </label>
+        <label class="req-field">
+          <span>Nacionalidad</span>
+          <input id="reqDatosNacionalidad" maxlength="40" placeholder="Venezolana" value="Venezolana" />
+        </label>
+        <label class="req-field">
+          <span>Pais donde vives</span>
+          <input id="reqDatosPais" maxlength="40" placeholder="Chile, Ecuador, Espana..." />
+        </label>
+        <label class="req-field">
+          <span>Telefono con codigo de pais</span>
+          <input id="reqDatosTelefono" inputmode="tel" maxlength="24" placeholder="+56 9 1234 5678" />
+        </label>
+        <label class="req-field">
+          <span>Correo electronico</span>
+          <input id="reqDatosCorreo" type="email" maxlength="80" placeholder="tucorreo@ejemplo.com" />
+        </label>
+        <label class="req-field">
+          <span>Direccion</span>
+          <input id="reqDatosDireccion" maxlength="120" placeholder="Calle, numero, ciudad" />
+        </label>
+        <label class="req-field">
+          <span>Para que lo necesitas (opcional)</span>
+          <input id="reqDatosMotivo" maxlength="120" placeholder="Trabajo, residencia, estudio..." />
+        </label>
+      </div>
+      <p class="req-note muted" id="reqDatosNota">Tus datos van solo al servidor publico de esta conversacion.</p>
     </div>
 
     <div class="req-resumen" id="reqResumen" hidden>
-      <div class="req-mini"><span>Foto</span><i id="reqOkFoto">Pendiente</i></div>
-      <div class="req-mini"><span>Firma</span><i id="reqOkFirma">Pendiente</i></div>
-      <div class="req-mini"><span>Huella</span><i id="reqOkHuella">Pendiente</i></div>
+      <div class="req-mini" id="reqMiniFoto"><span>Foto</span><i id="reqOkFoto">Pendiente</i></div>
+      <div class="req-mini" id="reqMiniFirma"><span>Firma</span><i id="reqOkFirma">Pendiente</i></div>
+      <div class="req-mini" id="reqMiniHuella"><span>Huella</span><i id="reqOkHuella">Pendiente</i></div>
+      <div class="req-mini" id="reqMiniDatos" hidden><span>Datos</span><i id="reqOkDatos">Pendiente</i></div>
     </div>
 
     <button class="btn primary req-enviar" id="reqEnviar" onclick="App.reqEnviar()">

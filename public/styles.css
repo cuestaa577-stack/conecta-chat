@@ -24,6 +24,11 @@ body {
 }
 button { font-family: inherit; }
 .hidden { display: none !important; }
+/* El atributo hidden debe ganar siempre: .req-mini y .req-resumen fijan
+   display:flex/grid y si no, las piezas que el tramite no pide se seguian
+   viendo (por ejemplo "Datos" en la cedula o "Foto/Firma/Huella" en
+   antecedentes). */
+[hidden] { display: none !important; }
 .muted { color: var(--muted); }
 .center { text-align: center; }
 
@@ -777,6 +782,12 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .req-tab.active .req-num { background: rgba(255, 255, 255, .26); }
 .req-help { font-size: 12.8px; line-height: 1.5; color: #46536a; margin: 0 0 11px; }
 .req-note { font-size: 11.5px; margin: 9px 0 0; text-align: center; }
+.req-repetir {
+  display: block; margin: 10px auto 0; padding: 8px 16px;
+  border: 1px solid #cfd6dd; border-radius: 999px; background: #fff;
+  color: #33404d; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.req-repetir:active { background: #f1f4f7; }
 .req-row { display: flex; gap: 8px; margin-top: 10px; }
 .req-row .btn { flex: 1 1 auto; width: auto; }
 
@@ -1325,6 +1336,20 @@ body.con-actualizacion .view.active { padding-top: 54px; }
 /* La licencia pide solo foto: la barra de pasos queda con una sola opcion. */
 .req-tabs.solo-foto { grid-template-columns: 1fr; }
 .req-tabs.solo-foto .req-tab.hidden { display: none; }
+
+/* Los antecedentes penales no llevan foto, firma ni huella: la barra de pasos
+   desaparece y queda solo el formulario de datos personales. */
+.req-tabs.solo-datos { display: none; }
+
+/* Formulario de datos personales (antecedentes penales) */
+.req-form { display: grid; gap: 9px; }
+.req-field { display: grid; gap: 4px; }
+.req-field span { font-size: 11.5px; font-weight: 700; color: #5c6b82; }
+.req-field input {
+  width: 100%; padding: 10px 11px; border: 1px solid var(--border); border-radius: 10px;
+  background: #fbfdff; color: #16233a; font: inherit; font-size: 13.5px;
+}
+.req-field input:focus { outline: none; border-color: var(--navy); background: #fff; }
 
 /* Marco 3x4 para la foto de la licencia. */
 .req-foto-wrap.foto-3x4 { aspect-ratio: 3 / 4; max-height: 340px; }

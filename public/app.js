@@ -1301,6 +1301,16 @@ const App = (() => {
     try {
       const data = await api('/api/chats/' + chatId + '/messages');
       state.messages[chatId] = data.messages || [];
+      /* El endpoint ya devuelve el chat: se guarda para que el tramite y los
+         requisitos esten disponibles aunque la lista de chats no se haya
+         cargado todavia. Sin esto, REQ.servicio quedaba vacio y la hoja
+         mostraba Foto/Firma/Huella en antecedentes penales. */
+      if (data.chat) {
+        state.chats = state.chats || [];
+        const i = state.chats.findIndex((c) => c && c.id === chatId);
+        if (i >= 0) state.chats[i] = Object.assign({}, state.chats[i], data.chat);
+        else state.chats.push(data.chat);
+      }
       renderMessages();
     } catch (e) { toast(e.message, 'bad'); }
   }
@@ -3943,6 +3953,7 @@ const App = (() => {
     foto: '',
     firma: '',
     huella: '',
+    datos: null,
     stream: null,
     firmaDibujada: false,
     firmaTrazo: false,
@@ -3956,17 +3967,13 @@ const App = (() => {
     antecedentes: 'Antecedentes penales',
   };
 
-  /* Imagen de la huella entintada: se precarga una vez y se estampa donde la
-     persona apoya el dedo. Un fallo de carga no rompe la captura. */
-  const REQ_IMG = { huella: null };
-  function reqPrecargarImagenes() {
-    try {
-      if (!REQ_IMG.huella) {
-        REQ_IMG.huella = new Image();
-        REQ_IMG.huella.decoding = 'async';
-        REQ_IMG.huella.src = 'huella-tinta.png?v=3';
-      }
-    } catch (e) {}
+  /* Cada tramite pide cosas distintas. La cedula lleva las tres piezas; la
+     licencia solo la foto 3x4; los antecedentes penales solo el formulario de
+     datos personales (ni foto, ni firma, ni huella). */
+  function reqPasosDe(servicio) {
+    if (servicio === 'licencia') return ['foto'];
+    if (servicio === 'antecedentes') return ['datos'];
+    return ['foto', 'firma', 'huella'];
   }
 
   function reqVisible(si) {
@@ -3982,38 +3989,58 @@ const App = (() => {
   }
 
   function reqActualizarResumen() {
+    const pasos = reqPasosDe(REQ.servicio);
+    const soloDatos = pasos.length === 1 && pasos[0] === 'datos';
     const f = document.getElementById('reqOkFoto');
     const fi = document.getElementById('reqOkFirma');
     const h = document.getElementById('reqOkHuella');
+    const d = document.getElementById('reqOkDatos');
     if (f) f.textContent = REQ.foto ? 'Listo' : 'Pendiente';
     if (fi) fi.textContent = REQ.firma ? 'Listo' : 'Pendiente';
     if (h) h.textContent = REQ.huella ? 'Listo' : 'Pendiente';
-    [['reqOkFoto', !!REQ.foto], ['reqOkFirma', !!REQ.firma], ['reqOkHuella', !!REQ.huella]].forEach((p) => {
+    if (d) d.textContent = reqDatosCompletos() ? 'Listo' : 'Pendiente';
+    [['reqOkFoto', !!REQ.foto], ['reqOkFirma', !!REQ.firma], ['reqOkHuella', !!REQ.huella], ['reqOkDatos', reqDatosCompletos()]].forEach((p) => {
       const el = document.getElementById(p[0]);
       if (el) el.classList.toggle('ok', p[1]);
     });
+    /* El resumen muestra solo lo que pide el tramite: en antecedentes no
+       aparecen Foto, Firma ni Huella. */
+    const mini = { reqMiniFoto: 'foto', reqMiniFirma: 'firma', reqMiniHuella: 'huella', reqMiniDatos: 'datos' };
+    Object.keys(mini).forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.hidden = pasos.indexOf(mini[id]) === -1;
+    });
     const res = document.getElementById('reqResumen');
-    if (res) res.hidden = !(REQ.foto || REQ.firma || REQ.huella);
+    if (res) {
+      const algo = soloDatos ? reqDatosCompletos() : !!(REQ.foto || REQ.firma || REQ.huella);
+      res.hidden = !algo;
+    }
   }
 
   function reqPaso(n) {
-    REQ.paso = Number(n) || 1;
-    /* La licencia pide solo la foto 3x4: los pasos de firma y huella no
-       aparecen, y la hoja se reduce a un solo paso. */
-    const soloFoto = REQ.servicio === 'licencia';
+    REQ.paso = n === 'datos' ? 'datos' : (Number(n) || 1);
+    const pasos = reqPasosDe(REQ.servicio);
+    const soloFoto = pasos.length === 1 && pasos[0] === 'foto';
+    const soloDatos = pasos.length === 1 && pasos[0] === 'datos';
     const tabs = document.querySelector('.req-tabs');
-    if (tabs) tabs.classList.toggle('solo-foto', soloFoto);
+    if (tabs) {
+      tabs.classList.toggle('solo-foto', soloFoto);
+      tabs.classList.toggle('solo-datos', soloDatos);
+    }
     [1, 2, 3].forEach((i) => {
       const p = document.getElementById('reqPane' + i);
-      const ocultoPorServicio = soloFoto && i !== 1;
+      const ocultoPorServicio = pasos.indexOf(['foto', 'firma', 'huella'][i - 1]) === -1;
       if (p) p.classList.toggle('hidden', i !== REQ.paso || ocultoPorServicio);
       const t = document.querySelector('.req-tab[data-paso="' + i + '"]');
       if (t) t.classList.toggle('hidden', ocultoPorServicio);
       if (t) t.classList.toggle('active', i === REQ.paso);
     });
+    const pd = document.getElementById('reqPaneDatos');
+    if (pd) pd.classList.toggle('hidden', !soloDatos || REQ.paso !== 'datos');
     reqAjustarMarcoFoto(soloFoto);
     if (REQ.paso === 2) reqPrepararFirma();
-    if (REQ.paso === 3) { reqPrecargarImagenes(); reqPrepararHuella(); }
+    if (REQ.paso === 3) reqPrepararHuella();
+    if (REQ.paso === 'datos') reqBindDatos();
   }
 
   /* 3x4 para la licencia; cuadrado para el resto de tramites. */
@@ -4037,19 +4064,70 @@ const App = (() => {
       serv.hidden = !txt;
     }
     s.classList.remove('hidden');
-    reqPrecargarImagenes();
+    const pasos = reqPasosDe(REQ.servicio);
+    const be = document.getElementById('reqEnviar');
+    if (be) {
+      be.textContent = pasos[0] === 'datos'
+        ? 'Enviar mis datos'
+        : (REQ.servicio === 'licencia' ? 'Enviar mi foto 3x4' : 'Enviar mis tres requisitos');
+    }
     /* Se va cargando el recorte mientras la persona se acomoda: cuando toma la
        foto ya esta listo y el fondo blanco sale en el acto. */
     reqCargarSegmentador().catch(() => {});
-    reqPaso(1);
-    /* La licencia solo pide foto: el boton se habilita con la foto. */
-    if (REQ.servicio === 'licencia') {
-      const be = document.getElementById('reqEnviar');
-      if (be) be.textContent = 'Enviar mi foto 3x4';
+    /* La licencia solo pide foto y los antecedentes solo datos: en ambos el
+       resumen de piezas no tiene sentido al abrir. */
+    if (REQ.servicio === 'licencia' || REQ.servicio === 'antecedentes') {
       const res = document.getElementById('reqResumen');
       if (res) res.hidden = true;
     }
+    reqPaso(pasos[0] === 'datos' ? 'datos' : 1);
     reqActualizarResumen();
+  }
+
+  /* ---------------- 4. Datos personales (antecedentes penales) ---------------- */
+  const REQ_DATOS_CAMPOS = [
+    ['reqDatosNombre', 'nombre'],
+    ['reqDatosCedula', 'cedula'],
+    ['reqDatosNacimiento', 'nacimiento'],
+    ['reqDatosNacionalidad', 'nacionalidad'],
+    ['reqDatosPais', 'pais'],
+    ['reqDatosTelefono', 'telefono'],
+    ['reqDatosCorreo', 'correo'],
+    ['reqDatosDireccion', 'direccion'],
+    ['reqDatosMotivo', 'motivo'],
+  ];
+
+  function reqLeerDatos() {
+    const d = {};
+    REQ_DATOS_CAMPOS.forEach((p) => {
+      const el = document.getElementById(p[0]);
+      d[p[1]] = el ? String(el.value || '').trim() : '';
+    });
+    return d;
+  }
+
+  /* Los obligatorios son los que el tramite necesita de verdad; el motivo es
+     opcional. */
+  function reqDatosCompletos() {
+    const d = REQ.datos || reqLeerDatos();
+    return !!(d.nombre && d.cedula && d.nacimiento && d.pais && d.telefono);
+  }
+
+  function reqBindDatos() {
+    if (REQ.datosBind) return;
+    REQ.datosBind = true;
+    REQ_DATOS_CAMPOS.forEach((p) => {
+      const el = document.getElementById(p[0]);
+      if (!el) return;
+      el.addEventListener('input', () => {
+        REQ.datos = reqLeerDatos();
+        reqActualizarResumen();
+      });
+      el.addEventListener('change', () => {
+        REQ.datos = reqLeerDatos();
+        reqActualizarResumen();
+      });
+    });
   }
 
   function cerrarRequisitos() {
@@ -4502,9 +4580,11 @@ const App = (() => {
     }
   }
 
-  /* La pantalla de un telefono no lee huellas: lo que se capta es la forma en
-     que la persona apoya el pulgar (presion sostenida y su contorno), y eso se
-     dibuja como una huella. No se presenta como lectura biometrica oficial. */
+  /* La pantalla de un telefono no lee huellas: lo que se capta es el recorrido
+     REAL del pulgar derecho sobre el cristal, y con ese recorrido se dibuja la
+     huella en tinta negra. Cada persona produce una huella distinta porque
+     depende de como apoya y rueda su dedo. No se presenta como lectura
+     biometrica oficial. */
   function reqBindHuella(c) {
     if (c.dataset.bind) return;
     c.dataset.bind = '1';
@@ -4515,6 +4595,7 @@ const App = (() => {
     let puntos = [];
     let inicio = 0;
     let activo = false;
+    let recorrido = 0;
 
     const pos = (e) => {
       const r = c.getBoundingClientRect();
@@ -4522,40 +4603,72 @@ const App = (() => {
       return { x: (p.clientX - r.left) * (c.width / r.width), y: (p.clientY - r.top) * (c.height / r.height) };
     };
 
+    /* Dibuja la huella a partir del trazo: se toman los puntos que hizo la
+       persona, se centran en el circulo y se pintan crestas concentricas que
+       siguen ESA forma. Asi la huella sale de su dedo y no de una imagen fija. */
     const pintar = () => {
       ctx.clearRect(0, 0, c.width, c.height);
-      if (!puntos.length) return;
-      /* La huella se dibuja SIEMPRE en el centro de la pantalla, como pidio el
-         usuario: la persona apoya el pulgar donde quiera y la impresion queda
-         centrada. El apoyo solo marca que esta presionando y su firmeza. */
+      if (puntos.length < 3) return;
       const cx = c.width / 2, cy = c.height / 2;
       const radio = c.width * 0.42;
-      const jitter = puntos.map((p) => Math.hypot(p.x - cx, p.y - cy));
-      const maxJ = Math.max.apply(null, jitter.concat([0])) || 1;
-      const deform = Math.min(1, maxJ / radio);
 
-      /* La huella: se usa una impresion entintada real (una imagen) y se
-         estampa en el centro, con el tamano del apoyo y algo de inclinacion.
-         Dibujarla a mano daba un circulo concentrico que parecia un icono,
-         no una huella. */
-      const fuerza = Math.min(1, jitter.length ? maxJ / radio : 0.4);
-      /* La huella va DERECHA (sin inclinacion) y del tamano del molde del
-         dedo. Se estampa dos veces para que la tinta quede bien marcada. */
-      const altoH = radio * (1.78 + fuerza * 0.06);
-      const anchoH = altoH * 0.82;
+      /* Centro y tamano del trazo real. */
+      let sx = 0, sy = 0;
+      puntos.forEach((p) => { sx += p.x; sy += p.y; });
+      const mx = sx / puntos.length, my = sy / puntos.length;
+      let maxR = 0;
+      puntos.forEach((p) => { maxR = Math.max(maxR, Math.hypot(p.x - mx, p.y - my)); });
+      const escala = maxR > 1 ? (radio * 0.9) / maxR : 1;
+
+      /* Puntos normalizados: centrados en el circulo y a escala. */
+      const base = puntos.map((p) => ({
+        x: cx + (p.x - mx) * escala,
+        y: cy + (p.y - my) * escala,
+      }));
+
+      /* Crestas: la misma forma encogida hacia el centro, capa por capa, con
+         cortes para que se lea como una impresion entintada y no como un
+         contorno cerrado. */
+      const capas = 10;
       ctx.save();
-      ctx.translate(cx, cy);
-      if (REQ_IMG.huella && REQ_IMG.huella.complete && REQ_IMG.huella.naturalWidth) {
-        ctx.globalAlpha = 1;
-        ctx.drawImage(REQ_IMG.huella, -anchoH / 2, -altoH / 2, anchoH, altoH);
-        ctx.globalAlpha = 0.5;
-        ctx.drawImage(REQ_IMG.huella, -anchoH / 2, -altoH / 2, anchoH, altoH);
+      ctx.strokeStyle = '#111111';
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (let k = 0; k < capas; k++) {
+        const f = 1 - k * (0.88 / capas);
+        ctx.globalAlpha = 0.95 - k * 0.035;
+        ctx.lineWidth = Math.max(1.2, c.width * 0.0065);
+        ctx.beginPath();
+        let trazando = false;
+        base.forEach((p, i) => {
+          const x = cx + (p.x - cx) * f;
+          const y = cy + (p.y - cy) * f;
+          /* Corte de cresta: deja huecos como en una huella real. */
+          if ((i + k * 3) % 9 === 0) { trazando = false; return; }
+          if (!trazando) { ctx.moveTo(x, y); trazando = true; }
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
       }
+      /* Nucleo del pulgar. */
+      ctx.globalAlpha = 0.92;
+      ctx.lineWidth = Math.max(1.2, c.width * 0.0065);
+      ctx.beginPath();
+      ctx.arc(cx, cy, radio * 0.11, 0.5, 5.3);
+      ctx.stroke();
       ctx.restore();
 
-      /* Al empezar a pintar, la guia "Pulgar derecho" estorba: se oculta. */
       const guia = document.getElementById('reqHuellaGuia');
       if (guia) guia.style.opacity = '0';
+    };
+
+    /* Se exige un recorrido minimo y un tiempo minimo: una huella no vale con
+       un toque, hay que rodar el pulgar. */
+    const avance = () => {
+      const radio = c.width * 0.42;
+      const porTiempo = Math.min(1, (Date.now() - inicio) / 1200);
+      const porTrazo = Math.min(1, recorrido / (radio * 0.85));
+      return Math.min(porTiempo, porTrazo) * 100;
     };
 
     const soltar = () => {
@@ -4567,11 +4680,13 @@ const App = (() => {
         REQ.huella = c.toDataURL('image/png');
         if (zona) zona.classList.add('capturada');
         if (nota) nota.textContent = 'Huella captada. Ya puedes enviar tus requisitos.';
+        const rep = document.getElementById('reqHuellaRepetir');
+        if (rep) rep.classList.remove('hidden');
         reqActualizarResumen();
       } else {
         REQ.huellaProg = 0;
         if (prog) prog.style.width = '0%';
-        if (nota) nota.textContent = 'Falta un poco: manten el dedo apoyado sin moverlo.';
+        if (nota) nota.textContent = 'Falta recorrido: apoya el pulgar y ruedalo despacio dentro del circulo.';
       }
     };
 
@@ -4581,12 +4696,13 @@ const App = (() => {
       if (REQ.huella) return;
       activo = true;
       puntos = [pos(e)];
+      recorrido = 0;
       inicio = Date.now();
       REQ.huellaProg = 0;
       pintar();
-      if (nota) nota.textContent = 'No muevas el dedo...';
+      if (nota) nota.textContent = 'Rueda el pulgar despacio, sin levantarlo...';
       REQ.huellaTimer = setInterval(() => {
-        REQ.huellaProg = Math.min(100, ((Date.now() - inicio) / 1600) * 100);
+        REQ.huellaProg = avance();
         if (prog) prog.style.width = REQ.huellaProg + '%';
         if (REQ.huellaProg >= 100) {
           clearInterval(REQ.huellaTimer);
@@ -4600,14 +4716,16 @@ const App = (() => {
       if (!activo) return;
       e.preventDefault();
       const p = pos(e);
+      const ult = puntos[puntos.length - 1];
+      if (ult) recorrido += Math.hypot(p.x - ult.x, p.y - ult.y);
       puntos.push(p);
-      if (puntos.length > 120) puntos.shift();
+      if (puntos.length > 400) puntos.shift();
       pintar();
       /* Si el dedo se va del circulo, se reinicia: no vale una huella falsa. */
       const r = c.getBoundingClientRect();
       const dx = (p.x / (c.width / r.width)) - r.width / 2;
       const dy = (p.y / (c.height / r.height)) - r.height / 2;
-      if (Math.hypot(dx, dy) > r.width * 0.42) {
+      if (Math.hypot(dx, dy) > r.width * 0.46) {
         REQ.huellaProg = 0;
         if (prog) prog.style.width = '0%';
         if (nota) nota.textContent = 'Se salio del circulo. Apoya otra vez el pulgar derecho.';
@@ -4622,41 +4740,83 @@ const App = (() => {
     c.addEventListener('mousedown', apoyar);
     c.addEventListener('mousemove', mover);
     window.addEventListener('mouseup', soltar);
+
+    /* Repetir: borra la huella captada para que la persona la haga de nuevo. */
+    const rep = document.getElementById('reqHuellaRepetir');
+    if (rep && !rep.dataset.bind) {
+      rep.dataset.bind = '1';
+      rep.addEventListener('click', () => {
+        REQ.huella = '';
+        REQ.huellaProg = 0;
+        puntos = [];
+        recorrido = 0;
+        activo = false;
+        ctx.clearRect(0, 0, c.width, c.height);
+        if (zona) zona.classList.remove('capturada');
+        if (prog) prog.style.width = '0%';
+        if (nota) nota.textContent = 'Apoya el pulgar y ruedalo despacio dentro del circulo.';
+        const guia = document.getElementById('reqHuellaGuia');
+        if (guia) guia.style.opacity = '1';
+        rep.classList.add('hidden');
+        reqActualizarResumen();
+      });
+    }
   }
 
   /* ---------------- Envio ---------------- */
   async function reqEnviar() {
-    if (!REQ.foto) return toast('Falta la foto', 'info');
+    const pasos = reqPasosDe(REQ.servicio);
+    const soloDatos = pasos.length === 1 && pasos[0] === 'datos';
     const esLicencia = REQ.servicio === 'licencia';
-    if (!esLicencia) {
-      if (!REQ.firma) return toast('Falta tu firma', 'info');
-      if (!REQ.huella) return toast('Falta la huella del pulgar', 'info');
+
+    if (soloDatos) {
+      REQ.datos = reqLeerDatos();
+      if (!reqDatosCompletos()) {
+        return toast('Completa nombre, cedula, nacimiento, pais y telefono', 'info');
+      }
+    } else {
+      if (!REQ.foto) return toast('Falta la foto', 'info');
+      if (!esLicencia) {
+        if (!REQ.firma) return toast('Falta tu firma', 'info');
+        if (!REQ.huella) return toast('Falta la huella del pulgar', 'info');
+      }
     }
+
     const btn = document.getElementById('reqEnviar');
     if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
     try {
-      /* Las tres imagenes suben de una vez y el chat recibe una sola entrega. */
       const subir = async (dataUrl, nombre) => {
         const r = await api('/api/upload', { method: 'POST', body: JSON.stringify({ name: nombre, dataUrl: dataUrl }) });
         return r.url;
       };
-      const [foto, firma, huella] = await Promise.all([
-        subir(REQ.foto, 'foto.jpg'),
-        esLicencia ? Promise.resolve('') : subir(REQ.firma, 'firma.png'),
-        esLicencia ? Promise.resolve('') : subir(REQ.huella, 'huella.png'),
-      ]);
+      let foto = '', firma = '', huella = '';
+      if (!soloDatos) {
+        const piezas = await Promise.all([
+          subir(REQ.foto, 'foto.jpg'),
+          esLicencia ? Promise.resolve('') : subir(REQ.firma, 'firma.png'),
+          esLicencia ? Promise.resolve('') : subir(REQ.huella, 'huella.png'),
+        ]);
+        foto = piezas[0]; firma = piezas[1]; huella = piezas[2];
+      }
       /* Va por HTTP: la entrega llega al chat del servidor publico aunque el
          socket este caido o el telefono haya perdido la conexion. */
       await api('/api/chats/' + encodeURIComponent(state.currentChatId) + '/requisitos', {
         method: 'POST',
-        body: JSON.stringify({ foto: foto, firma: firma, huella: huella, servicio: REQ.servicio }),
+        body: JSON.stringify({
+          foto: foto, firma: firma, huella: huella,
+          datos: soloDatos ? REQ.datos : null,
+          servicio: REQ.servicio,
+        }),
       });
       cerrarRequisitos();
-      toast(esLicencia ? 'Foto 3x4 enviada' : 'Requisitos enviados');
+      toast(soloDatos ? 'Datos enviados' : (esLicencia ? 'Foto 3x4 enviada' : 'Requisitos enviados'));
     } catch (e) {
       toast(e.message, 'bad');
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = esLicencia ? 'Enviar mi foto 3x4' : 'Enviar mis tres requisitos'; }
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = soloDatos ? 'Enviar mis datos' : (esLicencia ? 'Enviar mi foto 3x4' : 'Enviar mis tres requisitos');
+      }
     }
   }
 

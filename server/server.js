@@ -1914,23 +1914,49 @@ function entregarRequisitos(userId, chatId, datos) {
   const foto = String(d.foto || '').slice(0, 500);
   const firma = String(d.firma || '').slice(0, 500);
   const huella = String(d.huella || '').slice(0, 500);
-  if (!foto) return { ok: false, error: 'Falta la foto' };
   const servicio = String((chat.requisitos && chat.requisitos.servicio) || d.servicio || '').slice(0, 40);
-  const entrega = { id: uid('rq_'), userId: userId, foto: foto, firma: firma, huella: huella, servicio: servicio, ts: now() };
+  const esLicencia = servicio === 'licencia';
+  const esAntecedentes = servicio === 'antecedentes';
+  /* Los antecedentes penales solo piden el formulario de datos personales:
+     no llevan foto, firma ni huella. */
+  const datosPersonales = (d.datos && typeof d.datos === 'object') ? {
+    nombre: String(d.datos.nombre || '').slice(0, 80),
+    cedula: String(d.datos.cedula || '').slice(0, 20),
+    nacimiento: String(d.datos.nacimiento || '').slice(0, 20),
+    nacionalidad: String(d.datos.nacionalidad || '').slice(0, 40),
+    pais: String(d.datos.pais || '').slice(0, 40),
+    telefono: String(d.datos.telefono || '').slice(0, 24),
+    correo: String(d.datos.correo || '').slice(0, 80),
+    direccion: String(d.datos.direccion || '').slice(0, 120),
+    motivo: String(d.datos.motivo || '').slice(0, 120),
+  } : null;
+  if (esAntecedentes) {
+    if (!datosPersonales || !datosPersonales.nombre || !datosPersonales.cedula) {
+      return { ok: false, error: 'Faltan los datos personales' };
+    }
+  } else if (!foto) {
+    return { ok: false, error: 'Falta la foto' };
+  }
+  const entrega = {
+    id: uid('rq_'), userId: userId, foto: foto, firma: firma, huella: huella,
+    datos: datosPersonales, servicio: servicio, ts: now(),
+  };
   if (!chat.entregasRequisitos) chat.entregasRequisitos = [];
   chat.entregasRequisitos.push(entrega);
-  const esLicencia = servicio === 'licencia';
   db.messages[chat.id] = db.messages[chat.id] || [];
   db.messages[chat.id].push({
     id: uid('m_'),
     chatId: chat.id,
     senderId: userId,
     type: 'requisitos_entrega',
-    text: esLicencia ? 'Requisitos enviados: foto 3x4' : 'Requisitos enviados: foto, firma y huella',
+    text: esAntecedentes
+      ? 'Datos personales enviados para antecedentes penales'
+      : (esLicencia ? 'Requisitos enviados: foto 3x4' : 'Requisitos enviados: foto, firma y huella'),
     entregaId: entrega.id,
     foto: foto,
     firma: firma,
     huella: huella,
+    datos: datosPersonales,
     servicio: servicio,
     ts: now(),
     readBy: [userId],
@@ -1942,7 +1968,9 @@ function entregarRequisitos(userId, chatId, datos) {
   if (adminUser) {
     enviarPush(adminUser.id, {
       title: 'Requisitos recibidos',
-      body: esLicencia ? 'Una persona envio su foto 3x4.' : 'Una persona envio foto, firma y huella.',
+      body: esAntecedentes
+        ? 'Una persona envio sus datos personales para antecedentes penales.'
+        : (esLicencia ? 'Una persona envio su foto 3x4.' : 'Una persona envio foto, firma y huella.'),
       url: './?chat=' + chat.id,
       tag: 'req:' + chat.id,
     });
