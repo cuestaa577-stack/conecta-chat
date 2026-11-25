@@ -26,7 +26,7 @@ justo el síntoma de "se borraron las cuentas".
 ## 2. Comprobar que quedó bien
 
 ```bash
-curl https://TU-APP/  api/health
+curl https://TU-APP/api/health
 ```
 
 Debe responder `{"ok":true,...,"persistencia":"supabase"}`. Si dice
