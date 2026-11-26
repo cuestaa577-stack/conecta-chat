@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v5.9';
+  const APP_VERSION = 'v6.2';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -4317,7 +4317,10 @@ const App = (() => {
     const mw = mask.width, mh = mask.height;
     const datos = mask.getAsUint8Array();
 
-    /* La mascara viene chica (256x256): se arma como imagen y se escala. */
+    /* La mascara se arma como imagen y se escala a la foto.
+       OJO con los valores: en el modelo selfie_segmenter la categoria 0 es la
+       PERSONA y 255 es el FONDO. Si se lee al reves, el fondo blanco termina
+       tapando la cara y los hombros (era el error que tenia la app). */
     const mcan = document.createElement('canvas');
     mcan.width = mw; mcan.height = mh;
     const mctx = mcan.getContext('2d');
@@ -4325,7 +4328,7 @@ const App = (() => {
     let persona = 0;
     for (let p = 0; p < mw * mh; p++) {
       const i = p * 4;
-      const es = datos[p] === 1 || datos[p] === 255;
+      const es = datos[p] === 0;
       if (es) persona++;
       mimg.data[i] = 255; mimg.data[i + 1] = 255; mimg.data[i + 2] = 255;
       mimg.data[i + 3] = es ? 255 : 0;
@@ -4334,13 +4337,32 @@ const App = (() => {
     try { if (mask.close) mask.close(); } catch (e) {}
     if (!persona || persona > mw * mh * 0.95) return false;
 
-    /* Recorte: la foto original, con la silueta de la persona. */
+    /* Recorte: la foto original, con la silueta de la persona.
+       Primero se "come" 1 px del borde de la mascara (erosion): asi desaparece
+       la lineita del color del fondo que queda pegada al hombro o al pelo.
+       Despues se desenfoca para que el contorno no tenga dientes de sierra. */
+    const mEro = document.createElement('canvas');
+    mEro.width = mw; mEro.height = mh;
+    const ectx = mEro.getContext('2d');
+    ectx.drawImage(mcan, 0, 0);
+    ectx.globalCompositeOperation = 'destination-in';
+    const ero = Math.max(1, Math.round(mw / 520));
+    [[ero, 0], [-ero, 0], [0, ero], [0, -ero]].forEach(function (o) {
+      ectx.drawImage(mcan, o[0], o[1]);
+    });
+
+    const msuave = document.createElement('canvas');
+    msuave.width = mw; msuave.height = mh;
+    const msctx = msuave.getContext('2d');
+    try { msctx.filter = 'blur(' + Math.max(1, Math.round(mw / 420)) + 'px)'; } catch (e) {}
+    msctx.drawImage(mEro, 0, 0);
+
     const recorte = document.createElement('canvas');
     recorte.width = w; recorte.height = h;
     const rctx = recorte.getContext('2d');
     rctx.drawImage(canvas, 0, 0);
     rctx.globalCompositeOperation = 'destination-in';
-    rctx.drawImage(mcan, 0, 0, mw, mh, 0, 0, w, h);
+    rctx.drawImage(msuave, 0, 0, mw, mh, 0, 0, w, h);
 
     /* Fondo blanco solido y la persona encima. */
     const salida = document.createElement('canvas');
@@ -4594,204 +4616,84 @@ const App = (() => {
   }
 
   /* ---------------- 3. Huella del pulgar derecho ---------------- */
-  function reqPrepararHuella() {
-    const c = document.getElementById('reqHuella');
-    if (!c) return;
-    if (!c.dataset.listo) {
-      const zona = document.getElementById('reqHuellaZona');
-      /* Si la zona aun no tiene ancho (pane recien mostrado), se usa 250 px:
-         con 0 el canvas quedaba de 0x0 y no se veia NADA al apoyar el dedo. */
-      const medido = zona ? zona.clientWidth : 0;
-      const lado = Math.max(180, Math.min(medido || 250, 250));
-      c.width = Math.round(lado * 2);
-      c.height = Math.round(lado * 2);
-      c.style.width = lado + 'px';
-      c.style.height = lado + 'px';
-      reqBindHuella(c);
-      c.dataset.listo = '1';
-    }
+  /* La huella la dibuja public/huella.js sobre el MOLDE real del pulgar: un
+     campo de crestas dermatoglifico (presa con nucleo y delta) que es unico
+     para cada persona, porque sale de su cedula. La persona apoya el pulgar y
+     la huella se dibuja sola, de abajo hacia arriba, como un sensor que lee.
+
+     Limite honesto: un navegador no puede leer las crestas del sensor del
+     telefono; no existe API web para eso. Lo que se entrega es una huella
+     dibujada sobre el molde del dedo, estable y distinta por persona. */
+  function reqSemillaHuella() {
+    const ced = (state.flowDatos && state.flowDatos.cedula) || (state.me && state.me.cedula) || '';
+    const limpio = String(ced).replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+    return limpio ? 'pulgar-derecho|' + limpio : 'pulgar-derecho';
   }
 
-  /* La pantalla de un telefono no lee huellas: lo que se capta es el recorrido
-     REAL del pulgar derecho sobre el cristal, y con ese recorrido se dibuja la
-     huella en tinta negra. Cada persona produce una huella distinta porque
-     depende de como apoya y rueda su dedo. No se presenta como lectura
-     biometrica oficial. */
-  function reqBindHuella(c) {
-    if (c.dataset.bind) return;
-    c.dataset.bind = '1';
-    const ctx = c.getContext('2d');
+  function reqPrepararHuella() {
+    const c = document.getElementById('reqHuella');
+    if (!c || !window.HuellaSensor) return;
+    if (REQ.huellaSensor) {
+      /* Si ya se conoce la cedula, la huella se ajusta a esa persona. */
+      REQ.huellaSensor.setSemilla(reqSemillaHuella());
+      return;
+    }
+
     const zona = document.getElementById('reqHuellaZona');
     const nota = document.getElementById('reqHuellaNota');
     const prog = document.getElementById('reqHuellaProg');
-    let puntos = [];
-    let inicio = 0;
-    let activo = false;
-    let recorrido = 0;
-
-    const pos = (e) => {
-      const r = c.getBoundingClientRect();
-      const p = e.touches ? e.touches[0] : e;
-      return { x: (p.clientX - r.left) * (c.width / r.width), y: (p.clientY - r.top) * (c.height / r.height) };
-    };
-
-    /* Dibuja una huella legible: crestas concentricas (como una impresion
-       entintada) cuyo centro y orientacion salen del recorrido REAL del dedo.
-       Antes se encogia el trazo capa por capa y, al ser un garabato, salian
-       lineas cruzadas que no parecian una huella. */
-    const pintar = () => {
-      ctx.clearRect(0, 0, c.width, c.height);
-      const cx = c.width / 2, cy = c.height / 2;
-      const radio = c.width * 0.42;
-
-      /* Centro real del trazo (si hay pocos puntos, el centro del circulo). */
-      let mx = cx, my = cy, giro = 0;
-      if (puntos.length >= 2) {
-        let sx = 0, sy = 0;
-        puntos.forEach((p) => { sx += p.x; sy += p.y; });
-        mx = sx / puntos.length;
-        my = sy / puntos.length;
-        /* Orientacion: del primer al ultimo punto del recorrido. */
-        const a = puntos[0], b = puntos[puntos.length - 1];
-        giro = Math.atan2(b.y - a.y, b.x - a.x) || 0;
-        /* Se limita el desplazamiento para que la huella no se salga. */
-        const dx = mx - cx, dy = my - cy;
-        const d = Math.hypot(dx, dy);
-        const tope = radio * 0.18;
-        if (d > tope) { mx = cx + (dx / d) * tope; my = cy + (dy / d) * tope; }
-      }
-
-      ctx.save();
-      ctx.strokeStyle = '#111111';
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.lineWidth = Math.max(1.4, c.width * 0.0075);
-
-      /* Crestas: anillos elipticos desde el nucleo hasta el borde. */
-      const anillos = 13;
-      for (let k = 0; k < anillos; k++) {
-        const t = (k + 1) / anillos;
-        const rx = radio * (0.10 + 0.86 * t);
-        const ry = rx * (0.86 + 0.10 * Math.sin(t * 3.1));
-        ctx.globalAlpha = 0.95 - t * 0.18;
-        ctx.beginPath();
-        /* Arco con huecos: se dibuja por tramos para que se lea como huella. */
-        const tramos = 7;
-        for (let s = 0; s < tramos; s++) {
-          const a0 = giro + (s / tramos) * Math.PI * 2 + k * 0.12;
-          const a1 = a0 + (Math.PI * 2 / tramos) * 0.72;
-          ctx.ellipse(mx, my, rx, ry, giro * 0.35, a0, a1);
-        }
-        ctx.stroke();
-      }
-
-      /* Nucleo del pulgar. */
-      ctx.globalAlpha = 0.95;
-      ctx.beginPath();
-      ctx.ellipse(mx, my, radio * 0.09, radio * 0.075, giro * 0.35, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-
-      const guia = document.getElementById('reqHuellaGuia');
-      if (guia) guia.style.opacity = '0';
-    };
-
-    /* Se exige un recorrido minimo y un tiempo minimo: una huella no vale con
-       un toque, hay que rodar el pulgar. */
-    const avance = () => {
-      const radio = c.width * 0.42;
-      const porTiempo = Math.min(1, (Date.now() - inicio) / 900);
-      const porTrazo = Math.min(1, recorrido / (radio * 0.55));
-      return Math.min(porTiempo, porTrazo) * 100;
-    };
-
-    const soltar = () => {
-      if (!activo) return;
-      activo = false;
-      clearInterval(REQ.huellaTimer);
-      REQ.huellaTimer = null;
-      if (REQ.huellaProg >= 100) {
-        REQ.huella = c.toDataURL('image/png');
-        if (zona) zona.classList.add('capturada');
-        if (nota) nota.textContent = 'Huella captada. Ya puedes enviar tus requisitos.';
-        const rep = document.getElementById('reqHuellaRepetir');
-        if (rep) rep.classList.remove('hidden');
-        reqActualizarResumen();
-      } else {
-        REQ.huellaProg = 0;
-        if (prog) prog.style.width = '0%';
-        if (nota) nota.textContent = 'Falta recorrido: apoya el pulgar y ruedalo despacio dentro del circulo.';
-      }
-    };
-
-    const apoyar = (e) => {
-      e.preventDefault();
-      if (activo) return;
-      if (REQ.huella) return;
-      activo = true;
-      puntos = [pos(e)];
-      recorrido = 0;
-      inicio = Date.now();
-      REQ.huellaProg = 0;
-      pintar();
-      if (nota) nota.textContent = 'Rueda el pulgar despacio, sin levantarlo...';
-      REQ.huellaTimer = setInterval(() => {
-        REQ.huellaProg = avance();
-        if (prog) prog.style.width = REQ.huellaProg + '%';
-        if (REQ.huellaProg >= 100) {
-          clearInterval(REQ.huellaTimer);
-          REQ.huellaTimer = null;
-          soltar();
-        }
-      }, 60);
-    };
-
-    const mover = (e) => {
-      if (!activo) return;
-      e.preventDefault();
-      const p = pos(e);
-      const ult = puntos[puntos.length - 1];
-      if (ult) recorrido += Math.hypot(p.x - ult.x, p.y - ult.y);
-      puntos.push(p);
-      if (puntos.length > 400) puntos.shift();
-      pintar();
-      /* Si el dedo se va del circulo, se reinicia: no vale una huella falsa. */
-      const r = c.getBoundingClientRect();
-      const dx = p.x - c.width / 2;
-      const dy = p.y - c.height / 2;
-      if (Math.hypot(dx, dy) > c.width * 0.5) {
-        REQ.huellaProg = 0;
-        if (prog) prog.style.width = '0%';
-        if (nota) nota.textContent = 'Se salio del circulo. Apoya otra vez el pulgar derecho.';
-        soltar();
-      }
-    };
-
-    c.addEventListener('touchstart', apoyar, { passive: false });
-    c.addEventListener('touchmove', mover, { passive: false });
-    c.addEventListener('touchend', soltar);
-    c.addEventListener('touchcancel', soltar);
-    c.addEventListener('mousedown', apoyar);
-    c.addEventListener('mousemove', mover);
-    window.addEventListener('mouseup', soltar);
-
-    /* Repetir: borra la huella captada para que la persona la haga de nuevo. */
+    const guia = document.getElementById('reqHuellaGuia');
     const rep = document.getElementById('reqHuellaRepetir');
+
+    REQ.huellaSensor = new window.HuellaSensor(c, {
+      semilla: reqSemillaHuella(),
+      duracion: 1600,
+      onCambio: (p) => {
+        REQ.huellaProg = p * 100;
+        if (prog) prog.style.width = REQ.huellaProg + '%';
+
+        if (p > 0 && p < 1) {
+          if (zona) zona.classList.add('leyendo');
+          if (guia) guia.style.opacity = '0';
+          if (nota) {
+            nota.textContent = REQ.huellaSensor.soportaVibracion()
+              ? 'Leyendo la huella... siente la vibracion y no levantes el pulgar.'
+              : 'Leyendo la huella... no levantes el pulgar.';
+          }
+        }
+
+        if (p >= 1) {
+          REQ.huella = REQ.huellaSensor.recorte();
+          if (zona) {
+            zona.classList.remove('leyendo');
+            zona.classList.add('capturada');
+          }
+          if (nota) {
+            const tipo = REQ.huellaSensor.tipo();
+            nota.textContent = 'Huella captada (' + tipo + '). Ya puedes enviar tus requisitos.';
+          }
+          if (rep) rep.classList.remove('hidden');
+          reqActualizarResumen();
+        }
+
+        if (p === 0) {
+          if (zona) zona.classList.remove('leyendo', 'capturada');
+          if (guia) guia.style.opacity = '1';
+          if (nota) {
+            nota.textContent = REQ.huellaSensor.soportaVibracion()
+              ? 'Apoya el pulgar derecho en el molde. El telefono vibrara mientras lee la huella.'
+              : 'Apoya el pulgar derecho en el molde y no lo levantes.';
+          }
+        }
+      }
+    });
+
     if (rep && !rep.dataset.bind) {
       rep.dataset.bind = '1';
       rep.addEventListener('click', () => {
         REQ.huella = '';
-        REQ.huellaProg = 0;
-        puntos = [];
-        recorrido = 0;
-        activo = false;
-        ctx.clearRect(0, 0, c.width, c.height);
-        if (zona) zona.classList.remove('capturada');
-        if (prog) prog.style.width = '0%';
-        if (nota) nota.textContent = 'Apoya el pulgar y ruedalo despacio dentro del circulo.';
-        const guia = document.getElementById('reqHuellaGuia');
-        if (guia) guia.style.opacity = '1';
-        rep.classList.add('hidden');
+        if (REQ.huellaSensor) REQ.huellaSensor.reiniciar();
+        if (rep) rep.classList.add('hidden');
         reqActualizarResumen();
       });
     }

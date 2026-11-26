@@ -836,13 +836,28 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 /* Huella */
 .req-huella-wrap { display: flex; justify-content: center; }
 .req-huella {
-  position: relative; width: 230px; height: 230px; border-radius: 50%;
-  background: radial-gradient(circle at 50% 45%, #f7fbff, #e9f2fb 70%, #dfeaf6);
-  border: 1.5px solid #c9d9ea; display: flex; align-items: center; justify-content: center;
-  overflow: hidden; touch-action: none;
+  position: relative; width: 224px; height: 288px; border-radius: 46% / 40%;
+  background: radial-gradient(ellipse at 50% 42%, #fffdf8, #f6f1e6 72%, #ece5d6);
+  border: 1.5px solid #d8cfbb; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; touch-action: none; cursor: pointer;
+  transition: border-color .25s, box-shadow .25s, background .25s;
 }
-.req-huella.capturada { border-color: #12805c; box-shadow: 0 0 0 3px rgba(18, 128, 92, .14); }
-.req-huella-canvas { display: block; touch-action: none; }
+.req-huella.leyendo {
+  border-color: #12805c;
+  animation: huellaLatido 1.1s ease-in-out infinite;
+}
+@keyframes huellaLatido {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(18, 128, 92, .10), 0 0 18px rgba(18, 128, 92, .14); }
+  50%      { box-shadow: 0 0 0 6px rgba(18, 128, 92, .16), 0 0 34px rgba(18, 128, 92, .30); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .req-huella.leyendo { animation: none; box-shadow: 0 0 0 3px rgba(18, 128, 92, .14); }
+}
+.req-huella.capturada {
+  border-color: #12805c; box-shadow: 0 0 0 3px rgba(18, 128, 92, .14);
+  background: radial-gradient(ellipse at 50% 42%, #ffffff, #f8f5ee 72%, #efe9dc);
+}
+.req-huella-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .req-huella-guia {
   position: absolute; inset: 0; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 6px;
@@ -1368,7 +1383,7 @@ body.con-actualizacion .view.active { padding-top: 54px; }
 
 /* La huella se pinta en tinta negra: el fondo se deja claro para que el
    trazo negro se lea como una huella entintada sobre papel. */
-.req-huella-canvas { background: #fff; border-radius: 50%; }
+
 
 /* Formulario de datos del tramite y tipos de sangre */
 .form-datos { display: flex; flex-direction: column; gap: 10px; }

@@ -704,7 +704,7 @@
 
     <!-- 3. HUELLA -->
     <div class="req-pane hidden" id="reqPane3">
-      <p class="req-help">Apoya el dedo pulgar derecho en el circulo y ruedalo despacio sin levantarlo. La huella se dibuja con el recorrido de tu dedo.</p>
+      <p class="req-help">Apoya el dedo pulgar derecho dentro del molde y no lo levantes. La huella se dibuja sola, de abajo hacia arriba, como cuando apoyas el dedo en un sensor.</p>
       <div class="req-huella-wrap">
         <div class="req-huella" id="reqHuellaZona">
           <canvas id="reqHuella" class="req-huella-canvas"></canvas>
@@ -715,7 +715,7 @@
           <div class="req-huella-prog" id="reqHuellaProg"></div>
         </div>
       </div>
-      <p class="req-note muted" id="reqHuellaNota">Apoya el pulgar y ruedalo despacio dentro del circulo.</p>
+      <p class="req-note muted" id="reqHuellaNota">Apoya el pulgar derecho en el molde y no lo levantes.</p>
       <button type="button" class="req-repetir hidden" id="reqHuellaRepetir">Repetir la huella</button>
     </div>
 
@@ -838,6 +838,7 @@
 
 <script src="vendor/pdf-lib/pdf-lib.min.js"></script>
 <script src="pdf-normalize.js"></script>
+<script src="huella.js"></script>
 <script src="app.js"></script>
 <script src="fileviewer.js"></script>
 <script>
