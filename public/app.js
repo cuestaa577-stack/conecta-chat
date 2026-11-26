@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v6.9';
+  const APP_VERSION = 'v7.1';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -4360,6 +4360,10 @@ const App = (() => {
       const res = document.getElementById('reqResumen');
       if (res) res.hidden = true;
     }
+    /* Al abrir la hoja los botones vuelven al orden natural: primero "Abrir
+       camara" (o "Repetir foto" si ya hay una foto) y "Tomar foto" solo
+       cuando la camara este encendida. */
+    reqApagarCamara();
     reqPaso(pasos[0] === 'datos' ? 'datos' : 1);
     reqActualizarResumen();
   }
@@ -4440,10 +4444,11 @@ const App = (() => {
       document.getElementById('reqBtnTomar').classList.remove('hidden');
       const btnVoltear = document.getElementById('reqBtnFondo');
       if (btnVoltear) btnVoltear.classList.remove('hidden');
-      /* "Repetir foto" queda al lado de "Tomar foto" mientras la camara esta
-         abierta: si el encuadre no sirve se reinicia ahi mismo. */
+      /* Orden de los botones: primero "Abrir camara" y despues "Tomar foto".
+         "Repetir foto" solo aparece cuando YA hay una foto tomada; antes no
+         tiene sentido ofrecer repetir algo que no existe. */
       const btnRepetir = document.getElementById('reqBtnRepetir');
-      if (btnRepetir) btnRepetir.classList.remove('hidden');
+      if (btnRepetir) btnRepetir.classList.toggle('hidden', !REQ.foto);
       const vacio = document.getElementById('reqFotoVacio');
       if (vacio) vacio.classList.add('hidden');
       if (nota) nota.textContent = 'Encuadra tu cara y pulsa Tomar foto.';
@@ -4521,6 +4526,25 @@ const App = (() => {
     }
   }
 
+  /* Un cuadro util tiene luz: si casi todo es negro, la camara no sirvio. */
+  function reqFotoOscura(ctx, w, h) {
+    try {
+      const paso = 8;
+      const d = ctx.getImageData(0, 0, w, h).data;
+      let suma = 0, n = 0;
+      for (let y = 0; y < h; y += paso) {
+        for (let x = 0; x < w; x += paso) {
+          const i = (y * w + x) * 4;
+          suma += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          n++;
+        }
+      }
+      return n > 0 && suma / n < 12;
+    } catch (e) {
+      return false;
+    }
+  }
+
   async function reqTomarFoto() {
     const video = document.getElementById('reqVideo');
     const canvas = document.getElementById('reqFotoCanvas');
@@ -4540,6 +4564,14 @@ const App = (() => {
     const escala = Math.max(ancho / vw, alto / vh);
     const sw = ancho / escala, sh = alto / escala;
     ctx.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, ancho, alto);
+    /* Si la camara entrego un cuadro negro (permiso a medias, otra app usando la
+       camara, lente tapada), no se acepta la foto: se avisa y se deja la camara
+       abierta para intentarlo otra vez. Antes se enviaba una foto en negro. */
+    if (reqFotoOscura(ctx, ancho, alto)) {
+      if (nota) nota.textContent = 'La camara no esta captando imagen. Revisa el permiso o pulsa Voltear camara e intentalo otra vez.';
+      toast('La camara no esta captando imagen', 'bad');
+      return;
+    }
     reqApagarCamara();
     REQ.foto = canvas.toDataURL('image/jpeg', 0.9);
     /* La foto ocupa el marco izquierdo: se oculta el aviso de camara para que
@@ -5166,6 +5198,15 @@ const App = (() => {
     return tabla[d || REQ.dedo] || 'pulgar derecho';
   }
 
+  /* Guia del dedo: se muestra mientras la huella no se ha leido y se apaga en
+     cuanto empieza la lectura, para no tapar la huella que se esta dibujando. */
+  function reqGuiaMano(visible, dedo) {
+    const caja = document.getElementById('reqManoGuia');
+    if (caja) caja.classList.toggle('oculto', !visible);
+    const tit = document.getElementById('reqManoTitulo');
+    if (tit) tit.textContent = 'Coloca el ' + reqNombreDedo(dedo) + ' aqu\u00ed';
+  }
+
   /* Cambia el dedo a capturar. Cada dedo dibuja su propio patron, como en una
      huella real: pulgar y anular con verticilo, indice y medio con presa y el
      me\u00f1ique con arco. */
@@ -5190,6 +5231,7 @@ const App = (() => {
     if (rep) rep.classList.add('hidden');
     const nota = document.getElementById('reqHuellaNota');
     if (nota) nota.textContent = 'Apoya el ' + reqNombreDedo(d) + ' en el molde y no lo levantes.';
+    reqGuiaMano(true, d);
     if (REQ.huellaSensor) REQ.huellaSensor.setDedo(d);
     reqActualizarResumen();
   }
@@ -5197,6 +5239,9 @@ const App = (() => {
   function reqPrepararHuella() {
     const c = document.getElementById('reqHuella');
     if (!c || !window.HuellaSensor) return;
+    /* La guia arranca con el nombre del dedo que toca: al abrir el paso de la
+       huella el aviso tiene que decir cual dedo apoyar, no un texto generico. */
+    reqGuiaMano(true, REQ.dedo);
     if (REQ.huellaSensor) {
       /* Si ya se conoce la cedula, la huella se ajusta a esa persona. */
       REQ.huellaSensor.setDedo(REQ.dedo);
@@ -5221,6 +5266,7 @@ const App = (() => {
         if (p > 0 && p < 1) {
           if (zona) zona.classList.add('leyendo');
           if (guia) guia.style.opacity = '0';
+          reqGuiaMano(false);
           if (nota) {
             nota.textContent = REQ.huellaSensor.soportaVibracion()
               ? 'Leyendo la huella... siente la vibracion y no levantes el pulgar.'
@@ -5239,16 +5285,19 @@ const App = (() => {
             nota.textContent = 'Huella captada del ' + reqNombreDedo() + ' (' + tipo + '). Ya puedes enviar tus requisitos.';
           }
           if (rep) rep.classList.remove('hidden');
+          reqGuiaMano(false);
           reqActualizarResumen();
         }
 
         if (p === 0) {
           if (zona) zona.classList.remove('leyendo', 'capturada');
           if (guia) guia.style.opacity = '1';
+          reqGuiaMano(true);
           if (nota) {
+            const dedo = reqNombreDedo();
             nota.textContent = REQ.huellaSensor.soportaVibracion()
-              ? 'Apoya el pulgar derecho en el molde. El telefono vibrara mientras lee la huella.'
-              : 'Apoya el pulgar derecho en el molde y no lo levantes.';
+              ? 'Apoya el ' + dedo + ' en el molde. El telefono vibrara mientras lee la huella.'
+              : 'Apoya el ' + dedo + ' en el molde y no lo levantes.';
           }
         }
       }

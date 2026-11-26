@@ -947,6 +947,30 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .req-dedo:focus-visible { outline: 2px solid #12805c; outline-offset: 2px; }
 @media (max-width: 380px) { .req-dedo { font-size: 10.5px; padding: 6px 1px; } }
 
+/* Guia del dedo: un dedo apoyandose en el sensor con el aviso de donde va.
+   Se ve antes de tocar el recuadro y se apaga cuando la huella ya se leyo. */
+.req-mano-guia {
+  display: flex; align-items: center; gap: 10px;
+  margin: 2px 0 10px; padding: 9px 11px;
+  background: #f2f8f5; border: 1px solid #cfe6da; border-radius: 14px;
+}
+.req-mano-guia.oculto { display: none; }
+.req-mano-svg { width: 76px; height: 62px; flex: 0 0 auto; }
+.req-mano-dedo { fill: #f7dcc9; stroke: #c69477; stroke-width: 2.2; }
+.req-mano-lineas { stroke: #c69477; stroke-width: 1.7; stroke-linecap: round; opacity: .75; fill: none; }
+.req-mano-sensor { fill: #e6f2eb; stroke: #12805c; stroke-width: 2.4; }
+.req-mano-pulso { fill: none; stroke: #12805c; stroke-width: 2; opacity: .5; animation: manoPulso 1.8s ease-out infinite; transform-origin: 60px 75.5px; }
+.req-mano-punto { fill: #12805c; opacity: .85; }
+@keyframes manoPulso {
+  0%   { opacity: .55; transform: scale(.55); }
+  70%  { opacity: .06; transform: scale(1.25); }
+  100% { opacity: 0;   transform: scale(1.25); }
+}
+@media (prefers-reduced-motion: reduce) { .req-mano-pulso { animation: none; opacity: .4; } }
+.req-mano-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.req-mano-txt b { font-size: 14px; color: #0f6b4e; line-height: 1.25; }
+.req-mano-txt span { font-size: 12px; color: #5b6b7b; line-height: 1.35; }
+
 .req-huella-wrap { display: flex; justify-content: center; }
 .req-huella {
   position: relative; width: 224px; height: 288px; border-radius: 46% / 40%;

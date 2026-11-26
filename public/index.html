@@ -702,14 +702,14 @@
       </div>
       <canvas id="reqFotoCanvas" class="req-foto-canvas hidden"></canvas>
       <div class="req-row">
-        <button class="btn primary" id="reqBtnCamara" onclick="App.reqEncenderCamara()">Abrir camara</button>
+        <button class="btn primary" id="reqBtnCamara" onclick="App.reqEncenderCamara()">Abrir cámara</button>
         <button class="btn ghost hidden" id="reqBtnTomar" onclick="App.reqTomarFoto()">Tomar foto</button>
         <!-- Va entre "Tomar foto" y "Voltear camara": si la foto sale mal se
              repite ahi mismo, sin cerrar la hoja ni volver a empezar. -->
         <button class="btn ghost hidden" id="reqBtnRepetir" onclick="App.reqRepetirFoto()">Repetir foto</button>
         <button class="btn ghost hidden" id="reqBtnFondo" onclick="App.reqVoltearCamara()">Voltear cámara</button>
       </div>
-      <p class="req-note muted" id="reqFotoNota">Primero abre la camara y autoriza el permiso.</p>
+      <p class="req-note muted" id="reqFotoNota">Primero pulsa Abrir cámara y autoriza el permiso; después pulsa Tomar foto.</p>
     </div>
 
     <!-- 2. FIRMA -->
@@ -733,6 +733,21 @@
         <button type="button" class="req-dedo" data-dedo="medio" aria-pressed="false" onclick="App.reqElegirDedo('medio')">Medio</button>
         <button type="button" class="req-dedo" data-dedo="anular" aria-pressed="false" onclick="App.reqElegirDedo('anular')">Anular</button>
         <button type="button" class="req-dedo" data-dedo="menique" aria-pressed="false" onclick="App.reqElegirDedo('menique')">Meñique</button>
+      </div>
+      <!-- Guia visual: un dedo apoyandose en el sensor, con el aviso de donde
+           va el dedo. Mucha gente no entendia que habia que tocar el recuadro. -->
+      <div class="req-mano-guia" id="reqManoGuia">
+        <svg class="req-mano-svg" viewBox="0 0 120 98" aria-hidden="true">
+          <path class="req-mano-dedo" d="M60 5c-8.4 0-13.6 5.7-13.6 13.4v35.2c0 6.3 4.3 10.4 13.6 10.4s13.6-4.1 13.6-10.4V18.4C73.6 10.7 68.4 5 60 5z"/>
+          <path class="req-mano-lineas" d="M52.6 26.5h14.8M52.6 34.6h14.8M52.6 42.7h14.8"/>
+          <rect class="req-mano-sensor" x="29" y="61" width="62" height="29" rx="9"/>
+          <circle class="req-mano-pulso" cx="60" cy="75.5" r="9"/>
+          <circle class="req-mano-punto" cx="60" cy="75.5" r="3.4"/>
+        </svg>
+        <div class="req-mano-txt">
+          <b id="reqManoTitulo">Coloca el pulgar derecho aquí</b>
+          <span>Apoya la yema dentro del recuadro y no la levantes hasta que termine.</span>
+        </div>
       </div>
       <div class="req-huella-wrap">
         <div class="req-huella" id="reqHuellaZona">
