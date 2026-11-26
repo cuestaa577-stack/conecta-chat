@@ -218,34 +218,25 @@
   /* La huella entintada no son lineas lisas: son cadenas de puntos con
      micro-huecos. Se recorre el trazo y se van poniendo gotitas. */
   function pintarCresta(ctx, tramo, grosor, rand, dens) {
-    var sep = 1.15;
-    var acc = 0;
-    var prev = tramo[0];
-    for (var i = 1; i < tramo.length; i++) {
-      var p = tramo[i];
-      var dx = p.x - prev.x, dy = p.y - prev.y;
-      var d = Math.hypot(dx, dy);
-      if (d < 0.0001) continue;
-      var ux = dx / d, uy = dy / d;
-
-      while (acc + (d - acc) >= sep || acc === 0) {
-        var k = acc;
-        if (k > d) break;
-        var x = prev.x + ux * k;
-        var y = prev.y + uy * k;
-        var dLocal = dens(x, y);
-        /* Micro-hueco: la tinta no cubre el 100% de la cresta. */
-        if (rand() > 0.055) {
-          var r = grosor * 0.5 * (0.82 + rand() * 0.42);
-          ctx.globalAlpha = Math.max(0.06, Math.min(1, dLocal * (0.55 + rand() * 0.5)));
-          ctx.beginPath();
-          ctx.arc(x, y, r, 0, 6.2832);
-          ctx.fill();
-        }
-        acc += sep;
-      }
-      acc -= d;
-      prev = p;
+    if (!tramo || tramo.length < 2) return;
+    /* Cresta CONTINUA: se dibuja como trazo, no como cadena de gotas. Antes
+       cada punto era un circulo con alfa variable y la huella salia esponjosa
+       y borrosa; asi las crestas quedan nitidas y legibles. */
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#100e0d';
+    ctx.lineWidth = Math.max(1.1, grosor);
+    var i = 0;
+    while (i < tramo.length - 1) {
+      var fin = Math.min(tramo.length - 1, i + 12);
+      /* Micro-variacion de presion por tramo corto: la tinta no es uniforme,
+         pero nunca baja tanto como para romper la cresta. */
+      ctx.globalAlpha = 0.9 + rand() * 0.1;
+      ctx.beginPath();
+      ctx.moveTo(tramo[i].x, tramo[i].y);
+      for (var k = i + 1; k <= fin; k++) ctx.lineTo(tramo[k].x, tramo[k].y);
+      ctx.stroke();
+      i = fin;
     }
   }
 
@@ -431,18 +422,19 @@
         var borde = dist / anchoBorde;
         borde = Math.max(0, Math.min(1, borde));
         borde = Math.pow(borde, 0.55);
-        var bordeNoise = 0.30 + 1.15 * fbm(xx / 22, yy / 22, s + 7, 2);
+        var bordeNoise = 0.55 + 0.85 * fbm(xx / 22, yy / 22, s + 7, 2);
         borde *= Math.min(1, bordeNoise);
 
-        /* Manchas: zonas donde el dedo no marco bien. */
+        /* Manchas: zonas donde el dedo no marco bien. Suaves, para que la
+           huella se lea entera y no quede despareja como una mancha. */
         var mancha = fbm(xx / 95, yy / 95, s + 3, 3);
-        var factor = 0.66 + 0.72 * mancha;
-        if (mancha < 0.24) factor *= 0.25 + mancha;
+        var factor = 0.9 + 0.16 * mancha;
+        if (mancha < 0.2) factor *= 0.7 + mancha;
 
         var alfa = a * borde * factor;
-        /* Grano: puntos sueltos de tinta y huecos finos. */
-        var g = 0.86 + rand() * 0.38;
-        if (rand() < 0.04) alfa *= 0.2;
+        /* Grano fino: apenas un poco de irregularidad, sin romper la cresta. */
+        var g = 0.95 + rand() * 0.09;
+        if (rand() < 0.012) alfa *= 0.55;
         alfa = Math.max(0, Math.min(255, alfa * g));
 
         d[i + 3] = alfa;

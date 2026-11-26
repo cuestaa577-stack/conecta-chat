@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v6.4';
+  const APP_VERSION = 'v6.6';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -12,10 +12,10 @@ const App = (() => {
   const MAX_DOC_TEXTO = '25 MB';
 
   /* ------------------------- tarifas por tramite -------------------------
-     El valor es el mismo en todos los paises; la etiqueta lleva el pais donde
-     se registro la persona. Cedula: renovacion 28.000, extravio 25.000,
-     deterioro 24.000, hurto 23.000. Licencia: grado 2 35.000, grado 3 45.000,
-     grado 4 50.000, grado 5 55.000. */
+     Los precios son los MISMOS en todos los paises; lo unico que cambia es la
+     moneda con la que se muestran, segun el pais donde se registro la persona.
+     Cedula: renovacion 28.000, extravio 25.000, deterioro 24.000, hurto 23.000.
+     Licencia: grado 2 35.000, grado 3 45.000, grado 4 50.000, grado 5 55.000. */
   const TARIFAS_CEDULA = { renovacion: 28000, extravio: 25000, deterioro: 24000, hurto: 23000 };
   const TARIFAS_LICENCIA = { '2': 35000, '3': 45000, '4': 50000, '5': 55000 };
 
@@ -24,6 +24,17 @@ const App = (() => {
      un precio: se ofrece "Consultar precio" por el chat del gestor de trámites. */
   const TARIFAS_CEDULA_COLOMBIA = { renovacion: 35000, extravio: 32000, deterioro: 29000, hurto: 26000 };
   const PAISES_CON_TARIFA = ['Venezuela', 'Chile', 'Ecuador', 'Colombia'];
+
+  /* Simbolo de la moneda del pais donde se registro la persona. */
+  const MONEDA = {
+    Venezuela: 'Bs', Colombia: 'COP', Chile: 'CLP', Ecuador: 'USD',
+    Peru: 'S/', Argentina: 'AR$', Otro: '',
+  };
+
+  function monedaDe(country) {
+    const p = String(country === undefined ? (state.me && state.me.country) : country || '').trim();
+    return MONEDA[p] || '';
+  }
 
   function paisConTarifa(country) {
     const p = String(country === undefined ? (state.me && state.me.country) : country || '').trim();
@@ -48,8 +59,8 @@ const App = (() => {
 
   function precioEtiqueta(monto, country) {
     if (!monto) return '';
-    const pais = String(country || '').trim();
-    return numeroConPuntos(monto) + (pais ? ' ' + pais : '');
+    const m = monedaDe(country);
+    return (m ? m + ' ' : '') + numeroConPuntos(monto);
   }
 
   function precioDelTramite(service, subtype, grade) {
@@ -852,9 +863,7 @@ const App = (() => {
     if (!el) return;
     const nombre = String((state.me && state.me.name) || '').trim();
     if (!nombre) { el.style.display = 'none'; return; }
-    /* La cuenta del gestor no lleva nombre de persona: se saluda sin nombre
-       para no leer "Buenos dias, Gestor de tramites". */
-    const esCuentaGestor = !!(state.me && state.me.role === 'admin');
+    /* Siempre saludo + el primer nombre de la persona: "Buenos dias, Carlos". */
     /* Franjas del dia (hora local del telefono):
        00:00 a 11:59 buenos dias | 12:00 a 18:59 buenas tardes | 19:00 a 23:59 buenas noches.
        La madrugada cuenta como dia nuevo: a la 1:00 AM ya dice "Buenos dias". */
@@ -862,7 +871,7 @@ const App = (() => {
     let saludo = 'Buenas noches';
     if (hora < 12) saludo = 'Buenos días';
     else if (hora < 19) saludo = 'Buenas tardes';
-    el.textContent = esCuentaGestor ? saludo : saludo + ', ' + nombre.split(/\s+/)[0];
+    el.textContent = saludo + ', ' + nombre.split(/\s+/)[0];
     el.style.display = 'block';
   }
   let saludoTimer = null;
@@ -871,16 +880,6 @@ const App = (() => {
      tarifa real del pais de la persona, asi el numero que ve es el que va a
      pagar. Antecedentes penales no tiene tarifa fija: se consulta por el chat. */
   const TIEMPO_ENTREGA = '1 a 2 horas hábiles';
-
-  /* Moneda de cada pais, para que el precio de la portada se lea claro. */
-  const MONEDA = {
-    Venezuela: 'Bs', Colombia: 'COP', Chile: 'CLP', Ecuador: 'USD',
-    Peru: 'S/', Argentina: 'AR$', Otro: '',
-  };
-
-  function monedaDe(pais) {
-    return MONEDA[String(pais || '').trim()] || '';
-  }
 
   /* Aviso de precio y entrega que se ve al entrar al tramite (no en la
      portada). Para cedula y licencia se muestra el valor mas bajo del servicio
@@ -4251,17 +4250,21 @@ const App = (() => {
     });
     const pd = document.getElementById('reqPaneDatos');
     if (pd) pd.classList.toggle('hidden', !soloDatos || REQ.paso !== 'datos');
-    reqAjustarMarcoFoto(soloFoto);
+    reqAjustarMarcoFoto();
     if (REQ.paso === 2) reqPrepararFirma();
     if (REQ.paso === 3) reqPrepararHuella();
     if (REQ.paso === 'datos') reqBindDatos();
   }
 
   /* 3x4 para la licencia; cuadrado para el resto de tramites. */
-  function reqAjustarMarcoFoto(tresPorCuatro) {
-    const w = document.querySelector('.req-foto-wrap');
-    if (!w) return;
-    w.classList.toggle('foto-3x4', !!tresPorCuatro);
+  function reqAjustarMarcoFoto() {
+    /* La licencia pide 3x4 y los demas tramites cuadrado: se decide por el
+       servicio elegido, no por el paso, para que nunca quede el marco mal. */
+    const tresPorCuatro = REQ.servicio === 'licencia';
+    /* Se aplica a LOS DOS marcos (el de la camara y el del fondo blanco): si
+       solo se aplicaba al primero, el segundo quedaba mas pequeno y torcido. */
+    const marcos = document.querySelectorAll('.req-foto-par .req-foto-wrap');
+    for (let i = 0; i < marcos.length; i++) marcos[i].classList.toggle('foto-3x4', !!tresPorCuatro);
     const nota = document.getElementById('reqFotoNota');
     if (nota && tresPorCuatro && !REQ.foto) {
       nota.textContent = 'Foto 3x4 de frente, con fondo blanco. Es lo unico que pide la licencia.';
@@ -4278,6 +4281,9 @@ const App = (() => {
       serv.hidden = !txt;
     }
     s.classList.remove('hidden');
+    /* El marco se ajusta al servicio (3x4 licencia / cuadrado el resto) en
+       cuanto se abre la hoja, sin esperar a que se cambie de paso. */
+    reqAjustarMarcoFoto();
     /* La marca de agua de la esquina cambia segun el tramite: SAIME para
        cedula y licencia, Justicia y Paz para antecedentes penales. */
     const marca = document.getElementById('reqMarcaImg');
@@ -4441,6 +4447,8 @@ const App = (() => {
       const t = vacia.querySelector('span');
       if (t) t.textContent = 'Fondo blanco';
     }
+    const orig = document.getElementById('reqFotoOriginal');
+    if (orig) { orig.hidden = true; orig.removeAttribute('src'); }
     const vacio = document.getElementById('reqFotoVacio');
     if (vacio) vacio.classList.remove('hidden');
     const txt = document.getElementById('reqFotoVacioTxt');
@@ -4485,11 +4493,13 @@ const App = (() => {
     const sw = ancho / escala, sh = alto / escala;
     ctx.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, ancho, alto);
     reqApagarCamara();
-    const txt = document.getElementById('reqFotoVacioTxt');
-    if (txt) txt.textContent = 'Foto tomada';
-    const vacio = document.getElementById('reqFotoVacio');
-    if (vacio) vacio.classList.remove('hidden');
     REQ.foto = canvas.toDataURL('image/jpeg', 0.9);
+    /* La foto ocupa el marco izquierdo: se oculta el aviso de camara para que
+       no quede el icono ni el texto encima de la cara. */
+    const orig = document.getElementById('reqFotoOriginal');
+    if (orig) { orig.src = REQ.foto; orig.hidden = false; }
+    const vacio = document.getElementById('reqFotoVacio');
+    if (vacio) vacio.classList.add('hidden');
     if (nota) nota.textContent = 'Foto tomada. Dejando el fondo blanco...';
     /* El recuadro de la derecha se pone blanco de una vez, con el aviso,
        mientras se calcula el recorte. */

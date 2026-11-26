@@ -327,16 +327,16 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 
 /* Franja de confianza bajo el hero */
 .trust-row {
-  display: flex; flex-wrap: nowrap; justify-content: center; gap: 5px;
-  margin-top: 11px;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 4px;
+  margin: 11px auto 0; max-width: 100%; width: 100%;
 }
 .trust {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-size: 10px; font-weight: 600; color: #eaf1ff; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 3px; min-width: 0;
+  font-size: 9.5px; font-weight: 600; color: #eaf1ff; white-space: nowrap;
   background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .28);
-  padding: 4px 7px; border-radius: 999px;
+  padding: 3px 6px; border-radius: 999px;
 }
-.trust svg { width: 12px; height: 12px; flex-shrink: 0; stroke: currentColor; fill: none; stroke-width: 1.9; }
+.trust svg { width: 10px; height: 10px; flex-shrink: 0; stroke: currentColor; fill: none; stroke-width: 1.9; }
 .inst-sub { font-size: 11.5px; color: var(--muted); text-align: center; margin: -6px 0 13px; line-height: 1.4; }
 .chev { color: #98a2b3; display: flex; }
 .chev svg { width: 20px; height: 20px; }
@@ -896,8 +896,13 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 }
 .req-entrega-grid figcaption { font-size: 10.5px; text-align: center; opacity: .75; margin-top: 2px; }
 
-.req-foto-par { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.req-foto-par { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: start; }
 .req-foto-par .req-foto-wrap { max-height: 300px; }
+/* Los dos marcos del par tienen SIEMPRE el mismo tamano: antes el 3x4 solo se
+   aplicaba al primero y el segundo quedaba pequeno y descuadrado. */
+.req-foto-par .req-foto-wrap.foto-3x4 {
+  width: 100%; height: auto; aspect-ratio: 3 / 4; max-height: none;
+}
 .req-foto-resultado { background: #fff; }
 .req-foto-blanca { width: 100%; height: 100%; object-fit: cover; display: block; background: #fff; }
 .req-foto-blanca[hidden] { display: none; }
@@ -1456,7 +1461,7 @@ body.con-actualizacion .view.active { padding-top: 54px; }
   justify-content: center; overflow: hidden; pointer-events: none; z-index: 0;
 }
 .req-marca-agua img {
-  width: 78%; max-width: 300px; opacity: .07; filter: grayscale(1);
+  width: 100%; max-width: 430px; opacity: .13; filter: grayscale(1);
 }
 /* Todo el contenido del formulario queda por encima de la marca de agua. */
 #reqPaneDatos > *:not(.req-marca-agua) { position: relative; z-index: 1; }
