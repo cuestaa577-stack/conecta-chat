@@ -77,11 +77,23 @@ Desde el panel de administrador hay dos rutas para lo mismo:
 
 Todo se maneja con la **cédula venezolana**, con la V y al menos 8 dígitos (`V-12345678`). Se acepta escribirlos con o sin la V y sin puntos.
 
-**Crear cuenta.** La persona escribe nombre y apellido, cédula, fecha de nacimiento, correo, contraseña y el país donde vive. Al enviar el formulario la cuenta queda creada y la aplicación se abre sola. En ese momento se envía un **código de 6 dígitos** al correo para confirmar la cuenta.
+**Crear cuenta.** La persona escribe nombre y apellido, cédula, fecha de nacimiento, correo, contraseña y el país donde vive. Al enviar el formulario la cuenta queda creada y la aplicación se abre sola. Además se envía un **código de 6 dígitos** al correo, pero confirmarlo es **opcional**: si el correo no llega, la cuenta funciona igual y la app recuerda confirmarlo desde *Mi cuenta*.
 
-**Entrar.** Cédula y contraseña. Nada más.
+**Entrar.** Cédula y contraseña. Nada más. No depende del correo.
 
-**Olvidé mi contraseña.** Escribe su cédula, la aplicación manda un **código de 6 dígitos** al correo con el que se registró, y con ese código escribe la contraseña nueva. El código vence a los 10 minutos y admite 6 intentos.
+**Olvidé mi contraseña.** Dos caminos:
+
+1. **Código al correo.** Escribe su cédula, la aplicación manda un **código de 6 dígitos** al correo con el que se registró, y con ese código escribe la contraseña nueva. El código vence a los 10 minutos y admite 6 intentos.
+2. **Sin correo.** Si el envío de correo está cañdo (por ejemplo, Brevo pausó la cuenta por seguridad) o ya no tiene acceso a ese buzón, entra a *Olvidé mi contraseña* → *No me llega el correo* y recupera la cuenta con **cédula + fecha de nacimiento + contraseña nueva**. También se llega a esa pantalla automáticamente cuando el servidor no puede enviar el correo.
+
+### Correo obligatorio (opcional)
+
+Por defecto el correo **no** es obligatorio para entrar (`REQUIRE_EMAIL_VERIFY=off`). Así nadie queda bloqueado si el proveedor de correo se pausa. Para volver al comportamiento estricto de antes (código obligatorio antes de entrar), define en el servidor:
+
+| Variable | Valor | Efecto |
+| --- | --- | --- |
+| `REQUIRE_EMAIL_VERIFY` | `on` | Exige confirmar el correo con el código antes de entrar |
+| `REQUIRE_EMAIL_VERIFY` | `off` (por defecto) | Entra con cédula + contraseña; el correo se confirma cuando se pueda |
 
 Las cuentas antiguas creadas con teléfono o correo siguen entrando igual que antes, escribiendo su teléfono o correo en el campo de cédula.
 

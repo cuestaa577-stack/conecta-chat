@@ -28,7 +28,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="favicon-32.png?v=70" sizes="32x32" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png?v=70" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=73" />
   <style>
     /* Pantalla de inicio: texto en negro arriba y el icono debajo */
     .splash{position:fixed;inset:0;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:9999;transition:opacity .35s ease}
@@ -104,7 +104,7 @@
       <p class="geo-hint" id="geoHint"></p>
       <p class="geo-alert hidden" id="geoAlert"></p>
       <button class="btn primary" id="registerBtn" onclick="App.submitRegister()">Crear cuenta</button>
-      <p class="auth-note muted">Te enviamos un código de 6 dígitos al correo para confirmar tu cuenta.</p>
+      <p class="auth-note muted">Entras de inmediato con tu cédula y tu contraseña. El correo se confirma después, cuando quieras, desde Mi cuenta.</p>
     </div>
 
     <!-- Olvide la contrasena -->
@@ -112,6 +112,7 @@
       <p class="muted">Escribe tu cédula y te enviamos un código de 6 dígitos al correo con el que te registraste.</p>
       <label class="field"><span>Cédula de identidad</span><input id="forgotCedula" type="text" inputmode="numeric" autocomplete="off" placeholder="V-12345678" /></label>
       <button class="btn primary" onclick="App.sendForgot()">Enviar código</button>
+      <button class="linkbtn" type="button" onclick="App.authTab('recover')">No me llega el correo: recuperar con mi fecha de nacimiento</button>
       <button class="linkbtn" type="button" onclick="App.authTab('login')">Volver</button>
     </div>
 
@@ -127,6 +128,22 @@
       </label>
       <button class="btn primary" onclick="App.submitReset()">Cambiar contraseña</button>
       <button class="linkbtn" type="button" onclick="App.resendReset()">Reenviar código</button>
+      <button class="linkbtn" type="button" onclick="App.authTab('login')">Volver</button>
+    </div>
+
+    <!-- Recuperar la cuenta sin correo -->
+    <div id="recoverPanel" class="hidden">
+      <p class="muted" id="recoverHint">Recupera tu cuenta sin depender del correo: escribe tu cédula, tu fecha de nacimiento y una nueva contraseña.</p>
+      <label class="field"><span>Cédula de identidad</span><input id="recoverCedula" type="text" inputmode="numeric" autocomplete="off" placeholder="V-12345678" /></label>
+      <label class="field"><span>Fecha de nacimiento</span><input id="recoverBirth" type="date" autocomplete="bday" /></label>
+      <label class="field"><span>Nueva contraseña</span>
+        <div class="pass-wrap">
+          <input id="recoverPassword" type="password" autocomplete="new-password" minlength="8" placeholder="Mínimo 8 caracteres" />
+          <button type="button" class="pass-toggle" data-target="recoverPassword" aria-label="Mostrar contraseña" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.2 12S5.8 5.6 12 5.6 21.8 12 21.8 12 18.2 18.4 12 18.4 2.2 12 2.2 12z"/><circle cx="12" cy="12" r="3.1"/></svg><svg class="eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.2 3.2l17.6 17.6"/><path d="M10.6 6.2A9.9 9.9 0 0112 6.1c6.2 0 9.8 5.9 9.8 5.9a17.4 17.4 0 01-3.2 3.8"/><path d="M6.5 7.7A17.2 17.2 0 002.2 12s3.6 5.9 9.8 5.9a10 10 0 004-.8"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/></svg></button>
+        </div>
+      </label>
+      <button class="btn primary" onclick="App.submitRecover()">Cambiar contraseña y entrar</button>
+      <button class="linkbtn" type="button" onclick="App.authTab('forgot')">Volver al código por correo</button>
       <button class="linkbtn" type="button" onclick="App.authTab('login')">Volver</button>
     </div>
 
@@ -534,8 +551,10 @@
         <label class="field"><span>Fecha de nacimiento</span><input id="profileBirth" disabled /></label>
         <label class="field"><span>Telefono</span><input id="profilePhone" type="tel" inputmode="tel" placeholder="04141234567" /></label>
         <label class="field"><span>Correo</span><input id="profileEmail" type="email" placeholder="tucorreo@ejemplo.com" /></label>
+        <p class="muted" id="mailStatus" style="font-size:12.5px;margin:-4px 0 8px"></p>
         <label class="field"><span>Pais</span><input id="profileCountry" placeholder="Venezuela" /></label>
         <button class="btn primary" onclick="App.saveProfileChanges()">Guardar cambios</button>
+        <button class="btn ghost" id="confirmMailBtn" onclick="App.confirmarCorreo()">Confirmar mi correo</button>
         <button class="btn ghost" onclick="App.openEditData()">Editar datos personales</button>
         <button class="btn ghost" onclick="App.openTramites()">Mis trámites y documentos</button>
         <button class="btn ghost" onclick="App.openAdmin()" id="adminBtn" style="display:none">Panel del gestor de trámites</button>
@@ -888,7 +907,7 @@
 <script src="vendor/pdf-lib/pdf-lib.min.js"></script>
 <script src="pdf-normalize.js"></script>
 <script src="huella.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=73"></script>
 <script src="fileviewer.js"></script>
 <script>
   (function(){

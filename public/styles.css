@@ -1557,3 +1557,22 @@ body.con-actualizacion .view.active { padding-top: 54px; }
 
 /* Boton para poner el contador de visitas en cero desde el panel. */
 .panel-reset { width: 100%; margin-top: 10px; }
+
+/* Aviso descartable de correo pendiente: no bloquea la app, solo recuerda
+   confirmar el correo cuando el envio vuelva a funcionar. */
+.mail-banner {
+  position: fixed; left: 12px; right: 12px; bottom: 84px; z-index: 90;
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; border-radius: 14px;
+  background: #0b1b3a; color: #fff; font-size: 13.5px; line-height: 1.35;
+  box-shadow: 0 10px 30px rgba(6, 18, 45, .28);
+}
+.mail-banner span { flex: 1; }
+.mail-banner button {
+  flex: none; width: 26px; height: 26px; border: 0; border-radius: 50%;
+  background: rgba(255, 255, 255, .16); color: #fff; font-size: 17px; line-height: 1;
+  cursor: pointer;
+}
+@media (min-width: 760px) {
+  .mail-banner { left: auto; right: 20px; bottom: 88px; max-width: 420px; }
+}

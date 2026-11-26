@@ -64,6 +64,13 @@ function parseFrom() {
 
 let lastMailError = '';
 
+/* Verificacion del correo. El correo puede caerse (Brevo pausa cuentas por
+   seguridad), y entonces NADIE podria entrar. Por eso, por defecto, el codigo
+   de 6 digitos es OPCIONAL: la cuenta entra con cedula + contrasena y la app
+   le recuerda confirmar el correo. Para volver a exigirlo antes de entrar,
+   define REQUIRE_EMAIL_VERIFY=on en las variables del servidor. */
+const REQUIRE_EMAIL_VERIFY = String(process.env.REQUIRE_EMAIL_VERIFY || 'off').trim().toLowerCase() === 'on';
+
 /* Logo del SAIME en el correo.
    La persona debe recibir SOLO el correo, con el logo pintado dentro del
    mensaje y sin ningun archivo adjunto en la bandeja.
@@ -1470,6 +1477,24 @@ app.post('/api/register', async (req, res) => {
   if (password.length < 8) return res.status(400).json({ error: 'La contrasena debe tener al menos 8 caracteres' });
   const existing = Object.values(db.users).find((u) => u.cedula === cedula);
   if (existing) {
+    /* La cuenta ya existe. Si la contrasena coincide se entra de una (cuando el
+       correo no es obligatorio): asi nadie queda afuera por un correo pausado. */
+    if (!REQUIRE_EMAIL_VERIFY && existing.passHash === hashPassword(password, existing.salt)) {
+      let codeSent = false;
+      try {
+        const code = issueCode(existing, 'verify');
+        codeSent = await sendCodeEmail(existing.email || email, code, 'verify', publicBase(req));
+      } catch (e) { codeSent = false; }
+      existing.lastSeen = now();
+      save();
+      return res.json({
+        ok: true,
+        token: tokenFor(existing),
+        user: publicUser(existing),
+        emailPending: existing.emailVerified === false,
+        codeSent,
+      });
+    }
     // Si la cuenta existe pero NO ha confirmado el correo, reenviamos el código
     // y la llevamos a la pantalla de verificación (no se le da acceso todavía).
     if (existing.emailVerified === false) {
@@ -1500,11 +1525,28 @@ app.post('/api/register', async (req, res) => {
   db.users[user.id] = user;
   save();
 
-  const code = issueCode(user, 'verify');
-  const codeSent = await sendCodeEmail(email, code, 'verify', publicBase(req));
+  let codeSent = false;
+  try {
+    const code = issueCode(user, 'verify');
+    codeSent = await sendCodeEmail(email, code, 'verify', publicBase(req));
+  } catch (e) { codeSent = false; }
 
-  // IMPORTANTE: NO se entrega sesión aquí. La cuenta queda sin verificar y la
-  // persona debe escribir el código de 6 dígitos antes de entrar a la app.
+  /* Por defecto la cuenta entra de inmediato con cedula + contrasena. El correo
+     queda como confirmacion opcional (la app se lo recuerda). Si algun dia se
+     define REQUIRE_EMAIL_VERIFY=on, se vuelve al codigo obligatorio. */
+  if (!REQUIRE_EMAIL_VERIFY) {
+    user.lastSeen = now();
+    save();
+    return res.json({
+      ok: true,
+      token: tokenFor(user),
+      user: publicUser(user),
+      emailPending: true,
+      codeSent,
+    });
+  }
+
+  // Modo estricto: NO se entrega sesión. Hay que escribir el código de 6 dígitos.
   res.json({
     ok: true,
     needVerify: true,
@@ -1585,9 +1627,11 @@ app.post('/api/login', async (req, res) => {
     return res.status(401).json({ error: 'Cedula o contrasena incorrecta' });
   }
 
-  // Cuenta sin correo confirmado: no entra hasta validar el código de 6 dígitos.
+  // Cuenta sin correo confirmado: si el correo es obligatorio (REQUIRE_EMAIL_VERIFY=on)
+  // no entra hasta validar el código de 6 dígitos. Por defecto el correo es
+  // opcional, así que se entra igual y solo se avisa que falta confirmarlo.
   // (Las cuentas antiguas y el administrador no tienen el campo y pasan normal.)
-  if (user.emailVerified === false) {
+  if (REQUIRE_EMAIL_VERIFY && user.emailVerified === false) {
     let codeSent = false;
     try {
       const code = issueCode(user, 'verify');
@@ -1614,7 +1658,11 @@ app.post('/api/login', async (req, res) => {
 
   user.lastSeen = now();
   save();
-  res.json({ token: tokenFor(user), user: publicUser(user) });
+  res.json({
+    token: tokenFor(user),
+    user: publicUser(user),
+    emailPending: user.emailVerified === false,
+  });
 });
 
 /* Olvide mi contrasena: envia un codigo de 6 digitos al correo */
@@ -1624,13 +1672,67 @@ app.post('/api/forgot', async (req, res) => {
   if (!cedula) return res.status(400).json({ error: 'Cedula no valida. Escribe por ejemplo V-12345678' });
   const user = Object.values(db.users).find((u) => u.cedula === cedula);
   if (!user) return res.status(404).json({ error: 'Esa cedula no esta registrada. Crea una cuenta' });
-  if (!user.email) return res.status(400).json({ error: 'Esa cuenta no tiene correo. Escribe al gestor de trámites' });
+  if (!user.email) {
+    return res.json({
+      ok: true,
+      codeSent: false,
+      alternative: 'birthdate',
+      message: 'Esta cuenta no tiene correo. Puedes recuperarla con tu cedula y tu fecha de nacimiento.',
+    });
+  }
   const guard = codeGuardOk(cedula);
   if (!guard.ok) return res.status(429).json({ error: guard.error });
   const code = issueCode(user, 'reset');
   const sent = await sendCodeEmail(user.email, code, 'reset', publicBase(req));
-  if (!sent) return res.status(502).json({ error: 'No se pudo enviar el correo. Intenta de nuevo en un momento' });
-  res.json({ ok: true, email: maskEmail(user.email) });
+  if (!sent) {
+    /* El correo no esta saliendo (Brevo pausado, cuota, etc.). No se deja a la
+       persona sin salida: se le ofrece la recuperacion con cedula + fecha de
+       nacimiento, que no depende de ningun correo. */
+    return res.json({
+      ok: true,
+      codeSent: false,
+      email: maskEmail(user.email),
+      alternative: 'birthdate',
+      message: 'El correo no esta saliendo en este momento. Puedes recuperar tu cuenta con tu cedula y tu fecha de nacimiento.',
+    });
+  }
+  res.json({ ok: true, codeSent: true, email: maskEmail(user.email) });
+});
+
+/* Recuperar el acceso SIN correo: cedula + fecha de nacimiento + nueva contrasena.
+   Es la salida cuando el proveedor de correo esta pausado o la persona ya no
+   tiene acceso a ese buzon. */
+const recoverGuard = new Map(); // cedula -> { count, first }
+app.post('/api/recover', (req, res) => {
+  const body = req.body || {};
+  const cedula = normalizeCedula(body.cedula);
+  const birthDate = String(body.birthDate || '').trim();
+  const password = String(body.password || '');
+  if (!cedula) return res.status(400).json({ error: 'Cedula no valida. Escribe por ejemplo V-12345678' });
+  if (!isValidBirth(birthDate)) return res.status(400).json({ error: 'Fecha de nacimiento no valida' });
+  if (password.length < 8) return res.status(400).json({ error: 'La contrasena debe tener al menos 8 caracteres' });
+
+  const nowT = now();
+  let g = recoverGuard.get(cedula);
+  if (!g || nowT - g.first > 60 * 60 * 1000) { g = { count: 0, first: nowT }; recoverGuard.set(cedula, g); }
+  if (g.count >= 6) return res.status(429).json({ error: 'Demasiados intentos. Espera una hora o escribe al gestor de tramites' });
+
+  const user = Object.values(db.users).find((u) => u.cedula === cedula);
+  if (!user || !user.birthDate) {
+    g.count += 1;
+    return res.status(404).json({ error: 'No pudimos comprobar esos datos. Revisa tu cedula y tu fecha de nacimiento' });
+  }
+  if (String(user.birthDate) !== birthDate) {
+    g.count += 1;
+    return res.status(400).json({ error: 'La fecha de nacimiento no coincide con la de la cuenta' });
+  }
+
+  g.count = 0;
+  user.salt = crypto.randomBytes(16).toString('hex');
+  user.passHash = hashPassword(password, user.salt);
+  user.lastSeen = nowT;
+  save();
+  res.json({ ok: true, token: tokenFor(user), user: publicUser(user), emailPending: user.emailVerified === false });
 });
 
 /* Cambiar la contrasena con el codigo del correo */

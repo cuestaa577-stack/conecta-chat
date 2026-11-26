@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v7.2';
+  const APP_VERSION = 'v7.3';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -239,6 +239,20 @@ const App = (() => {
     toastTimer = setTimeout(() => el.classList.add('hidden'), tipo === 'bad' ? 3600 : 2800);
   }
 
+  /* Aviso discreto y descartable: la cuenta entro sin confirmar el correo.
+     No bloquea nada; solo recuerda confirmarlo cuando el correo vuelva a salir. */
+  function avisoCorreoPendiente() {
+    if (document.getElementById('mailBanner')) return;
+    const el = document.createElement('div');
+    el.id = 'mailBanner';
+    el.className = 'mail-banner';
+    el.innerHTML = '<span>Tu cuenta ya esta activa. Cuando puedas, confirma tu correo desde Mi cuenta; mientras tanto puedes usar la app con normalidad.</span>' +
+      '<button type="button" aria-label="Cerrar aviso">&times;</button>';
+    const b = el.querySelector('button');
+    if (b) b.onclick = function () { el.remove(); };
+    document.body.appendChild(el);
+  }
+
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -446,7 +460,7 @@ const App = (() => {
   });
 
   /* ------------------------------ acceso ------------------------------ */
-  const AUTH_PANELS = ['login', 'register', 'forgot', 'reset', 'code', 'verify', 'adminAuth'];
+  const AUTH_PANELS = ['login', 'register', 'forgot', 'reset', 'recover', 'code', 'verify', 'adminAuth'];
   let authPending = { cedula: '' };
 
   /* Recordar los datos del acceso (casilla pequena bajo el boton Entrar).
@@ -586,6 +600,7 @@ const App = (() => {
       });
       guardarRecordado(REC_CEDULA, $('#rememberLogin'), cedula);
       await finishAuth(data, false);
+      if (data && data.emailPending) avisoCorreoPendiente();
     } catch (e) {
       if (e.data && e.data.needVerify) {
         showVerifyPanel(e.data.cedula || cedula, e.data.email, e.data.codeSent);
@@ -711,7 +726,14 @@ const App = (() => {
         method: 'POST',
         body: JSON.stringify({ name, nombres, apellidos, cedula, birthDate, email, password, country }),
       });
-      // La cuenta queda SIN verificar: primero debe escribir el c\u00f3digo del correo.
+      // Si el servidor ya entrego sesion (correo opcional), se entra de una.
+      if (data && data.token) {
+        await finishAuth(data, true);
+        toast('Tu cuenta esta creada. Bienvenido');
+        if (data.emailPending) avisoCorreoPendiente();
+        return;
+      }
+      // Modo estricto: primero debe escribir el c\u00f3digo del correo.
       showVerifyPanel(data.cedula || cedula, data.email, data.codeSent);
     } catch (e) {
       if (e.data && e.data.code === 'country_mismatch') {
@@ -736,6 +758,20 @@ const App = (() => {
         body: JSON.stringify({ cedula }),
       });
       authPending = { cedula };
+      /* Si el correo no sale (Brevo pausado, cuenta sin correo), se ofrece la
+         recuperacion con cedula + fecha de nacimiento. */
+      if (data && data.codeSent === false) {
+        const rHint = $('#recoverHint');
+        if (rHint) {
+          rHint.textContent = data.message ||
+            'El correo no esta saliendo en este momento. Escribe tu cedula, tu fecha de nacimiento y una nueva contrasena.';
+        }
+        const rc = $('#recoverCedula');
+        if (rc) rc.value = cedula;
+        showAuthPanel('recover');
+        toast('Recupera tu cuenta sin correo', 'info');
+        return;
+      }
       const hint = $('#resetHint');
       if (hint) {
         hint.textContent = data.email
@@ -744,7 +780,14 @@ const App = (() => {
       }
       showAuthPanel('reset');
       toast('Revisa tu correo');
-    } catch (e) { toast(e.message, 'bad'); }
+    } catch (e) {
+      /* Aunque el servidor falle, no se deja a la persona sin salida. */
+      const rHint = $('#recoverHint');
+      if (rHint) rHint.textContent = e.message || 'No pudimos enviar el correo. Recupera tu cuenta con tu cedula y tu fecha de nacimiento.';
+      const rc = $('#recoverCedula');
+      if (rc) rc.value = cedula;
+      showAuthPanel('recover');
+    }
   }
 
   async function resendReset() {
@@ -773,6 +816,50 @@ const App = (() => {
       await finishAuth(data, false);
       toast('Contrasena cambiada');
     } catch (e) { toast(e.message, 'bad'); }
+  }
+
+  /* Confirmar el correo desde Mi cuenta (opcional, no bloquea nada) */
+  async function confirmarCorreo() {
+    if (!state.me) return;
+    if (!state.me.email) return toast('Primero agrega tu correo y guarda los cambios');
+    try {
+      const data = await api('/api/resend-code', {
+        method: 'POST',
+        body: JSON.stringify({ cedula: state.me.cedula, purpose: 'verify' }),
+      });
+      if (data && data.codeSent === false) {
+        return toast('El correo no esta saliendo ahora. Intenta mas tarde', 'bad');
+      }
+      const cc = $('#codeCedula');
+      if (cc) cc.value = state.me.cedula || '';
+      const ci = $('#codeInput');
+      if (ci) ci.value = '';
+      showAuthPanel('code');
+      toast('Te enviamos el codigo. Escribelo para confirmar');
+    } catch (e) { toast(e.message, 'bad'); }
+  }
+
+  /* Recuperar la cuenta sin correo: cedula + fecha de nacimiento + nueva clave */
+  let recuperando = false;
+  async function submitRecover() {
+    if (recuperando) return;
+    const cedula = cedulaText($('#recoverCedula').value);
+    const birthDate = $('#recoverBirth').value || '';
+    const password = ($('#recoverPassword').value || '');
+    if (!cedulaOk(cedula)) return toast('Escribe tu cedula, por ejemplo V-12345678');
+    if (!birthDate) return toast('Escribe tu fecha de nacimiento');
+    if (password.length < 8) return toast('La contrasena debe tener al menos 8 caracteres');
+    recuperando = true;
+    try {
+      const data = await api('/api/recover', {
+        method: 'POST',
+        body: JSON.stringify({ cedula, birthDate, password }),
+      });
+      await finishAuth(data, false);
+      toast('Contrasena cambiada. Bienvenido');
+      if (data && data.emailPending) avisoCorreoPendiente();
+    } catch (e) { toast(e.message, 'bad'); }
+    finally { recuperando = false; }
   }
 
   /* Acceso del personal autorizado (administrador) */
@@ -856,6 +943,18 @@ const App = (() => {
         method: 'POST',
         body: JSON.stringify({ cedula, code }),
       });
+      /* Si ya hay sesion abierta (confirmacion desde Mi cuenta) solo se
+         actualiza el perfil; no se vuelve a entrar a la app. */
+      if (state.token && state.me) {
+        if (data && data.user) state.me = data.user;
+        else state.me.emailVerified = true;
+        const banner = document.getElementById('mailBanner');
+        if (banner) banner.remove();
+        renderMyData();
+        showView('profile', false);
+        toast('Correo confirmado');
+        return;
+      }
       if (data && data.token) {
         await finishAuth(data, false);
         toast('Correo confirmado');
@@ -1746,6 +1845,17 @@ const App = (() => {
     }
     $('#profilePhone').value = state.me.phone || '';
     $('#profileEmail').value = state.me.email || '';
+    /* Estado del correo: confirmado o pendiente. El boton solo aparece cuando
+       hay algo que confirmar, para no ensuciar el perfil. */
+    const mailStatus = $('#mailStatus');
+    const confirmBtn = $('#confirmMailBtn');
+    const pendiente = state.me.emailVerified === false;
+    if (mailStatus) {
+      mailStatus.textContent = !state.me.email
+        ? 'Sin correo registrado. Puedes agregarlo y confirmarlo cuando quieras.'
+        : (pendiente ? 'Correo sin confirmar. Puedes usar la app igual.' : 'Correo confirmado.');
+    }
+    if (confirmBtn) confirmBtn.style.display = (pendiente && state.me.email) ? 'block' : 'none';
     $('#profileCountry').value = state.me.country || '';
     $('#appVersion').textContent = 'Tramites Venezolanos en Linea ' + APP_VERSION;
     const adminBtn = $('#adminBtn');
@@ -5563,7 +5673,7 @@ const App = (() => {
 
   return {
     authTab, submitLogin, submitRegister, sendForgot, submitReset, submitCode, resendReset,
-    submitVerify, resendVerify, showAdminAuth, submitAdminLogin,
+    submitVerify, resendVerify, showAdminAuth, submitAdminLogin, submitRecover, confirmarCorreo,
     back, pickService, pickOption, pickGrade, pickBlood, guardarDatosFlow, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
     openProfile, pickAvatar, saveProfileChanges, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat,

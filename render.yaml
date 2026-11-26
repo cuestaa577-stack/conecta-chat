@@ -10,6 +10,10 @@ services:
         value: "20"
       - key: SECRET
         generateValue: true
+      # El correo NO es obligatorio para entrar. Asi nadie queda bloqueado si
+      # Brevo pausa la cuenta. Pon "on" para exigir el codigo por correo.
+      - key: REQUIRE_EMAIL_VERIFY
+        value: "off"
       - key: ADMIN_EMAIL
         value: enelextranjerovenezolanos@gmail.com
       - key: ADMIN_PASSWORD
