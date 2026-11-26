@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v6.2';
+  const APP_VERSION = 'v6.3';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -4286,8 +4286,11 @@ const App = (() => {
           delegate: delegate,
         },
         runningMode: 'IMAGE',
-        outputCategoryMask: true,
-        outputConfidenceMasks: false,
+        outputCategoryMask: false,
+        /* Se pide el mapa de confianza (no la mascara de categorias): trae un
+           valor suave de 0 a 1 por pixel y con eso el borde del recorte puede
+           quedar fino, sin el escalon que dejaba la mascara dura. */
+        outputConfidenceMasks: true,
       });
       /* Muchos telefonos fallan con la GPU: se reintenta en CPU. */
       try {
@@ -4303,6 +4306,43 @@ const App = (() => {
     }
   }
 
+  /* ------- utilidades para recortar la persona con borde limpio ------- */
+  /* Filtro de caja horizontal: promedio movil de (2r+1) pixeles. */
+  function reqCajaH(src, dst, w, h, r) {
+    const inv = 1 / (2 * r + 1);
+    for (let y = 0; y < h; y++) {
+      const off = y * w;
+      let acc = 0;
+      for (let x = -r; x <= r; x++) acc += src[off + Math.min(w - 1, Math.max(0, x))];
+      for (let x = 0; x < w; x++) {
+        dst[off + x] = acc * inv;
+        acc += src[off + Math.min(w - 1, x + r + 1)] - src[off + Math.max(0, x - r)];
+      }
+    }
+  }
+  /* Filtro de caja completo (horizontal + vertical). Barato: no usa canvas. */
+  function reqCaja(src, w, h, r) {
+    const t = new Float32Array(w * h), o = new Float32Array(w * h);
+    reqCajaH(src, t, w, h, r);
+    const inv = 1 / (2 * r + 1);
+    for (let x = 0; x < w; x++) {
+      let acc = 0;
+      for (let y = -r; y <= r; y++) acc += t[Math.min(h - 1, Math.max(0, y)) * w + x];
+      for (let y = 0; y < h; y++) {
+        o[y * w + x] = acc * inv;
+        acc += t[Math.min(h - 1, y + r + 1) * w + x] - t[Math.max(0, y - r) * w + x];
+      }
+    }
+    return o;
+  }
+  /* Desenfoque gaussiano aproximado con tres pasadas de caja. */
+  function reqDifuminar(src, w, h, sigma) {
+    const r = Math.max(1, Math.round(sigma * 0.6));
+    let a = src;
+    for (let k = 0; k < 3; k++) a = reqCaja(a, w, h, r);
+    return a;
+  }
+
   /* Pone a la persona sobre blanco puro. Devuelve false si no se pudo. */
   async function reqFotoSobreBlanco() {
     const canvas = document.getElementById('reqFotoCanvas');
@@ -4312,65 +4352,88 @@ const App = (() => {
 
     const w = canvas.width, h = canvas.height;
     const res = modelo.segment(canvas);
-    const mask = res.categoryMask;
-    if (!mask) return false;
-    const mw = mask.width, mh = mask.height;
-    const datos = mask.getAsUint8Array();
+    const cm = res.confidenceMasks && res.confidenceMasks[0];
+    if (!cm) return false;
+    const mw = cm.width, mh = cm.height, n = mw * mh;
+    const conf = cm.getAsFloat32Array();
 
-    /* La mascara se arma como imagen y se escala a la foto.
-       OJO con los valores: en el modelo selfie_segmenter la categoria 0 es la
-       PERSONA y 255 es el FONDO. Si se lee al reves, el fondo blanco termina
-       tapando la cara y los hombros (era el error que tenia la app). */
-    const mcan = document.createElement('canvas');
-    mcan.width = mw; mcan.height = mh;
-    const mctx = mcan.getContext('2d');
-    const mimg = mctx.createImageData(mw, mh);
-    let persona = 0;
-    for (let p = 0; p < mw * mh; p++) {
-      const i = p * 4;
-      const es = datos[p] === 0;
-      if (es) persona++;
-      mimg.data[i] = 255; mimg.data[i + 1] = 255; mimg.data[i + 2] = 255;
-      mimg.data[i + 3] = es ? 255 : 0;
+    /* Se trabaja a la resolucion de la mascara (normalmente la misma de la
+       foto). Primero se copian los pixeles de la foto a ese tamano, porque
+       hacen falta para separar el color de la persona del color del fondo. */
+    const chico = document.createElement('canvas');
+    chico.width = mw; chico.height = mh;
+    const chctx = chico.getContext('2d', { willReadFrequently: true });
+    chctx.imageSmoothingQuality = 'high';
+    chctx.drawImage(canvas, 0, 0, w, h, 0, 0, mw, mh);
+    const px = chctx.getImageData(0, 0, mw, mh).data;
+    const R = new Float32Array(n), G = new Float32Array(n), B = new Float32Array(n);
+    for (let p = 0; p < n; p++) {
+      const j = p * 4;
+      R[p] = px[j] / 255; G[p] = px[j + 1] / 255; B[p] = px[j + 2] / 255;
     }
-    mctx.putImageData(mimg, 0, 0);
-    try { if (mask.close) mask.close(); } catch (e) {}
-    if (!persona || persona > mw * mh * 0.95) return false;
+    try { if (cm.close) cm.close(); } catch (e) {}
 
-    /* Recorte: la foto original, con la silueta de la persona.
-       Primero se "come" 1 px del borde de la mascara (erosion): asi desaparece
-       la lineita del color del fondo que queda pegada al hombro o al pelo.
-       Despues se desenfoca para que el contorno no tenga dientes de sierra. */
-    const mEro = document.createElement('canvas');
-    mEro.width = mw; mEro.height = mh;
-    const ectx = mEro.getContext('2d');
-    ectx.drawImage(mcan, 0, 0);
-    ectx.globalCompositeOperation = 'destination-in';
-    const ero = Math.max(1, Math.round(mw / 520));
-    [[ero, 0], [-ero, 0], [0, ero], [0, -ero]].forEach(function (o) {
-      ectx.drawImage(mcan, o[0], o[1]);
-    });
+    /* 1) Suavizar la mascara ANTES de recortarla. La mascara del modelo viene
+       "a bloques" y si se usa tal cual el hombro y el pelo quedan con dientes
+       de sierra. Al desenfocarla y despues endurecerla con una curva estrecha,
+       el escalon desaparece pero el borde sigue fino (no se engorda). */
+    const difusa = reqDifuminar(conf, mw, mh, 3.5);
+    const alfa = new Float32Array(n);
+    let persona = 0;
+    for (let p = 0; p < n; p++) {
+      let t = (difusa[p] - 0.5) / 0.12;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const a = t * t * (3 - 2 * t);
+      alfa[p] = a;
+      if (a > 0.5) persona++;
+    }
+    if (!persona || persona > n * 0.95) return false;
 
-    const msuave = document.createElement('canvas');
-    msuave.width = mw; msuave.height = mh;
-    const msctx = msuave.getContext('2d');
-    try { msctx.filter = 'blur(' + Math.max(1, Math.round(mw / 420)) + 'px)'; } catch (e) {}
-    msctx.drawImage(mEro, 0, 0);
+    /* 2) Color del fondo alrededor de cada pixel del borde. Se promedia la
+       foto usando (1 - alfa) como peso: solo cuenta lo que es fondo. */
+    const wr = new Float32Array(n), wg = new Float32Array(n);
+    const wb = new Float32Array(n), ww = new Float32Array(n);
+    for (let p = 0; p < n; p++) {
+      const k = 1 - alfa[p];
+      wr[p] = R[p] * k; wg[p] = G[p] * k; wb[p] = B[p] * k; ww[p] = k;
+    }
+    const br = reqCaja(wr, mw, mh, 6), bg = reqCaja(wg, mw, mh, 6);
+    const bb = reqCaja(wb, mw, mh, 6), bw = reqCaja(ww, mw, mh, 6);
 
-    const recorte = document.createElement('canvas');
-    recorte.width = w; recorte.height = h;
-    const rctx = recorte.getContext('2d');
-    rctx.drawImage(canvas, 0, 0);
-    rctx.globalCompositeOperation = 'destination-in';
-    rctx.drawImage(msuave, 0, 0, mw, mh, 0, 0, w, h);
+    /* 3) Decontaminacion: en el borde el pixel es una mezcla de persona y
+       fondo. Si se deja asi, el gris de la pared se ve como una sombra sucia
+       alrededor del hombro. Aqui se le quita la parte de fondo y se deja solo
+       el color real de la persona; despues se pega sobre blanco puro. */
+    const capa = document.createElement('canvas');
+    capa.width = mw; capa.height = mh;
+    const cctx = capa.getContext('2d');
+    const img = cctx.createImageData(mw, mh);
+    const d = img.data;
+    for (let p = 0; p < n; p++) {
+      const j = p * 4, a = alfa[p];
+      let cr = R[p], cg = G[p], cb = B[p];
+      if (a > 0.004 && a < 0.996) {
+        const den = bw[p] > 1e-3 ? bw[p] : 1;
+        const ia = 1 - a, k = a > 0.12 ? a : 0.12;
+        cr = (R[p] - ia * br[p] / den) / k;
+        cg = (G[p] - ia * bg[p] / den) / k;
+        cb = (B[p] - ia * bb[p] / den) / k;
+      }
+      d[j] = cr <= 0 ? 0 : cr >= 1 ? 255 : Math.round(cr * 255);
+      d[j + 1] = cg <= 0 ? 0 : cg >= 1 ? 255 : Math.round(cg * 255);
+      d[j + 2] = cb <= 0 ? 0 : cb >= 1 ? 255 : Math.round(cb * 255);
+      d[j + 3] = Math.round(a * 255);
+    }
+    cctx.putImageData(img, 0, 0);
 
-    /* Fondo blanco solido y la persona encima. */
+    /* 4) Fondo blanco solido y la persona encima. */
     const salida = document.createElement('canvas');
     salida.width = w; salida.height = h;
     const sctx = salida.getContext('2d');
     sctx.fillStyle = '#ffffff';
     sctx.fillRect(0, 0, w, h);
-    sctx.drawImage(recorte, 0, 0);
+    sctx.imageSmoothingQuality = 'high';
+    sctx.drawImage(capa, 0, 0, mw, mh, 0, 0, w, h);
 
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, w, h);
