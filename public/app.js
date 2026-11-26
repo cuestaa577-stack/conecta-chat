@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v6.7';
+  const APP_VERSION = 'v6.9';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -922,7 +922,13 @@ const App = (() => {
             <span class="aviso-lbl">Entrega</span>
             <span class="aviso-val">${esc(TIEMPO_ENTREGA)}</span>
           </div>
-        </div>`;
+          <div class="aviso-sep"></div>
+          <div class="aviso-item">
+            <span class="aviso-lbl">Formato</span>
+            <span class="aviso-val">PDF</span>
+          </div>
+        </div>
+        <p class="aviso-pdf">Tu documento se entrega en <b>PDF</b>: te llega al correo al aprobarse el pago y tambi\u00e9n lo descargas en la app.</p>`;
   }
 
 
@@ -1086,22 +1092,29 @@ const App = (() => {
 
   /* Texto que explica como sigue el trámite, según el servicio. */
   function notaDelTramite(servicio) {
+    /* En las tres descripciones se aclara lo mismo: el documento se entrega en
+       PDF. La persona lo recibe en su correo cuando el gestor aprueba el pago y
+       tambien lo puede descargar desde la app. */
+    const enPdf = 'El documento se entrega en PDF: al aprobarse tu pago te llega a tu correo y tambien queda disponible para descargar en Mis tr\u00e1mites. ';
     if (servicio === 'licencia') {
-      return 'Al continuar se abre el chat con un gestor de trámites, el cual te enviará los requisitos y el paso a paso. '
-        + 'En los requisitos podrás tomarte la foto nueva, al enviar los requisitos el gestor avanzará con el proceso. '
-        + 'En el tiempo estimado te llegará una notificación cuando el documento esté listo y, una vez se apruebe tu pago, '
-        + 'podrás descargar tu documento, imprimirlo y plastificarlo. El documento lo puedes imprimir en papel bond o en plástico PVC.';
+      return 'Al continuar se abre el chat con un gestor de tr\u00e1mites, el cual te enviar\u00e1 los requisitos y el paso a paso. '
+        + 'En los requisitos podr\u00e1s tomarte la foto nueva, al enviar los requisitos el gestor avanzar\u00e1 con el proceso. '
+        + 'En el tiempo estimado te llegar\u00e1 una notificaci\u00f3n cuando el documento est\u00e9 listo y, una vez se apruebe tu pago, '
+        + enPdf
+        + 'La licencia se entrega en PDF lista para imprimir; la puedes imprimir en papel bond o en pl\u00e1stico PVC.';
     }
     if (servicio === 'antecedentes') {
-      return 'Al continuar se abre el chat con un gestor de trámites, el cual te enviará los requisitos y el paso a paso. '
+      return 'Al continuar se abre el chat con un gestor de tr\u00e1mites, el cual te enviar\u00e1 los requisitos y el paso a paso. '
         + 'Para los antecedentes penales solo necesitamos tus datos personales: no hay foto, ni firma, ni huella. '
-        + 'En el tiempo estimado te llegará una notificación cuando el documento esté listo y, una vez se apruebe tu pago, '
-        + 'podrás descargarlo e imprimirlo. El documento se entrega en PDF listo para imprimir y se utiliza únicamente para su finalidad legal.';
+        + 'En el tiempo estimado te llegar\u00e1 una notificaci\u00f3n cuando el documento est\u00e9 listo y, una vez se apruebe tu pago, '
+        + enPdf
+        + 'Los antecedentes penales se entregan en PDF listo para imprimir y se utilizan \u00fanicamente para su finalidad legal.';
     }
-    return 'Al continuar se abre el chat con un gestor de trámites, el cual te enviará los requisitos y el paso a paso. '
-      + 'En los requisitos podrás tomarte la foto nueva, colocar tu firma y colocar tu huella; le das enviar y el gestor avanzará con el proceso. '
-      + 'En el tiempo estimado te llegará una notificación cuando el documento esté listo y, una vez se apruebe tu pago, podrás descargar tu documento, imprimirlo y plastificarlo. '
-      + 'El documento se debe imprimir en papel opalina.';
+    return 'Al continuar se abre el chat con un gestor de tr\u00e1mites, el cual te enviar\u00e1 los requisitos y el paso a paso. '
+      + 'En los requisitos podr\u00e1s tomarte la foto nueva, colocar tu firma y colocar tu huella; le das enviar y el gestor avanzar\u00e1 con el proceso. '
+      + 'En el tiempo estimado te llegar\u00e1 una notificaci\u00f3n cuando el documento est\u00e9 listo y, una vez se apruebe tu pago, '
+      + enPdf
+      + 'La c\u00e9dula se entrega en PDF lista para imprimir; se recomienda imprimirla en papel opalina.';
   }
 
   function flowSummary() {
@@ -2409,9 +2422,9 @@ const App = (() => {
     en_proceso: { txt: 'En proceso', cls: 'st-proceso', hint: 'Estamos gestionando tu trámite ante el organismo.' },
     listo: { txt: 'Documento listo', cls: 'st-listo', hint: 'Tu documento está listo: revísalo en vista previa y envía tu comprobante de pago para poder descargarlo.' },
     pago_en_revision: { txt: 'Pago en revisión', cls: 'st-revision', hint: 'Recibimos tu comprobante. El gestor de trámites lo está verificando y te confirma aquí mismo.' },
-    aprobado: { txt: 'Aprobado', cls: 'st-aprobado', hint: 'Pago confirmado. Tu documento ya se puede descargar.' },
+    aprobado: { txt: 'Aprobado', cls: 'st-aprobado', hint: 'Pago confirmado. Te enviamos tu documento en PDF al correo y tambi\u00e9n puedes descargarlo aqu\u00ed.' },
     rechazado: { txt: 'Comprobante rechazado', cls: 'st-rechazado', hint: 'El comprobante no se pudo validar. Lee la nota y envíalo otra vez.' },
-    entregado: { txt: 'Entregado', cls: 'st-aprobado', hint: 'Documento entregado. Puedes volver a descargarlo cuando lo necesites.' },
+    entregado: { txt: 'Entregado', cls: 'st-aprobado', hint: 'Documento entregado en PDF. Puedes volver a descargarlo o pedirlo a tu correo cuando lo necesites.' },
   };
 
   function estadoDe(t) {
@@ -2608,9 +2621,10 @@ const App = (() => {
     const descargaHtml = esAdmin ? '' : (t.canDownload ? `
         <div class="panel ok-panel">
           <h3>Descarga</h3>
-          <p class="pnote">Tu pago está confirmado. Ya puedes descargar tu documento.</p>
+          <p class="pnote">Tu pago está confirmado. Tu documento se entrega en <b>PDF</b> y ya lo enviamos al correo de tu cuenta.</p>
           <p class="pnote nota-clara">Cada descarga queda registrada en el historial de tu trámite.</p>
-          <a class="btn primary btn-descarga" href="${esc(archivoUrl(t.id, 'download'))}" download>Descargar mi documento</a>
+          <a class="btn primary btn-descarga" href="${esc(archivoUrl(t.id, 'download'))}" download>Descargar mi documento en PDF</a>
+          <button class="btn ghost" type="button" onclick="App.reenviarPdfCorreo('${esc(t.id)}')">Enviar otra vez a mi correo</button>
         </div>` : `
         <div class="panel preview-panel locked">
           <h3>Descarga</h3>
@@ -3587,12 +3601,24 @@ const App = (() => {
   }
 
   async function adminAprobar(id) {
-    const ok = confirm('¿Confirmas el pago de este trámite? La persona podrá descargar su documento.');
+    const ok = confirm('\u00bfConfirmas el pago de este tr\u00e1mite? La persona podr\u00e1 descargar su documento y adem\u00e1s le enviamos el PDF a su correo.');
     if (!ok) return;
     try {
-      await api('/api/admin/tramites/' + encodeURIComponent(id) + '/aprobar', { method: 'POST', body: JSON.stringify({}) });
-      toast('Pago confirmado: descarga habilitada');
+      const r = await api('/api/admin/tramites/' + encodeURIComponent(id) + '/aprobar', { method: 'POST', body: JSON.stringify({}) });
+      if (r && r.pdfEnviado) {
+        toast('Pago confirmado. PDF enviado a ' + (r.correoDestino || 'su correo'), 'ok');
+      } else {
+        toast('Pago confirmado: descarga habilitada. El correo no sali\u00f3, revisa el correo de la persona.', 'warn');
+      }
       loadAdminTramites();
+    } catch (e) { toast(e.message, 'bad'); }
+  }
+
+  /* La persona pide otra copia del PDF en su correo. */
+  async function reenviarPdfCorreo(id) {
+    try {
+      const r = await api('/api/tramites/' + encodeURIComponent(id) + '/enviar-pdf', { method: 'POST', body: JSON.stringify({}) });
+      toast('Te enviamos el PDF a ' + (r.correo || 'tu correo'), 'ok');
     } catch (e) { toast(e.message, 'bad'); }
   }
 
@@ -3901,7 +3927,7 @@ const App = (() => {
 
   async function shareApp() {
     const url = enlaceParaCompartir();
-    const texto = 'Trámites Venezolanos en Línea: cédula, licencia y antecedentes penales. Regístrate gratis:';
+    const texto = 'Trámites Venezolanos en Línea: cédula, licencia y antecedentes penales. Regístrate aquí:';
     if (navigator.share) {
       try {
         await navigator.share({ title: 'Trámites Venezolanos en Línea', text: texto, url: url });
@@ -4192,6 +4218,7 @@ const App = (() => {
     firmaTrazo: false,
     huellaTimer: null,
     huellaProg: 0,
+    dedo: 'pulgar',
     camara: 'user',
   };
 
@@ -4749,15 +4776,39 @@ const App = (() => {
     for (let p = 0; p < N; p++) {
       if (alfa[p] < 0.62 && alrededor[p] < 0.30) alfa[p] = 0;
     }
-    /* 6c) Se come UN pixel del contorno. Es lo que borra las hilachas de fondo
-       que el modelo deja pegadas al borde de la ropa o del pelo. Un pixel no
-       se nota en la cara y deja el recorte limpio. */
+    /* 6c) Limpieza del contorno CONSCIENTE DEL COLOR. El modelo deja pegado al
+       borde un filo del fondo (el halo grisaceo que hacia ver la foto sucia).
+       Antes se comia un pixel a ciegas y eso borraba hebras de pelo y pestañas.
+       Ahora, en cada pixel del borde se compara su color con el color medio del
+       fondo y con el de la persona: si se parece mas al fondo se vuelve
+       transparente; si se parece a la persona se queda entero. Asi el pelo fino
+       sobrevive y el halo desaparece. */
+    for (let p = 0; p < N; p++) {
+      const a = alfa[p];
+      if (a <= 0.004 || a >= 0.999) continue;
+      const dr = R[p] - mBr[p], dg = G[p] - mBg[p], db2 = B[p] - mBb[p];
+      const dB = dr * dr + dg * dg + db2 * db2;
+      const er = R[p] - mFr[p], eg = G[p] - mFg[p], eb = B[p] - mFb[p];
+      const dF = er * er + eg * eg + eb * eb;
+      if (dB + dF < 0.004) continue;
+      /* 1 = el pixel es color de fondo puro; 0 = es color de la persona. */
+      const haciaFondo = dB / (dB + dF);
+      let t = (haciaFondo - 0.52) / 0.20;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      t = t * t * (3 - 2 * t);
+      alfa[p] = a * (1 - 0.94 * t);
+    }
+
+    /* 6d) Contraccion de UN pixel solo en el filo blando. El interior y el pelo
+       (alfa alto) no se tocan: se conserva el detalle. */
     const ero = new Float32Array(N);
     for (let y = 0; y < h; y++) {
       const y0 = y > 0 ? y - 1 : 0, y1 = y < h - 1 ? y + 1 : h - 1;
       for (let x = 0; x < w; x++) {
         const x0 = x > 0 ? x - 1 : 0, x1 = x < w - 1 ? x + 1 : w - 1;
-        let mn = alfa[y * w + x];
+        const a = alfa[y * w + x];
+        if (a >= 0.86) { ero[y * w + x] = a; continue; }
+        let mn = a;
         const vals = [
           alfa[y0 * w + x0], alfa[y0 * w + x], alfa[y0 * w + x1],
           alfa[y * w + x0], alfa[y * w + x1],
@@ -4769,7 +4820,65 @@ const App = (() => {
     }
     for (let p = 0; p < N; p++) alfa[p] = ero[p];
 
-    /* 7) Decontaminacion + fondo blanco puro. */
+    /* 6e) Filo nitido. El borde quedaba con una rampa larga (2-4 px) y eso se
+       ve como una foto "pegada" o desenfocada. Se estira el contraste del alfa
+       alrededor de 0.5: el contorno pasa a 1-2 px, que es lo que hace ver el
+       recorte pulido. */
+    for (let p = 0; p < N; p++) {
+      const a = alfa[p];
+      if (a <= 0.02 || a >= 0.98) continue;
+      let t = (a - 0.5) / 0.30;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const sg = t * t * (3 - 2 * t);
+      alfa[p] = a * 0.22 + sg * 0.78;
+    }
+
+    /* 7) Decontaminacion: se le quita al color la parte de fondo que traia
+       mezclada, para que no quede un reborde verdoso/grisaceo. */
+    const oR = new Float32Array(N), oG = new Float32Array(N), oB = new Float32Array(N);
+    for (let p = 0; p < N; p++) {
+      const a = alfa[p];
+      if (a <= 0.004) { oR[p] = 1; oG[p] = 1; oB[p] = 1; continue; }
+      const ia = 1 - a, k = a > 0.12 ? a : 0.12;
+      let r = (R[p] - ia * mBr[p]) / k;
+      let g = (G[p] - ia * mBg[p]) / k;
+      let b = (B[p] - ia * mBb[p]) / k;
+      r = r < 0 ? 0 : r > 1 ? 1 : r;
+      g = g < 0 ? 0 : g > 1 ? 1 : g;
+      b = b < 0 ? 0 : b > 1 ? 1 : b;
+      /* Sobre blanco: se mezcla con el fondo blanco segun el alfa. */
+      oR[p] = r * a + (1 - a);
+      oG[p] = g * a + (1 - a);
+      oB[p] = b * a + (1 - a);
+    }
+
+    /* 7b) Nitidez real (mascara de enfoque). Se calcula el promedio de la
+       persona SOLO con pixeles de persona (promedio ponderado por el alfa), de
+       modo que el blanco del fondo no se cuele en el promedio y no aparezca un
+       reborde oscuro. Despues se devuelve el detalle: pelo, pestañas, textura
+       de la piel y costuras de la ropa quedan definidos. El fondo no se toca:
+       sigue siendo blanco puro 255. */
+    const aw = reqCaja(alfa, w, h, 1);
+    const pr = new Float32Array(N), pg = new Float32Array(N), pb = new Float32Array(N);
+    for (let p = 0; p < N; p++) {
+      const a = alfa[p];
+      pr[p] = oR[p] * a; pg[p] = oG[p] * a; pb[p] = oB[p] * a;
+    }
+    const qr = reqCaja(pr, w, h, 1), qg = reqCaja(pg, w, h, 1), qb = reqCaja(pb, w, h, 1);
+    for (let p = 0; p < N; p++) {
+      const a = alfa[p];
+      if (a < 0.5) continue;
+      const d = aw[p] > 1e-3 ? aw[p] : 1;
+      const wgt = 0.62 * ((a - 0.5) / 0.5);
+      let r = oR[p] + wgt * (oR[p] - qr[p] / d);
+      let g = oG[p] + wgt * (oG[p] - qg[p] / d);
+      let b = oB[p] + wgt * (oB[p] - qb[p] / d);
+      oR[p] = r < 0 ? 0 : r > 1 ? 1 : r;
+      oG[p] = g < 0 ? 0 : g > 1 ? 1 : g;
+      oB[p] = b < 0 ? 0 : b > 1 ? 1 : b;
+    }
+
+    /* 7c) Fondo blanco puro garantizado y salida. */
     const salida = document.createElement('canvas');
     salida.width = w; salida.height = h;
     const sctx = salida.getContext('2d');
@@ -4777,24 +4886,13 @@ const App = (() => {
     const od = out.data;
     for (let p = 0; p < N; p++) {
       const a = alfa[p], j = p * 4;
-      let r = 1, g = 1, b = 1;
-      if (a > 0.004) {
-        /* Color real de la persona sin la parte de fondo que traia mezclada. */
-        const ia = 1 - a, k = a > 0.12 ? a : 0.12;
-        r = (R[p] - ia * mBr[p]) / k;
-        g = (G[p] - ia * mBg[p]) / k;
-        b = (B[p] - ia * mBb[p]) / k;
-        r = r < 0 ? 0 : r > 1 ? 1 : r;
-        g = g < 0 ? 0 : g > 1 ? 1 : g;
-        b = b < 0 ? 0 : b > 1 ? 1 : b;
-        /* Sobre blanco: se mezcla con el fondo blanco segun el alfa. */
-        r = r * a + (1 - a);
-        g = g * a + (1 - a);
-        b = b * a + (1 - a);
+      if (a <= 0.02) {
+        od[j] = 255; od[j + 1] = 255; od[j + 2] = 255;
+      } else {
+        od[j] = Math.round(oR[p] * 255);
+        od[j + 1] = Math.round(oG[p] * 255);
+        od[j + 2] = Math.round(oB[p] * 255);
       }
-      od[j] = Math.round(r * 255);
-      od[j + 1] = Math.round(g * 255);
-      od[j + 2] = Math.round(b * 255);
       od[j + 3] = 255;
     }
     sctx.putImageData(out, 0, 0);
@@ -5054,7 +5152,46 @@ const App = (() => {
   function reqSemillaHuella() {
     const ced = (state.flowDatos && state.flowDatos.cedula) || (state.me && state.me.cedula) || '';
     const limpio = String(ced).replace(/[^0-9A-Za-z]/g, '').toUpperCase();
-    return limpio ? 'pulgar-derecho|' + limpio : 'pulgar-derecho';
+    /* La semilla lleva el dedo: la misma persona tiene una huella distinta en
+       cada dedo, y el patron (presa, verticilo o arco) tambien cambia. */
+    return REQ.dedo + '|' + (limpio || 'sin-cedula');
+  }
+
+  /* Nombre del dedo que se esta capturando, para la guia y los avisos. */
+  function reqNombreDedo(d) {
+    const tabla = {
+      pulgar: 'pulgar derecho', indice: '\u00edndice derecho', medio: 'dedo medio derecho',
+      anular: 'anular derecho', menique: 'me\u00f1ique derecho',
+    };
+    return tabla[d || REQ.dedo] || 'pulgar derecho';
+  }
+
+  /* Cambia el dedo a capturar. Cada dedo dibuja su propio patron, como en una
+     huella real: pulgar y anular con verticilo, indice y medio con presa y el
+     me\u00f1ique con arco. */
+  function reqElegirDedo(dedo) {
+    const d = String(dedo || 'pulgar').toLowerCase();
+    if (!window.HuellaDedos || !window.HuellaDedos[d]) return;
+    REQ.dedo = d;
+    REQ.huella = '';
+    REQ.huellaProg = 0;
+    document.querySelectorAll('#reqDedos .req-dedo').forEach((b) => {
+      const on = b.getAttribute('data-dedo') === d;
+      b.classList.toggle('activo', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    const guia = document.querySelector('#reqHuellaGuia span');
+    if (guia) guia.textContent = window.HuellaDedos[d].nombre;
+    const prog = document.getElementById('reqHuellaProg');
+    if (prog) prog.style.width = '0%';
+    const zona = document.getElementById('reqHuellaZona');
+    if (zona) { zona.classList.remove('capturada', 'leyendo'); }
+    const rep = document.getElementById('reqHuellaRepetir');
+    if (rep) rep.classList.add('hidden');
+    const nota = document.getElementById('reqHuellaNota');
+    if (nota) nota.textContent = 'Apoya el ' + reqNombreDedo(d) + ' en el molde y no lo levantes.';
+    if (REQ.huellaSensor) REQ.huellaSensor.setDedo(d);
+    reqActualizarResumen();
   }
 
   function reqPrepararHuella() {
@@ -5062,6 +5199,7 @@ const App = (() => {
     if (!c || !window.HuellaSensor) return;
     if (REQ.huellaSensor) {
       /* Si ya se conoce la cedula, la huella se ajusta a esa persona. */
+      REQ.huellaSensor.setDedo(REQ.dedo);
       REQ.huellaSensor.setSemilla(reqSemillaHuella());
       return;
     }
@@ -5074,6 +5212,7 @@ const App = (() => {
 
     REQ.huellaSensor = new window.HuellaSensor(c, {
       semilla: reqSemillaHuella(),
+      dedo: REQ.dedo,
       duracion: 1600,
       onCambio: (p) => {
         REQ.huellaProg = p * 100;
@@ -5097,7 +5236,7 @@ const App = (() => {
           }
           if (nota) {
             const tipo = REQ.huellaSensor.tipo();
-            nota.textContent = 'Huella captada (' + tipo + '). Ya puedes enviar tus requisitos.';
+            nota.textContent = 'Huella captada del ' + reqNombreDedo() + ' (' + tipo + '). Ya puedes enviar tus requisitos.';
           }
           if (rep) rep.classList.remove('hidden');
           reqActualizarResumen();
@@ -5390,7 +5529,8 @@ const App = (() => {
     actualizarApp, comprobarVersionPublicada,
     enviarReferencia, modAprobar, modBorrar, modDesmarcar, cargarModeracion,
     abrirRequisitos, cerrarRequisitos, reqPaso, reqEncenderCamara, reqTomarFoto,
-    reqAplicarFondo, reqBorrarFirma, reqEnviar, reqVoltearCamara, reqRepetirFoto,
+    reqAplicarFondo, reqBorrarFirma, reqEnviar, reqVoltearCamara, reqRepetirFoto, reqElegirDedo,
+    reenviarPdfCorreo,
     adminResetVisitas, adminQuitarPersona,
     abrirMenuRequisitos, cerrarMenuRequisitos, enviarRequisitosChat, quitarRequisitosChat,
   };

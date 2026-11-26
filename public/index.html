@@ -4,25 +4,25 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#ffffff" />
-  <meta name="description" content="Cédula, licencia y antecedentes penales desde donde estés. Te acompañamos paso a paso. Regístrate gratis y empieza hoy." />
+  <meta name="description" content="Cédula, licencia y antecedentes penales desde donde estés. Te acompañamos paso a paso. Regístrate y empieza hoy." />
   <title>Trámites Venezolanos en Línea</title>
 
   <!-- Vista previa al compartir por WhatsApp, mensaje o correo -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Trámites Venezolanos en Línea" />
   <meta property="og:title" content="Trámites Venezolanos en Línea" />
-  <meta property="og:description" content="Cédula, licencia y antecedentes penales desde donde estés. Te acompañamos paso a paso. Regístrate gratis y empieza hoy." />
+  <meta property="og:description" content="Cédula, licencia y antecedentes penales desde donde estés. Te acompañamos paso a paso. Regístrate y empieza hoy." />
   <meta property="og:url" content="__PAGE_URL__" />
   <meta property="og:image" content="__BASE__/og-image.png" />
   <meta property="og:image:secure_url" content="__BASE__/og-image.png" />
   <meta property="og:image:type" content="image/png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Trámites Venezolanos en Línea, regístrate gratis" />
+  <meta property="og:image:alt" content="Trámites Venezolanos en Línea, regístrate hoy" />
   <meta property="og:locale" content="es_VE" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Trámites Venezolanos en Línea" />
-  <meta name="twitter:description" content="Cédula, licencia y antecedentes penales desde donde estés. Regístrate gratis y te acompañamos paso a paso." />
+  <meta name="twitter:description" content="Cédula, licencia y antecedentes penales desde donde estés. Regístrate y te acompañamos paso a paso." />
   <meta name="twitter:image" content="__BASE__/og-image.png" />
   <link rel="image_src" href="__BASE__/og-image.png" />
   <link rel="manifest" href="manifest.json" />
@@ -726,7 +726,14 @@
 
     <!-- 3. HUELLA -->
     <div class="req-pane hidden" id="reqPane3">
-      <p class="req-help">Apoya el dedo pulgar derecho dentro del molde y no lo levantes. La huella se dibuja sola, de abajo hacia arriba, como cuando apoyas el dedo en un sensor.</p>
+      <p class="req-help">Elige el dedo y apóyalo dentro del molde sin levantarlo. La huella se dibuja sola, de abajo hacia arriba, como cuando apoyas el dedo en un sensor. Cada dedo tiene su propio dibujo de crestas.</p>
+      <div class="req-dedos" id="reqDedos" role="group" aria-label="Dedo a capturar">
+        <button type="button" class="req-dedo activo" data-dedo="pulgar" aria-pressed="true" onclick="App.reqElegirDedo('pulgar')">Pulgar</button>
+        <button type="button" class="req-dedo" data-dedo="indice" aria-pressed="false" onclick="App.reqElegirDedo('indice')">Índice</button>
+        <button type="button" class="req-dedo" data-dedo="medio" aria-pressed="false" onclick="App.reqElegirDedo('medio')">Medio</button>
+        <button type="button" class="req-dedo" data-dedo="anular" aria-pressed="false" onclick="App.reqElegirDedo('anular')">Anular</button>
+        <button type="button" class="req-dedo" data-dedo="menique" aria-pressed="false" onclick="App.reqElegirDedo('menique')">Meñique</button>
+      </div>
       <div class="req-huella-wrap">
         <div class="req-huella" id="reqHuellaZona">
           <canvas id="reqHuella" class="req-huella-canvas"></canvas>

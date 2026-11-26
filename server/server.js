@@ -132,7 +132,7 @@ async function resolveLogoUrl(baseUrl) {
   return base ? base + '/logos/saime-email.png' : '';
 }
 
-async function sendViaApi(to, subject, text, html, logo) {
+async function sendViaApi(to, subject, text, html, logo, adjuntos) {
   const provider = detectProvider();
   if (!MAIL_API_KEY || !provider) return null;
   const from = parseFrom();
@@ -140,6 +140,9 @@ async function sendViaApi(to, subject, text, html, logo) {
     console.error('[correo] Falta MAIL_FROM con el correo remitente');
     return false;
   }
+  /* Adjuntos reales (el PDF del tramite). Van en base64 porque asi lo piden
+     los tres proveedores por HTTP. */
+  const files = (adjuntos || []).filter((a) => a && a.filename && a.content);
   try {
     let res;
     if (provider === 'brevo') {
@@ -148,22 +151,39 @@ async function sendViaApi(to, subject, text, html, logo) {
         headers: { 'api-key': MAIL_API_KEY, 'Content-Type': 'application/json', accept: 'application/json' },
         body: JSON.stringify({
           sender: from, to: [{ email: to }], subject,
-          textContent: text, htmlContent: html || undefined
-          // Sin "attachment": Brevo no soporta imagenes en linea y cualquier
-          // adjunto aparece como archivo en la bandeja. El logo va por URL.
+          textContent: text, htmlContent: html || undefined,
+          /* El logo va por URL (Brevo no admite imagenes en linea), pero el
+             PDF del tramite si viaja como adjunto real. */
+          attachment: files.length
+            ? files.map((a) => ({ name: a.filename, content: a.content }))
+            : undefined
         })
       });
     } else if (provider === 'resend') {
+      const atts = [];
+      if (logo) atts.push({ filename: logo.filename, content: logo.content, content_id: logo.cid });
+      files.forEach((a) => atts.push({ filename: a.filename, content: a.content }));
       res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + MAIL_API_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           from: from.name + ' <' + from.email + '>', to: [to], subject,
           text, html: html || undefined,
-          attachments: logo ? [{ filename: logo.filename, content: logo.content, content_id: logo.cid }] : undefined
+          attachments: atts.length ? atts : undefined
         })
       });
     } else if (provider === 'sendgrid') {
+      const atts = [];
+      if (logo) {
+        atts.push({
+          content: logo.content, filename: logo.filename,
+          type: logo.contentType, disposition: 'inline', content_id: logo.cid
+        });
+      }
+      files.forEach((a) => atts.push({
+        content: a.content, filename: a.filename,
+        type: a.contentType || 'application/pdf', disposition: 'attachment'
+      }));
       res = await fetch('https://api.sendgrid.com/v3/mail/send', {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + MAIL_API_KEY, 'Content-Type': 'application/json' },
@@ -174,9 +194,7 @@ async function sendViaApi(to, subject, text, html, logo) {
           content: html
             ? [{ type: 'text/plain', value: text }, { type: 'text/html', value: html }]
             : [{ type: 'text/plain', value: text }],
-          attachments: logo
-            ? [{ content: logo.content, filename: logo.filename, type: logo.contentType, disposition: 'inline', content_id: logo.cid }]
-            : undefined
+          attachments: atts.length ? atts : undefined
         })
       });
     } else {
@@ -2813,6 +2831,217 @@ async function servirArchivoTramite(f, res, modo) {
   return res.sendFile(file);
 }
 
+/* ------------------- EL DOCUMENTO SE ENTREGA EN PDF ----------------------
+   Todo lo que la persona recibe es un PDF: la cedula, la licencia y los
+   antecedentes penales. El gestor puede subir el documento ya en PDF o como
+   foto (JPG/PNG); en el segundo caso aqui se arma el PDF: la imagen entra en
+   una hoja A4 con margen, centrada y sin deformarse. Asi el correo siempre
+   lleva un PDF y no una foto suelta.
+   ===================================================================== */
+
+/* Lee los bytes de un documento del tramite, este en disco o en la nube. */
+async function leerArchivoTramite(f) {
+  const url = String((f && f.url) || '');
+  if (!url) return null;
+  if (/^https?:\/\//i.test(url)) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) return null;
+      const buf = Buffer.from(await r.arrayBuffer());
+      return { buf: buf, mime: tipoPorBytes(buf, (f && f.mime) || r.headers.get('content-type'), (f && f.name)) };
+    } catch (e) {
+      console.error('[pdf] No se pudo leer el documento remoto: ' + e.message);
+      return null;
+    }
+  }
+  const m = /^\/uploads\/([A-Za-z0-9_.-]+)$/.exec(url);
+  if (!m) return null;
+  const file = path.join(UPLOAD_DIR, m[1]);
+  if (!file.startsWith(UPLOAD_DIR + path.sep)) return null;
+  if (fs.existsSync(file)) {
+    try {
+      const buf = fs.readFileSync(file);
+      return { buf: buf, mime: tipoPorBytes(buf.slice(0, 12), (f && f.mime), (f && f.name)) };
+    } catch (e) { /* se intenta la copia de la base */ }
+  }
+  const guardado = db.files && db.files[m[1]];
+  if (guardado && guardado.data) {
+    const buf = Buffer.from(guardado.data, 'base64');
+    return { buf: buf, mime: tipoPorBytes(buf.slice(0, 12), guardado.mime, (f && f.name)) };
+  }
+  return null;
+}
+
+/* Nombre limpio para el archivo que recibe la persona. */
+function nombrePdfTramite(t, owner) {
+  const etiquetas = { cedula: 'Cedula', licencia: 'Licencia', antecedentes: 'Antecedentes-Penales' };
+  const base = etiquetas[String(t.service || '').toLowerCase()] || 'Documento';
+  const quien = String((owner && owner.cedula) || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+  return base + (quien ? '-' + quien : '') + '.pdf';
+}
+
+/* Devuelve SIEMPRE un PDF: si el documento ya es PDF se usa tal cual (reparado);
+   si es una foto, se monta en una hoja A4. */
+async function documentoEnPdf(t, owner) {
+  const leido = await leerArchivoTramite(t && t.doc);
+  if (!leido || !leido.buf || !leido.buf.length) return null;
+  if (leido.mime === 'application/pdf') {
+    const bueno = await pdfNormalizado(leido.buf);
+    return { buf: bueno, filename: nombrePdfTramite(t, owner), contentType: 'application/pdf' };
+  }
+  if (!PDFLib) return null;
+  const esPng = leido.mime === 'image/png';
+  const esJpg = leido.mime === 'image/jpeg';
+  if (!esPng && !esJpg) return null;
+  try {
+    const pdf = await PDFLib.PDFDocument.create();
+    const img = esPng ? await pdf.embedPng(leido.buf) : await pdf.embedJpg(leido.buf);
+    const A4 = [595.28, 841.89];
+    const margen = 36; /* media pulgada */
+    const util = [A4[0] - margen * 2, A4[1] - margen * 2];
+    const escala = Math.min(util[0] / img.width, util[1] / img.height, 1);
+    const w = img.width * escala, h = img.height * escala;
+    const page = pdf.addPage(A4);
+    page.drawImage(img, {
+      x: (A4[0] - w) / 2,
+      y: (A4[1] - h) / 2,
+      width: w,
+      height: h,
+    });
+    const bytes = await pdf.save();
+    return { buf: Buffer.from(bytes), filename: nombrePdfTramite(t, owner), contentType: 'application/pdf' };
+  } catch (e) {
+    console.error('[pdf] No se pudo armar el PDF del documento: ' + e.message);
+    return null;
+  }
+}
+
+/* Correo con el que la persona recibe su documento. */
+function buildEntregaEmailHtml(datos, logoSrc) {
+  const anio = new Date().getFullYear();
+  const logoCell = logoSrc
+    ? '<td width="68" valign="middle" style="width:68px;padding:0 14px 0 0;">'
+      + '<img src="' + logoSrc + '" width="56" height="56" alt="Tramites" '
+      + 'style="display:block;width:56px;height:56px;border:0;border-radius:8px;background-color:#ffffff;"></td>'
+    : '';
+  const filas = [
+    ['Tramite', datos.tramite],
+    ['Titular', datos.titular],
+    ['Documento', datos.documento],
+    ['Estado', 'Pago confirmado'],
+  ].map((f) => '<tr>'
+    + '<td style="padding:9px 0;border-bottom:1px solid #e8edf4;color:#64748b;font-size:13px;">' + f[0] + '</td>'
+    + '<td style="padding:9px 0;border-bottom:1px solid #e8edf4;color:#0f172a;font-size:13px;font-weight:600;text-align:right;">' + f[1] + '</td>'
+    + '</tr>').join('');
+
+  return '<!DOCTYPE html>\n<html lang="es"><head><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=device-width, initial-scale=1">'
+    + '<meta name="color-scheme" content="light"><title>Tu documento en PDF</title></head>'
+    + '<body style="margin:0;padding:0;background-color:#eef1f5;">'
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#eef1f5;padding:24px 12px;">'
+    + '<tr><td align="center">'
+    + '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+    + 'style="width:600px;max-width:600px;background-color:#ffffff;border-radius:12px;overflow:hidden;'
+    + 'box-shadow:0 2px 8px rgba(15,23,42,0.08);font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;">'
+    + '<tr><td style="background-color:#0b3d91;padding:20px 28px;">'
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>' + logoCell
+    + '<td valign="middle"><div style="color:#ffffff;font-size:17px;font-weight:700;line-height:1.3;">Tramites Venezolanos en Linea</div>'
+    + '<div style="color:#c7d6f5;font-size:12px;margin-top:4px;letter-spacing:0.4px;text-transform:uppercase;">Entrega de documento</div>'
+    + '</td></tr></table></td></tr>'
+    + '<tr><td style="padding:32px 28px 8px 28px;">'
+    + '<h1 style="margin:0 0 12px 0;font-size:22px;line-height:1.3;color:#0f172a;font-weight:700;">Tu documento esta listo</h1>'
+    + '<p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#334155;">Hola ' + datos.nombre + ', '
+    + 'confirmamos tu pago y aqui tienes tu documento <b>en PDF</b>. Va adjunto a este correo, '
+    + 'listo para descargar e imprimir.</p>'
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px 0;">' + filas + '</table>'
+    + '<div style="background-color:#f0f7ff;border-left:4px solid #0b3d91;border-radius:6px;padding:14px 16px;margin:0 0 18px 0;">'
+    + '<p style="margin:0;font-size:13px;line-height:1.6;color:#1e3a8a;">'
+    + '<b>Formato de entrega:</b> todos nuestros documentos se entregan en <b>PDF</b>: '
+    + 'la cedula de identidad, la licencia de conducir y los antecedentes penales.</p></div>'
+    + '<p style="margin:0 0 8px 0;font-size:13px;line-height:1.6;color:#64748b;">'
+    + 'Tambien puedes descargarlo desde la app, en <b>Mis tramites</b>, cuando lo necesites.</p>'
+    + '<p style="margin:0 0 4px 0;font-size:12px;line-height:1.6;color:#94a3b8;">'
+    + 'Si no reconoces este tramite, responde a este correo y lo revisamos.</p>'
+    + '</td></tr>'
+    + '<tr><td style="padding:18px 28px 26px 28px;border-top:1px solid #e8edf4;">'
+    + '<p style="margin:0;font-size:11px;color:#94a3b8;">&copy; ' + anio + ' Tramites Venezolanos en Linea</p>'
+    + '</td></tr></table></td></tr></table></body></html>';
+}
+
+/* Envia el documento del tramite al correo de la persona, en PDF.
+   Se llama solo cuando el administrador aprueba el pago. Nunca lanza: si el
+   correo falla, la aprobacion ya quedo guardada y la persona igual puede
+   descargar el PDF desde la app. */
+async function enviarDocumentoPdfPorCorreo(t, baseUrl) {
+  try {
+    if (!t) return false;
+    const owner = db.users[t.userId];
+    if (!owner) return false;
+    const destino = String(owner.email || '').trim();
+    if (!destino || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(destino)) {
+      console.warn('[correo] El tramite ' + t.id + ' no tiene correo valido; no se envia el PDF.');
+      return false;
+    }
+    const pdf = await documentoEnPdf(t, owner);
+    if (!pdf) {
+      console.warn('[correo] No se pudo preparar el PDF del tramite ' + t.id);
+      return false;
+    }
+    const etiquetas = { cedula: 'Cedula de identidad', licencia: 'Licencia de conducir', antecedentes: 'Antecedentes penales' };
+    const tramiteTxt = etiquetas[String(t.service || '').toLowerCase()] || (t.title || 'Tramite');
+    const datos = {
+      nombre: String(owner.name || 'estimado usuario').split(' ')[0],
+      tramite: tramiteTxt + (t.subtypeLabel ? ' - ' + t.subtypeLabel : '') + (t.grade ? ' - ' + t.grade : ''),
+      titular: String(owner.name || '') + (owner.cedula ? ' (' + owner.cedula + ')' : ''),
+      documento: pdf.filename,
+    };
+    const subject = 'Tu ' + tramiteTxt.toLowerCase() + ' en PDF - Tramites Venezolanos en Linea';
+    const text = 'Hola ' + datos.nombre + '.\n\n'
+      + 'Confirmamos tu pago. Tu documento (' + tramiteTxt + ') va adjunto a este correo EN PDF, '
+      + 'listo para descargar e imprimir.\n\n'
+      + 'Todos nuestros documentos se entregan en PDF: cedula de identidad, licencia de conducir y '
+      + 'antecedentes penales.\n\n'
+      + 'Tambien puedes descargarlo desde la app, en Mis tramites.\n\n'
+      + 'Tramites Venezolanos en Linea';
+    const inlineOk = providerSupportsInline(detectProvider());
+    const logo = loadEmailLogo();
+    const logoSrc = logo && inlineOk ? 'cid:' + logo.cid : await resolveLogoUrl(baseUrl);
+    const html = buildEntregaEmailHtml(datos, logoSrc);
+    const adjuntos = [{ filename: pdf.filename, content: pdf.buf.toString('base64'), contentType: 'application/pdf' }];
+
+    const viaApi = await sendViaApi(destino, subject, text, html, inlineOk ? (logo || null) : null, adjuntos);
+    let ok = viaApi;
+    if (viaApi === null) {
+      if (!mailer) {
+        console.warn('[correo] Sin correo configurado: no se pudo enviar el PDF a ' + destino);
+        ok = false;
+      } else {
+        try {
+          const atts = [];
+          if (logo) atts.push({ filename: logo.filename, content: Buffer.from(logo.content, 'base64'), cid: logo.cid });
+          atts.push({ filename: pdf.filename, content: pdf.buf, contentType: 'application/pdf' });
+          await mailer.sendMail({ from: MAIL_FROM || SMTP_USER, to: destino, subject, text, html, attachments: atts });
+          ok = true;
+        } catch (e) {
+          console.error('[correo] No se pudo enviar el PDF a ' + destino + ': ' + e.message);
+          ok = false;
+        }
+      }
+    }
+    if (ok) {
+      t.deliveredByEmailAt = now();
+      t.deliveredByEmailTo = destino;
+      tramiteHistorial(t, t.status, 'Documento enviado en PDF al correo ' + destino, 'sistema');
+      save();
+      console.log('[correo] PDF del tramite ' + t.id + ' enviado a ' + destino);
+    }
+    return !!ok;
+  } catch (e) {
+    console.error('[correo] Error al enviar el PDF del tramite: ' + e.message);
+    return false;
+  }
+}
+
 /* --- la persona: mis tramites --- */
 app.get('/api/tramites', auth, (req, res) => {
   const esAdmin = req.user.role === 'admin';
@@ -3065,7 +3294,7 @@ app.post('/api/admin/tramites/:id/estado', auth, adminOnly, (req, res) => {
 });
 
 /* CONFIRMAR EL PAGO: aqui se habilita la descarga */
-app.post('/api/admin/tramites/:id/aprobar', auth, adminOnly, (req, res) => {
+app.post('/api/admin/tramites/:id/aprobar', auth, adminOnly, async (req, res) => {
   const t = tramiteDe(req);
   if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
   if (!(t.doc && t.doc.url)) return res.status(400).json({ error: 'El tramite no tiene documento cargado' });
@@ -3086,7 +3315,34 @@ app.post('/api/admin/tramites/:id/aprobar', auth, adminOnly, (req, res) => {
       tag: 'tramite:' + t.id
     });
   }
-  res.json({ tramite: tramiteView(t, req.user) });
+
+  /* Al aprobar el pago se envia el documento EN PDF al correo de la persona.
+     El envio no puede tumbar la aprobacion: si falla, la descarga ya quedo
+     habilitada y el administrador ve el aviso para reenviarlo. */
+  let correo = false;
+  try {
+    correo = await enviarDocumentoPdfPorCorreo(t, publicBase(req));
+  } catch (e) {
+    console.error('[correo] La aprobacion siguio sin enviar el PDF: ' + e.message);
+  }
+  res.json({ tramite: tramiteView(t, req.user), pdfEnviado: !!correo, correoDestino: (owner && owner.email) || '' });
+});
+
+/* La persona pide que le reenvien su documento en PDF al correo. */
+app.post('/api/tramites/:id/enviar-pdf', auth, async (req, res) => {
+  const t = tramiteDe(req);
+  if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
+  if (req.user.role !== 'admin' && t.userId !== req.user.id) {
+    return res.status(403).json({ error: 'Este tramite no es tuyo' });
+  }
+  if (!tramitePuedeDescargar(t)) {
+    return res.status(403).json({ error: 'El documento se envia cuando el pago esta confirmado.' });
+  }
+  const owner = db.users[t.userId] || {};
+  if (!owner.email) return res.status(400).json({ error: 'Tu cuenta no tiene un correo registrado.' });
+  const ok = await enviarDocumentoPdfPorCorreo(t, publicBase(req));
+  if (!ok) return res.status(502).json({ error: 'No se pudo enviar el correo. Intenta de nuevo en un momento.' });
+  res.json({ ok: true, correo: owner.email });
 });
 
 app.post('/api/admin/tramites/:id/rechazar', auth, adminOnly, (req, res) => {

@@ -97,32 +97,74 @@
   }
 
   /* --------------------------- Campo de crestas --------------------------- */
-  /* Modelo de singularidades: la orientacion de la cresta en cada punto es
-     media suma de los angulos a los puntos singulares. Con un nucleo (+1) y un
-     delta (-1) sale un patron de presa, que es el del 60-65% de los pulgares.
-     El tipo de patron cambia con la semilla: presa, verticilo o arco. */
-  function campoDeCrestas(semilla) {
-    var rand = mulberry32(xmur3(semilla)());
-    var tipo = rand();
-    var W = ANCHO, H = ALTO;
+  /* Cada dedo tiene su patron dermatoglifico. No es capricho: en una mano real
+     el pulgar y el anular suelen ser VERTICILOS (circulos concentricos), el
+     indice y el medio PRESAS (las crestas entran por un lado, dan la vuelta al
+     nucleo y salen por el mismo lado) y el meñique casi siempre ARCO (crestas
+     paralelas que se levantan en el centro). Aqui se declara esa familia por
+     dedo, con su inclinacion y su densidad de crestas. */
+  var DEDOS = {
+    pulgar:  { nombre: 'Pulgar derecho',  tipo: 'verticilo', periodo: 1.00, giro: 0.04 },
+    indice:  { nombre: 'Indice derecho',  tipo: 'presa',     periodo: 0.97, giro: -0.09, lado: -1 },
+    medio:   { nombre: 'Medio derecho',   tipo: 'presa',     periodo: 0.95, giro: 0.09, lado: 1 },
+    anular:  { nombre: 'Anular derecho',  tipo: 'verticilo', periodo: 0.93, giro: -0.04 },
+    menique: { nombre: 'Me\u00f1ique derecho', tipo: 'arco', periodo: 0.89, giro: 0.03 }
+  };
 
-    /* Presa: nucleo centrado y delta abajo a la derecha.
-       Verticilo: dos nucleos y dos deltas (circulos concentricos).
-       Arco: sin singularidades, crestas casi horizontales que se arquean. */
-    var sing = [];
-    var base = 0;
-    if (tipo < 0.62) {
-      sing.push({ x: W * (0.44 + 0.08 * rand()), y: H * (0.40 + 0.06 * rand()), q: 1 });
-      sing.push({ x: W * (0.74 + 0.08 * rand()), y: H * (0.66 + 0.08 * rand()), q: -1 });
-      base = (rand() - 0.5) * 0.16;
-    } else if (tipo < 0.88) {
-      sing.push({ x: W * (0.45 + 0.05 * rand()), y: H * (0.38 + 0.04 * rand()), q: 1 });
-      sing.push({ x: W * (0.56 + 0.05 * rand()), y: H * (0.44 + 0.04 * rand()), q: 1 });
-      sing.push({ x: W * (0.24 + 0.05 * rand()), y: H * (0.70 + 0.05 * rand()), q: -1 });
-      sing.push({ x: W * (0.78 + 0.05 * rand()), y: H * (0.72 + 0.05 * rand()), q: -1 });
-      base = (rand() - 0.5) * 0.2;
+  /* Modelo de singularidades: la orientacion de la cresta en cada punto es la
+     media suma de los angulos a los puntos singulares. Con un nucleo (+1) y un
+     delta (-1) sale una presa; con dos nucleos y dos deltas, un verticilo. */
+  function campoDeCrestas(semilla, dedo) {
+    var rand = mulberry32(xmur3(semilla)());
+    var W = ANCHO, H = ALTO;
+    var f = DEDOS[String(dedo || '').toLowerCase()] || null;
+    var tipo, base, lado;
+
+    if (f) {
+      tipo = f.tipo;
+      base = f.giro;
+      lado = f.lado || 1;
     } else {
-      base = (rand() - 0.5) * 0.12;
+      /* Sin dedo indicado: el tipo sale de la semilla (compatibilidad). */
+      var r0 = rand();
+      tipo = r0 < 0.62 ? 'presa' : r0 < 0.88 ? 'verticilo' : 'arco';
+      base = (rand() - 0.5) * 0.16;
+      lado = rand() < 0.5 ? -1 : 1;
+    }
+
+    var sing = [];
+    var arco = null;
+
+    if (tipo === 'presa') {
+      /* Nucleo algo por encima del centro y delta abajo, al lado contrario al
+         que abren las crestas. Asi la presa abre hacia el lado del delta. */
+      sing.push({
+        x: W * (0.50 + 0.055 * lado + (rand() - 0.5) * 0.04),
+        y: H * (0.40 + (rand() - 0.5) * 0.05), q: 1
+      });
+      sing.push({
+        x: W * (0.50 - 0.245 * lado + (rand() - 0.5) * 0.04),
+        y: H * (0.68 + (rand() - 0.5) * 0.05), q: -1
+      });
+      base += 0.10 * lado;
+    } else if (tipo === 'verticilo') {
+      /* Dos nucleos juntos en el centro (el "ojo" del verticilo) y un delta a
+         cada lado, abajo: las crestas dan vueltas cerradas alrededor del ojo. */
+      sing.push({ x: W * (0.455 + (rand() - 0.5) * 0.04), y: H * (0.375 + (rand() - 0.5) * 0.04), q: 1 });
+      sing.push({ x: W * (0.565 + (rand() - 0.5) * 0.04), y: H * (0.435 + (rand() - 0.5) * 0.04), q: 1 });
+      sing.push({ x: W * (0.235 + (rand() - 0.5) * 0.04), y: H * (0.700 + (rand() - 0.5) * 0.04), q: -1 });
+      sing.push({ x: W * (0.790 + (rand() - 0.5) * 0.04), y: H * (0.720 + (rand() - 0.5) * 0.04), q: -1 });
+    } else {
+      /* Arco: en la yema no hay ni nucleo ni delta. Las crestas son arcos
+         paralelos que se levantan en el centro, como las lineas de una cebolla
+         cortada: son circulos concentricos con el centro muy por debajo de la
+         yema. Se modela con el angulo al centro, no con una tangente, porque la
+         tangente hacia costuras diagonales donde la curva cambia de pendiente. */
+      arco = {
+        cx: W * (0.50 + (rand() - 0.5) * 0.04),
+        cy: H * (1.75 + rand() * 0.55),   /* centro lejos, abajo */
+        sq: 0.72 + rand() * 0.16          /* aplasta el arco: mas ancho que alto */
+      };
     }
 
     /* Ondulacion organica suave: evita que las crestas salgan perfectas. */
@@ -139,15 +181,25 @@
     }
 
     return {
-      tipo: tipo < 0.62 ? 'presa' : tipo < 0.88 ? 'verticilo' : 'arco',
+      tipo: tipo,
       sing: sing,
+      periodo: f ? f.periodo : 1,
       ang: function (x, y) {
-        var a = 0;
-        for (var k = 0; k < sing.length; k++) {
-          var s = sing[k];
-          a += s.q * Math.atan2(y - s.y, x - s.x);
+        var a;
+        if (arco) {
+          /* Perpendicular al radio que va del centro (abajo) al punto: da arcos
+             concentricos, suaves y sin costuras. */
+          var ux = (x - arco.cx);
+          var uy = (y - arco.cy) * arco.sq;
+          a = Math.atan2(uy, ux) + Math.PI / 2 + base;
+        } else {
+          a = 0;
+          for (var k = 0; k < sing.length; k++) {
+            var sp = sing[k];
+            a += sp.q * Math.atan2(y - sp.y, x - sp.x);
+          }
+          a = 0.5 * a + base;
         }
-        a = 0.5 * a + base;
         for (var j = 0; j < ond.length; j++) {
           var o = ond[j];
           a += o.amp * Math.sin(x * o.fx * 6.283 + o.fase) * Math.cos(y * o.fy * 6.283 + o.fase * 0.7);
@@ -242,15 +294,17 @@
   }
 
   /* --------------------- Generacion de la imagen de huella ---------------- */
-  function generarCrestas(semilla) {
+  function generarCrestas(semilla, dedo) {
     var cv = document.createElement('canvas');
     cv.width = ANCHO;
     cv.height = ALTO;
     var ctx = cv.getContext('2d');
 
-    var campo = campoDeCrestas(semilla);
+    var campo = campoDeCrestas(semilla, dedo);
     var rand = mulberry32(xmur3(semilla + '|tinta')());
-    var periodo = ALTO / 76;           /* ~9,5 px: separacion real de crestas */
+    /* Separacion real de crestas. El pulgar es el dedo mas grande y de crestas
+       mas separadas; el meñique, el mas pequeño y de crestas mas juntas. */
+    var periodo = (ALTO / 76) * (campo.periodo || 1);
     var grosor = periodo * 0.52;
     var paso = 2;
 
@@ -332,12 +386,15 @@
     for (var sy = -periodo; sy < ALTO + periodo; sy += semillaPaso) {
       for (var sx = -periodo; sx < ANCHO + periodo; sx += semillaPaso) {
         if (!dentro(sx, sy)) continue;
-        if (enNucleo(sx, sy, periodo * 1.05)) continue;
+        if (enNucleo(sx, sy, periodo * 1.45)) continue;
         if (!libre(sx, sy)) continue;
 
         /* Cresta completa: se traza hacia delante y hacia atras. */
         var cerca = function (x, y) {
-          if (enNucleo(x, y, periodo * 0.62)) return false;
+          /* El hueco del nucleo se respeta con holgura: asi la cresta mas
+             interna da la vuelta alrededor del ojo en vez de clavarse en el
+             centro y dejar un pico negro. */
+          if (enNucleo(x, y, periodo * 1.0)) return false;
           return libre(x, y, minDist * 0.74);
         };
         var adelante = trazar(campo, sx, sy, 1, 700, paso, cerca);
@@ -384,24 +441,9 @@
       }
     }
 
-    /* Arrugas: pliegues de la piel que cortan la huella en blanco. En una
-       impresion real se ven como lineas claras que atraviesan las crestas. */
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'destination-out';
-    var nArrugas = 2 + Math.floor(rand() * 2);
-    for (var a = 0; a < nArrugas; a++) {
-      var y0 = ALTO * (0.2 + rand() * 0.6);
-      var amp = 8 + rand() * 22;
-      var fase = rand() * 6.28;
-      ctx.lineWidth = 1.2 + rand() * 2.2;
-      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-      ctx.beginPath();
-      for (var xx = -10; xx <= ANCHO + 10; xx += 6) {
-        var yy = y0 + Math.sin(xx / 70 + fase) * amp + (xx / ANCHO - 0.5) * (rand() * 6);
-        if (xx === -10) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy);
-      }
-      ctx.stroke();
-    }
+    /* Sin arrugas artificiales: antes se dibujaban pliegues rectos que cruzaban
+       la huella de lado a lado y se veian como rayones de escaner, no como una
+       huella. La textura real ya la da la tinta (densidad, grano y micro-huecos). */
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
 
@@ -500,6 +542,8 @@
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.semilla = opciones.semilla || 'pulgar-derecho';
+    /* Dedo que se esta capturando: define el patron de la huella. */
+    this.dedo = String(opciones.dedo || 'pulgar').toLowerCase();
     this.onCambio = opciones.onCambio || function () {};
     this.duracion = opciones.duracion || 1500;
     this.listo = false;
@@ -519,11 +563,28 @@
   }
 
   Sensor.prototype._preparar = function () {
-    if (this._cache && this._cache.semilla === this.semilla) return;
-    var g = generarCrestas(this.semilla);
+    if (this._cache && this._cache.semilla === this.semilla && this._cache.dedo === this.dedo) return;
+    var g = generarCrestas(this.semilla, this.dedo);
     revelarTinta(g.canvas, this.semilla);
-    this._cache = { semilla: this.semilla, canvas: g.canvas, molde: g.molde, tipo: g.tipo };
+    this._cache = { semilla: this.semilla, dedo: this.dedo, canvas: g.canvas, molde: g.molde, tipo: g.tipo };
   };
+
+  /* Cambia el dedo: la huella se vuelve a dibujar con el patron de ese dedo. */
+  Sensor.prototype.setDedo = function (d) {
+    d = String(d || 'pulgar').toLowerCase();
+    if (d === this.dedo) return;
+    this.dedo = d;
+    this._cache = null;
+    this.listo = false;
+    this.imagen = '';
+    this.progreso = 0;
+    this._contacto = null;
+    this._preparar();
+    this._pintarGuia();
+    this.onCambio(0);
+  };
+
+  Sensor.prototype.dedoActual = function () { return this.dedo; };
 
   /* Cambia la semilla (por ejemplo, cuando ya se conoce la cedula). */
   Sensor.prototype.setSemilla = function (s) {
@@ -764,5 +825,6 @@
   };
 
   global.HuellaSensor = Sensor;
-  global.HuellaTipo = function (semilla) { return campoDeCrestas(semilla).tipo; };
+  global.HuellaTipo = function (semilla, dedo) { return campoDeCrestas(semilla, dedo).tipo; };
+  global.HuellaDedos = DEDOS;
 })(window);

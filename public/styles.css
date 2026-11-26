@@ -324,6 +324,13 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .aviso-lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #6b7c99; }
 .aviso-val { font-size: 14px; font-weight: 700; color: var(--navy); line-height: 1.25; }
 .aviso-sep { width: 1px; background: #d9e6fb; }
+/* Aclaratoria de formato: en los tres tramites el documento se entrega en PDF. */
+.aviso-pdf {
+  font-size: 11.5px; line-height: 1.45; color: #4a5b76;
+  background: #f7fafc; border: 1px dashed #cfdcee; border-radius: 10px;
+  padding: 8px 11px; margin: -6px 0 14px;
+}
+.aviso-pdf b { color: var(--navy); }
 
 /* Franja de confianza bajo el hero */
 .trust-row {
@@ -920,6 +927,26 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 }
 
 /* Huella */
+/* Selector de dedo: cinco botones, uno por dedo de la mano derecha. El dedo
+   elegido define el patron de crestas que se dibuja (presa, verticilo o arco). */
+.req-dedos {
+  display: flex; gap: 5px; margin: 0 0 12px; flex-wrap: nowrap;
+}
+.req-dedo {
+  flex: 1 1 0; min-width: 0; padding: 7px 2px; border-radius: 9px;
+  border: 1.5px solid #d8cfbb; background: #fffdf8; color: #4a5566;
+  font-size: 11.5px; font-weight: 600; line-height: 1.15; cursor: pointer;
+  transition: background .18s, border-color .18s, color .18s, box-shadow .18s;
+  -webkit-tap-highlight-color: transparent;
+}
+.req-dedo:hover { border-color: #b9c6d8; }
+.req-dedo.activo {
+  background: #12805c; border-color: #12805c; color: #fff;
+  box-shadow: 0 2px 8px rgba(18, 128, 92, .26);
+}
+.req-dedo:focus-visible { outline: 2px solid #12805c; outline-offset: 2px; }
+@media (max-width: 380px) { .req-dedo { font-size: 10.5px; padding: 6px 1px; } }
+
 .req-huella-wrap { display: flex; justify-content: center; }
 .req-huella {
   position: relative; width: 224px; height: 288px; border-radius: 46% / 40%;
