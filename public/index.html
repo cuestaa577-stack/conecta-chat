@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#ffffff" />
   <meta name="description" content="Cédula, licencia y antecedentes penales desde donde estés. Te acompañamos paso a paso. Regístrate gratis y empieza hoy." />
-  <title>Trámites Venezolanos en Línea | Sin colas ni vueltas</title>
+  <title>Trámites Venezolanos en Línea</title>
 
   <!-- Vista previa al compartir por WhatsApp, mensaje o correo -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Trámites Venezolanos en Línea" />
-  <meta property="og:title" content="Trámites Venezolanos en Línea | Sin colas ni vueltas" />
+  <meta property="og:title" content="Trámites Venezolanos en Línea" />
   <meta property="og:description" content="Cédula, licencia y antecedentes penales desde donde estés. Te acompañamos paso a paso. Regístrate gratis y empieza hoy." />
   <meta property="og:url" content="__PAGE_URL__" />
   <meta property="og:image" content="__BASE__/og-image.png" />
@@ -21,7 +21,7 @@
   <meta property="og:image:alt" content="Trámites Venezolanos en Línea, regístrate gratis" />
   <meta property="og:locale" content="es_VE" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Trámites Venezolanos en Línea | Sin colas ni vueltas" />
+  <meta name="twitter:title" content="Trámites Venezolanos en Línea" />
   <meta name="twitter:description" content="Cédula, licencia y antecedentes penales desde donde estés. Regístrate gratis y te acompañamos paso a paso." />
   <meta name="twitter:image" content="__BASE__/og-image.png" />
   <link rel="image_src" href="__BASE__/og-image.png" />
@@ -209,6 +209,11 @@
       <div class="hero">
         <h2>INFÓRMATE DE TU TRÁMITE</h2>
         <p class="muted">Elige una opción y te guiamos paso a paso.</p>
+        <div class="trust-row">
+          <span class="trust"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5.4c0 4.2-2.9 7.7-7 8.6-4.1-.9-7-4.4-7-8.6V6z"/><path d="M9.2 11.8l1.9 1.9 3.7-3.9"/></svg>Datos protegidos</span>
+          <span class="trust"><svg viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="9.5" rx="2.2"/><path d="M8 10.5V8a4 4 0 018 0v2.5"/></svg>Pago verificado</span>
+          <span class="trust"><svg viewBox="0 0 24 24"><path d="M20.5 14.4a3 3 0 01-3 3H8.2L3.5 21V6.6a3 3 0 013-3h11a3 3 0 013 3z"/></svg>Atención por chat</span>
+        </div>
       </div>
       <div class="services">
         <button class="service" onclick="App.openTramites()">
@@ -218,6 +223,7 @@
           <span class="service-txt">
             <span class="service-title">Mis trámites</span>
             <span class="service-sub" id="tramitesCardSub">Mira tu documento y descárgalo cuando esté aprobado</span>
+            <span class="service-meta" id="metaTramites"></span>
           </span>
           <span class="badge" id="tramitesBadge" hidden></span>
           <span class="chev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
@@ -228,8 +234,9 @@
             <svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.4"/><circle cx="8.6" cy="11" r="2.2"/><path d="M5.2 16.4c.6-1.5 1.9-2.3 3.4-2.3s2.8.8 3.4 2.3"/><path d="M14.6 9.6h4.2M14.6 12.6h4.2M14.6 15.6h2.8"/></svg>
           </span>
           <span class="service-txt">
-            <span class="service-title">Cedula de identidad</span>
-            <span class="service-sub">Renovacion, extravio, deterioro o hurto</span>
+            <span class="service-title">Cédula de identidad</span>
+            <span class="service-sub">Renovación, extravío, deterioro o hurto</span>
+            <span class="service-meta" id="metaCedula"></span>
           </span>
           <span class="chev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
         </button>
@@ -240,7 +247,8 @@
           </span>
           <span class="service-txt">
             <span class="service-title">Licencia de conducir</span>
-            <span class="service-sub">Por primera vez o renovacion</span>
+            <span class="service-sub">Por primera vez o renovación</span>
+            <span class="service-meta" id="metaLicencia"></span>
           </span>
           <span class="chev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
         </button>
@@ -252,6 +260,7 @@
           <span class="service-txt">
             <span class="service-title">Antecedentes penales</span>
             <span class="service-sub">Sin apostillar o apostillado</span>
+            <span class="service-meta" id="metaAntecedentes"></span>
           </span>
           <span class="chev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
         </button>
@@ -261,7 +270,7 @@
             <svg viewBox="0 0 24 24"><path d="M12 3l7 3v5.4c0 4.2-2.9 7.7-7 8.6-4.1-.9-7-4.4-7-8.6V6z"/><path d="M9.2 11.8l1.9 1.9 3.7-3.9"/></svg>
           </span>
           <span class="service-txt">
-            <span class="service-title">Panel del servidor público</span>
+            <span class="service-title">Panel del gestor de trámites</span>
             <span class="service-sub">Solo para el administrador</span>
           </span>
           <span class="chev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
@@ -273,6 +282,7 @@
 
       <div class="institutions">
         <div class="inst-title">Gestionamos ante</div>
+        <p class="inst-sub">Trámites presentados directamente ante el organismo</p>
         <div class="inst-grid">
           <div class="inst">
             <img src="logos/saime.png" alt="SAIME" />
@@ -391,7 +401,7 @@
 
       <footer class="site-footer">
         <div class="footer-brand">Trámites en Línea</div>
-        <p class="footer-note">Servicio oficial y público para tus trámites de cédula, licencia y antecedentes penales. Sin colas ni vueltas.</p>
+        <p class="footer-note">Servicio oficial y público para tus trámites de cédula, licencia y antecedentes penales.</p>
         <div class="footer-info">
           <span><b>Contacto:</b> enelextranjerovenezolanos@gmail.com</span>
           <span><b>Horario:</b> 7:30 AM - 5:30 PM</span>
@@ -435,7 +445,7 @@
       </button>
       <div class="brand-block">
         <div class="brand-line">
-          <div class="brand" id="chatTitle">Servidor publico</div>
+          <div class="brand" id="chatTitle">Gestor de trámites</div>
           <span class="verified" id="chatVerified" hidden title="Cuenta verificada"></span>
         </div>
         <div class="brand-sub" id="chatSubtitle">En linea</div>
@@ -451,7 +461,7 @@
     <div class="chat-tramite hidden" id="chatTramite"></div>
     <div class="chat-body" id="chatBody"></div>
 
-    <!-- Boton flotante de requisitos: aparece solo cuando el servidor publico
+    <!-- Boton flotante de requisitos: aparece solo cuando el gestor de trámites
          lo envia en esta conversacion. Las tres piezas van en una sola hoja. -->
     <button class="req-fab hidden" id="reqFab" onclick="App.abrirRequisitos()" aria-label="Ver requisitos">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 016.5 6h1.2l1-1.6h6.6L16.3 6h1.2A2.5 2.5 0 0120 8.5v8A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5z"/><circle cx="12" cy="12.3" r="3.2"/></svg>
@@ -528,7 +538,7 @@
         <button class="btn primary" onclick="App.saveProfileChanges()">Guardar cambios</button>
         <button class="btn ghost" onclick="App.openEditData()">Editar datos personales</button>
         <button class="btn ghost" onclick="App.openTramites()">Mis trámites y documentos</button>
-        <button class="btn ghost" onclick="App.openAdmin()" id="adminBtn" style="display:none">Panel del servidor publico</button>
+        <button class="btn ghost" onclick="App.openAdmin()" id="adminBtn" style="display:none">Panel del gestor de trámites</button>
         <button class="btn ghost" onclick="App.shareApp()">Compartir la app</button>
         <button class="btn ghost" onclick="App.installApp()">Instalar la app en mi celular</button>
         <button class="btn ghost" onclick="App.logout()">Cerrar sesion</button>
@@ -562,7 +572,7 @@
     </div>
   </div>
 
-  <!-- Panel del servidor publico -->
+  <!-- Panel del gestor de trámites -->
   <section class="view" id="adminView">
     <header class="topbar">
       <div class="brand-block">
@@ -644,6 +654,12 @@
   <div class="sheet-card req-card">
     <div class="sheet-head">
       <span>Ver requisitos</span>
+      <!-- Marca de agua del tramite en la esquina del apartado: SAIME para
+           cedula y licencia, Justicia y Paz para antecedentes penales. Va
+           tenue y no tapa nada de lo que la persona tiene que llenar. -->
+      <span class="req-marca" id="reqMarca" aria-hidden="true">
+        <img id="reqMarcaImg" src="logos/saime.png" alt="" />
+      </span>
       <button class="iconbtn" onclick="App.cerrarRequisitos()" title="Cerrar">
         <svg viewBox="0 0 24 24" class="ico"><path d="M7 7l10 10M17 7L7 17"/></svg>
       </button>
@@ -685,6 +701,9 @@
       <div class="req-row">
         <button class="btn primary" id="reqBtnCamara" onclick="App.reqEncenderCamara()">Abrir camara</button>
         <button class="btn ghost hidden" id="reqBtnTomar" onclick="App.reqTomarFoto()">Tomar foto</button>
+        <!-- Va entre "Tomar foto" y "Voltear camara": si la foto sale mal se
+             repite ahi mismo, sin cerrar la hoja ni volver a empezar. -->
+        <button class="btn ghost hidden" id="reqBtnRepetir" onclick="App.reqRepetirFoto()">Repetir foto</button>
         <button class="btn ghost hidden" id="reqBtnFondo" onclick="App.reqVoltearCamara()">Voltear cámara</button>
       </div>
       <p class="req-note muted" id="reqFotoNota">Primero abre la camara y autoriza el permiso.</p>
@@ -721,6 +740,11 @@
 
     <!-- 4. DATOS PERSONALES: es el unico requisito de antecedentes penales -->
     <div class="req-pane hidden" id="reqPaneDatos">
+      <!-- Marca de agua grande de Justicia y Paz. Va detras de los campos y
+           muy tenue: identifica el tramite sin tapar ni un dato personal. -->
+      <div class="req-marca-agua" aria-hidden="true">
+        <img src="logos/justicia.png" alt="" />
+      </div>
       <p class="req-help">Para los antecedentes penales solo necesitamos tus datos. No hay foto, ni firma, ni huella.</p>
       <div class="req-form">
         <label class="req-field">
@@ -760,7 +784,7 @@
           <input id="reqDatosMotivo" maxlength="120" placeholder="Trabajo, residencia, estudio..." />
         </label>
       </div>
-      <p class="req-note muted" id="reqDatosNota">Tus datos van solo al servidor publico de esta conversacion.</p>
+      <p class="req-note muted" id="reqDatosNota">Tus datos van solo al gestor de trámites de esta conversacion.</p>
     </div>
 
     <div class="req-resumen" id="reqResumen" hidden>
@@ -773,11 +797,11 @@
     <button class="btn primary req-enviar" id="reqEnviar" onclick="App.reqEnviar()">
       Enviar mis tres requisitos
     </button>
-    <p class="req-note muted">Se envian al servidor publico dentro de esta conversacion.</p>
+    <p class="req-note muted">Se envian al gestor de trámites dentro de esta conversacion.</p>
   </div>
 </div>
 
-<!-- Menu del servidor publico: enviar requisitos al chat que esta abierto -->
+<!-- Menu del gestor de trámites: enviar requisitos al chat que esta abierto -->
 <div class="sheet hidden" id="reqMenuSheet">
   <div class="sheet-card">
     <div class="sheet-head">

@@ -22,6 +22,29 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   overflow: hidden;
 }
+
+/* ---------------- Texto protegido ----------------
+   Todo lo que esta escrito en la app (titulos, servicios, precios, textos de
+   ayuda, formularios) queda sin seleccion, asi nadie lo copia con mantener
+   pulsado ni con el menu del navegador. Solo el chat se puede copiar y pegar,
+   porque ahi la persona si necesita copiar un dato de un mensaje. */
+html, body {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+/* Dentro del chat (y en los campos de escritura) si se selecciona y se copia. */
+#chatBody, #chatBody *,
+.bubble, .bubble *,
+input, textarea, select, [contenteditable="true"] {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
 button { font-family: inherit; }
 .hidden { display: none !important; }
 /* El atributo hidden debe ganar siempre: .req-mini y .req-resumen fijan
@@ -276,6 +299,45 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .service-txt { flex: 1; min-width: 0; }
 .service-title { display: block; font-size: 15.5px; font-weight: 700; }
 .service-sub { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+/* Linea de precio y tiempo de cada servicio: se ve el costo antes de entrar,
+   que es lo que da confianza. */
+.service-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin-top: 7px; font-size: 11.5px; font-weight: 700; color: var(--navy);
+}
+.service-meta:empty { display: none; }
+.service-meta .chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 999px;
+  background: #eef4ff; border: 1px solid #d6e4ff; color: #1b4fa8;
+}
+.service-meta .chip.time { background: #f1f7f2; border-color: #d5e9da; color: #1e6b3a; }
+.service-meta .chip svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+/* Aviso de costo y entrega dentro del tramite */
+.aviso-precio {
+  display: flex; align-items: stretch; gap: 10px;
+  background: #f4f8ff; border: 1px solid #d9e6fb; border-radius: 13px;
+  padding: 11px 13px; margin: 0 0 14px;
+}
+.aviso-item { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.aviso-lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #6b7c99; }
+.aviso-val { font-size: 14px; font-weight: 700; color: var(--navy); line-height: 1.25; }
+.aviso-sep { width: 1px; background: #d9e6fb; }
+
+/* Franja de confianza bajo el hero */
+.trust-row {
+  display: flex; flex-wrap: nowrap; justify-content: center; gap: 5px;
+  margin-top: 11px;
+}
+.trust {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 600; color: #eaf1ff; white-space: nowrap;
+  background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .28);
+  padding: 4px 7px; border-radius: 999px;
+}
+.trust svg { width: 12px; height: 12px; flex-shrink: 0; stroke: currentColor; fill: none; stroke-width: 1.9; }
+.inst-sub { font-size: 11.5px; color: var(--muted); text-align: center; margin: -6px 0 13px; line-height: 1.4; }
 .chev { color: #98a2b3; display: flex; }
 .chev svg { width: 20px; height: 20px; }
 
@@ -303,9 +365,13 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .institutions { margin: 20px 14px 0; padding: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 15px; }
 .inst-title { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); text-align: center; margin-bottom: 12px; }
 .inst-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.inst { display: flex; flex-direction: column; align-items: center; gap: 7px; }
-.inst img { width: 100%; max-width: 74px; aspect-ratio: 1; object-fit: contain; border-radius: 10px; }
-.inst span { font-size: 11px; font-weight: 600; color: var(--navy); text-align: center; }
+.inst {
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  padding: 10px 6px 9px; border-radius: 13px;
+  background: #fbfcff; border: 1px solid #e6ecf7;
+}
+.inst img { width: 100%; max-width: 62px; aspect-ratio: 1; object-fit: contain; border-radius: 8px; }
+.inst span { font-size: 10.5px; font-weight: 700; letter-spacing: .02em; color: var(--navy); text-align: center; line-height: 1.2; }
 
 /* Flujo */
 #flowContent { padding: 16px 14px 26px; }
@@ -405,7 +471,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 }
 .b-avatar.hueco { background: transparent; box-shadow: none; }
 /* La foto de la propia persona: mismo tamano, con un anillo suave para
-   distinguirla de la del servidor publico. */
+   distinguirla de la del gestor de trámites. */
 .b-avatar.mio { box-shadow: 0 1px 3px rgba(16, 24, 40, .14), 0 0 0 1.5px rgba(31, 95, 158, .22); }
 
 .bubble {
@@ -746,7 +812,7 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .ref-team-list b { color: var(--text); }
 
 /* ---------------- Requisitos: boton flotante y hoja de tres pasos ----------------
-   El boton solo existe cuando el servidor publico habilito los requisitos en
+   El boton solo existe cuando el gestor de trámites habilito los requisitos en
    esta conversacion. Queda por encima de la caja de escribir, a la derecha. */
 .req-fab {
   position: absolute; right: 14px; bottom: 86px; z-index: 60;
@@ -764,7 +830,19 @@ body.has-install #chatMessages { padding-bottom: 96px; }
    veia pero no se podia pulsar porque el aviso lo tapaba. */
 .req-fab.subir { bottom: 152px; }
 
-.req-card { max-height: 92vh; overflow-y: auto; }
+.req-card { max-height: 92vh; overflow-y: auto; position: relative; }
+/* Marca de agua del tramite en la esquina del apartado de requisitos. Va
+   detras del contenido y muy tenue: identifica el tramite (SAIME o Justicia
+   y Paz) sin tapar nada de lo que la persona tiene que llenar. */
+.req-marca {
+  position: absolute; right: 10px; bottom: 8px; width: 104px; height: 104px;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none; z-index: 0; opacity: .08;
+}
+.req-marca img { width: 100%; height: 100%; object-fit: contain; filter: grayscale(1); }
+.req-card .sheet-head { gap: 8px; }
+.req-card .sheet-head span:first-child { flex: 1; min-width: 0; }
+.req-card > *:not(.req-marca) { position: relative; z-index: 1; }
 .req-serv {
   margin: 2px 0 10px; padding: 8px 11px; border-radius: 10px;
   background: #eef7f1; color: #0d6650; font-size: 12.5px; font-weight: 700;
@@ -988,6 +1066,10 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .mini:active { background: var(--blue-soft); }
 .mini.ok { background: #e6f7ef; border-color: #bfe6d4; color: #0f6b4c; }
 .mini.bad { background: #fdeaea; border-color: #f6d4d4; color: var(--red); }
+/* Boton para quitar a una persona del registro (panel, lista de personas). */
+.mini.danger { background: #fff5f5; border-color: #f3d0d0; color: #b42318; }
+.mini.danger:active { background: #fdeaea; }
+.row-acts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 
 /* Moderacion de referencias: filas con la cita y los terminos detectados. */
 .panel-row.stack { flex-direction: column; align-items: stretch; gap: 9px; }
@@ -1143,7 +1225,7 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .site-footer .footer-info b { font-weight: 800; }
 .site-footer .footer-legal { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.3); font-size: 12px; color: rgba(255,255,255,.92); }
 
-/* Panel del servidor publico: pestanas, filtros y buscador */
+/* Panel del gestor de trámites: pestanas, filtros y buscador */
 /* Seis pestanas, todas visibles a la vez: dos filas de tres. */
 .admin-tabs {
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
@@ -1178,7 +1260,7 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 }
 .search-input:focus { outline: none; border-color: var(--blue); }
 
-/* Boton para salir del panel del servidor publico */
+/* Boton para salir del panel del gestor de trámites */
 .panel-exit {
   margin-left: auto; border: 1px solid rgba(255, 255, 255, .45); background: rgba(255, 255, 255, .12);
   color: #fff; font: inherit; font-size: 12.5px; font-weight: 700;
@@ -1341,9 +1423,9 @@ body.con-actualizacion .view.active { padding-top: 54px; }
 }
 .offline-bar.hidden { display: none; }
 
-/* Boton del servidor publico en la cabecera del chat: solo lo ve el admin.
+/* Boton del gestor de trámites en la cabecera del chat: solo lo ve el admin.
    Lleva texto (no solo el icono) para que se encuentre a la primera: antes era
-   un icono de camara suelto y el servidor publico no lo reconocia como la
+   un icono de camara suelto y el gestor de trámites no lo reconocia como la
    opcion de enviar la foto, la firma y la huella. */
 .req-admin-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -1366,6 +1448,18 @@ body.con-actualizacion .view.active { padding-top: 54px; }
 .req-tabs.solo-datos { display: none; }
 
 /* Formulario de datos personales (antecedentes penales) */
+#reqPaneDatos { position: relative; }
+/* Marca de agua GRANDE de Justicia y Paz dentro del formulario. Va detras de
+   los campos, centrada y muy tenue: se ve el logo pero no tapa ni un dato. */
+.req-marca-agua {
+  position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; overflow: hidden; pointer-events: none; z-index: 0;
+}
+.req-marca-agua img {
+  width: 78%; max-width: 300px; opacity: .07; filter: grayscale(1);
+}
+/* Todo el contenido del formulario queda por encima de la marca de agua. */
+#reqPaneDatos > *:not(.req-marca-agua) { position: relative; z-index: 1; }
 .req-form { display: grid; gap: 9px; }
 .req-field { display: grid; gap: 4px; }
 .req-field span { font-size: 11.5px; font-weight: 700; color: #5c6b82; }
@@ -1398,3 +1492,6 @@ body.con-actualizacion .view.active { padding-top: 54px; }
 }
 .blood-chip.on { background: var(--blue, #0b5cd5); border-color: var(--blue, #0b5cd5); color: #fff; }
 .blood-chip:active { transform: scale(.97); }
+
+/* Boton para poner el contador de visitas en cero desde el panel. */
+.panel-reset { width: 100%; margin-top: 10px; }

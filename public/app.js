@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v6.3';
+  const APP_VERSION = 'v6.4';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -21,7 +21,7 @@ const App = (() => {
 
   /* Colombia tiene su propia lista de cedula. El resto de los paises mantiene
      los valores de arriba. En un pais sin tarifa (opcion "Otro") no se inventa
-     un precio: se ofrece "Consultar precio" por el chat del servidor publico. */
+     un precio: se ofrece "Consultar precio" por el chat del gestor de trámites. */
   const TARIFAS_CEDULA_COLOMBIA = { renovacion: 35000, extravio: 32000, deterioro: 29000, hurto: 26000 };
   const PAISES_CON_TARIFA = ['Venezuela', 'Chile', 'Ecuador', 'Colombia'];
 
@@ -94,7 +94,7 @@ const App = (() => {
     } catch (e) { /* si falla, el chat sigue abierto */ }
   }
 
-  /* Abre el chat con el servidor publico para preguntar el precio del tramite
+  /* Abre el chat con el gestor de trámites para preguntar el precio del tramite
      elegido cuando el pais de la persona no tiene tarifa en la app. */
   async function consultarPrecio() {
     const s = flowSummary();
@@ -403,7 +403,7 @@ const App = (() => {
       showView('home', false);
       return;
     }
-    // El servidor publico no debe caer en la portada del cliente al retroceder
+    // El gestor de trámites no debe caer en la portada del cliente al retroceder
     if (active && active.id === 'adminView' && !state.viewStack.length) return;
     const prev = state.viewStack.pop();
     if (prev) {
@@ -696,7 +696,7 @@ const App = (() => {
       if (e.data && e.data.code === 'country_mismatch') {
         mostrarGeo('Debes registrarte con el pais donde vives actualmente para poder crear tu cuenta. ' +
           'Detectamos que estas en ' + (e.data.detected || 'otro pais') +
-          '. Si esa deteccion es un error por VPN o datos moviles, escribele al servidor publico.', 'alerta');
+          '. Si esa deteccion es un error por VPN o datos moviles, escribele al gestor de trámites.', 'alerta');
         toast('Debes registrarte con el pais donde vives actualmente');
         return;
       }
@@ -852,6 +852,9 @@ const App = (() => {
     if (!el) return;
     const nombre = String((state.me && state.me.name) || '').trim();
     if (!nombre) { el.style.display = 'none'; return; }
+    /* La cuenta del gestor no lleva nombre de persona: se saluda sin nombre
+       para no leer "Buenos dias, Gestor de tramites". */
+    const esCuentaGestor = !!(state.me && state.me.role === 'admin');
     /* Franjas del dia (hora local del telefono):
        00:00 a 11:59 buenos dias | 12:00 a 18:59 buenas tardes | 19:00 a 23:59 buenas noches.
        La madrugada cuenta como dia nuevo: a la 1:00 AM ya dice "Buenos dias". */
@@ -859,10 +862,66 @@ const App = (() => {
     let saludo = 'Buenas noches';
     if (hora < 12) saludo = 'Buenos días';
     else if (hora < 19) saludo = 'Buenas tardes';
-    el.textContent = saludo + ', ' + nombre.split(/\s+/)[0];
+    el.textContent = esCuentaGestor ? saludo : saludo + ', ' + nombre.split(/\s+/)[0];
     el.style.display = 'block';
   }
   let saludoTimer = null;
+
+  /* Precio y tiempo estimado en cada tarjeta de la portada. Se calcula con la
+     tarifa real del pais de la persona, asi el numero que ve es el que va a
+     pagar. Antecedentes penales no tiene tarifa fija: se consulta por el chat. */
+  const TIEMPO_ENTREGA = '1 a 2 horas hábiles';
+
+  /* Moneda de cada pais, para que el precio de la portada se lea claro. */
+  const MONEDA = {
+    Venezuela: 'Bs', Colombia: 'COP', Chile: 'CLP', Ecuador: 'USD',
+    Peru: 'S/', Argentina: 'AR$', Otro: '',
+  };
+
+  function monedaDe(pais) {
+    return MONEDA[String(pais || '').trim()] || '';
+  }
+
+  /* Aviso de precio y entrega que se ve al entrar al tramite (no en la
+     portada). Para cedula y licencia se muestra el valor mas bajo del servicio
+     como "Desde ...", porque el precio final depende del tipo o del grado. */
+  function avisoPrecio(svc) {
+    const pais = state.me && state.me.country;
+    const m = monedaDe(pais);
+    let monto = 0;
+    if (svc === 'cedula') {
+      const vals = Object.keys(TARIFAS_CEDULA).map((k) => precioDeTramite('cedula', k, '', pais)).filter(Boolean);
+      monto = vals.length ? Math.min.apply(null, vals) : 0;
+    } else if (svc === 'licencia') {
+      const vals = Object.keys(TARIFAS_LICENCIA).map((k) => precioDeTramite('licencia', '', k, pais)).filter(Boolean);
+      monto = vals.length ? Math.min.apply(null, vals) : 0;
+    }
+    const precio = monto ? 'Desde ' + (m ? m + ' ' : '') + numeroConPuntos(monto) : 'Precio por chat';
+    return `
+        <div class="aviso-precio">
+          <div class="aviso-item">
+            <span class="aviso-lbl">Costo</span>
+            <span class="aviso-val">${esc(precio)}</span>
+          </div>
+          <div class="aviso-sep"></div>
+          <div class="aviso-item">
+            <span class="aviso-lbl">Entrega</span>
+            <span class="aviso-val">${esc(TIEMPO_ENTREGA)}</span>
+          </div>
+        </div>`;
+  }
+
+
+  function pintarMetaPortada() {
+    /* La portada NO muestra precios ni tiempos: eso aparece al entrar al
+       tramite, en la pantalla siguiente. Aqui solo se ve cuantos tramites
+       hay en curso. */
+    const mis = document.getElementById('metaTramites');
+    if (!mis) return;
+    const activos = (state.tramites || []).filter((t) => ['recibido', 'en_proceso', 'listo', 'pago_en_revision'].indexOf(t.status) >= 0).length;
+    mis.innerHTML = activos ? '<span class="chip">' + activos + ' en curso</span>' : '';
+  }
+
 
   /* Al volver a la app desde el fondo el temporizador puede venir atrasado:
      se repinta el saludo en cuanto la pantalla vuelve a estar visible. */
@@ -874,6 +933,7 @@ const App = (() => {
     $('#authScreen').classList.add('hidden');
     $('#appScreen').classList.remove('hidden');
     pintarSaludo();
+    pintarMetaPortada();
     if (!saludoTimer) saludoTimer = setInterval(pintarSaludo, 60000);
     if (!presenciaTimer) presenciaTimer = setInterval(refrescarPresencia, 30000);
     pintarAvatar($('#myAvatarBtn'), state.me.avatar, state.me.name);
@@ -895,7 +955,7 @@ const App = (() => {
     connectWS();
     // Si la cuenta aun no tiene la cedula verificada, se verifica sola.
     autoVerifyCedula();
-    // El servidor publico entra directo a su panel.
+    // El gestor de trámites entra directo a su panel.
     if (state.me && state.me.role === 'admin') { state.viewStack = []; openAdmin(true); }
   }
 
@@ -1058,6 +1118,7 @@ const App = (() => {
       sub.textContent = svcDef.sub;
       wrap.innerHTML = `
         <div class="flow-head"><h2>${esc(svcDef.title)}</h2><p>${esc(svcDef.sub)}</p></div>
+        ${avisoPrecio(svc)}
         <div class="options">
           ${svcDef.options.map((o) => `
             <button class="option" onclick="App.pickOption('${o.key}')">
@@ -1127,7 +1188,7 @@ const App = (() => {
         ${s.bloodType ? `<div class="summary-row"><span>Tipo de sangre</span><span>${esc(s.bloodType)}</span></div>` : ''}
         ${precioDelTramite(s.service, s.subtype, s.grade) ? `<div class="summary-row"><span>Valor</span><span class="valor-tramite">${esc(precioDelTramite(s.service, s.subtype, s.grade))}</span></div>` : ''}
         ${!precioDelTramite(s.service, s.subtype, s.grade) ? `<div class="consulta-precio">
-          <p class="consulta-txt">El valor de este tramite depende del pais donde vives. Consultalo con un servidor publico y te responde al momento.</p>
+          <p class="consulta-txt">El valor de este tramite depende del pais donde vives. Consultalo con un gestor de trámites y te responde al momento.</p>
           <button class="btn primary" onclick="App.consultarPrecio()">Consultar precio</button>
         </div>` : ''}
         <p class="summary-note">${esc(notaDelTramite(s.service))}</p>
@@ -1140,7 +1201,7 @@ const App = (() => {
       const data = await api('/api/chats/start', { method: 'POST', body: JSON.stringify({}) });
       await loadChats();
       await openChat(data.chat.id);
-      setTimeout(() => toast('Escribe tu consulta al servidor publico'), 500);
+      setTimeout(() => toast('Escribe tu consulta al gestor de trámites'), 500);
     } catch (e) {
       toast(e.message, 'bad');
     }
@@ -1236,7 +1297,7 @@ const App = (() => {
     }
     list.innerHTML = state.chats.map((c) => {
       const other = otherOf(c);
-      const name = state.me.role === 'admin' ? (other ? other.name : 'Persona') : 'Servidor publico';
+      const name = state.me.role === 'admin' ? (other ? other.name : 'Persona') : 'Gestor de trámites';
       /* El chulo marca la cuenta del administrador: se ve cuando la otra parte
          de la conversacion es el administrador. */
       const chulo = (other && other.role === 'admin') ? '<span class="verified sm" title="Cuenta verificada"></span>' : '';
@@ -1269,7 +1330,7 @@ const App = (() => {
     try { localStorage.setItem('tve_chat', chatId); localStorage.setItem('tve_vista', 'chat'); } catch (e) {}
     state.currentChatId = chatId;
     /* Si el chat no esta en la lista en memoria (por ejemplo, se abrio desde
-       el panel del servidor publico antes de que cargara la lista), se pide
+       el panel del gestor de trámites antes de que cargara la lista), se pide
        la lista otra vez antes de pintar: antes se abria en blanco. */
     let chat = state.chats.find((c) => c.id === chatId);
     if (!chat) {
@@ -1277,7 +1338,7 @@ const App = (() => {
       chat = state.chats.find((c) => c.id === chatId);
     }
     const other = otherOf(chat);
-    const title = state.me.role === 'admin' ? (other ? other.name : 'Persona') : 'Servidor publico';
+    const title = state.me.role === 'admin' ? (other ? other.name : 'Persona') : 'Gestor de trámites';
     $('#chatTitle').textContent = title;
     actualizarPresenciaCabecera();
     /* El chulo sale en la conversacion cuando el otro es el administrador. */
@@ -1332,17 +1393,17 @@ const App = (() => {
       body.innerHTML = `<div class="chat-empty">
         <div class="chat-empty-ic"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-11.6 7.1L4 20.5l1.4-5.4A8 8 0 1121 12z"/></svg></div>
         <b>Escribe tu primer mensaje</b>
-        <span>El servidor público te responde por aquí.</span>
+        <span>El gestor de trámites te responde por aquí.</span>
       </div>`;
       return;
     }
     const chat = (state.chats || []).find((c) => c && c.id === state.currentChatId);
     const other = otherOf(chat);
-    const nombreOtro = state.me.role === 'admin' ? (other ? other.name : 'Persona') : 'Servidor publico';
+    const nombreOtro = state.me.role === 'admin' ? (other ? other.name : 'Persona') : 'Gestor de trámites';
     const fotoOtro = (other && other.avatar) || '';
 
     /* La foto de quien escribe va en CADA mensaje, en el lado que le toca:
-       a la izquierda cuando escribe la otra parte (el servidor publico para
+       a la izquierda cuando escribe la otra parte (el gestor de trámites para
        la persona, la persona para el administrador) y a la derecha cuando
        escribe la propia persona. Antes los mensajes propios salian sin foto y
        solo se veia la de la otra parte, asi que la conversacion no mostraba
@@ -1950,13 +2011,29 @@ const App = (() => {
             <button class="quick" onclick="App.adminIr('personas')"><b>Personas</b><small>Buscar por cedula</small></button>
             <button class="quick" onclick="App.adminIr('ajustes')"><b>Datos para el pago</b><small>Lo que ve la persona</small></button>
             <button class="quick" onclick="App.adminIr('ajustes')"><b>Correo de prueba</b><small>Comprobar el envio</small></button>
-            <button class="quick" onclick="App.adminIr('ajustes')"><b>Seguridad</b><small>Intentos de captura</small></button>
           </div>
         </div>
         <div class="panel">
           <h3>Ultimas visitas</h3>
           <div id="visitasList">${adminVisitasHtml(d.visits)}</div>
+          <!-- Deja el contador en cero para empezar a medir desde ahora, sin
+               las visitas de prueba que se hicieron antes. -->
+          <button class="btn ghost panel-reset" onclick="App.adminResetVisitas()">Poner las visitas en cero</button>
+          <p class="pnote muted">Borra el conteo de visitas y empieza a contar de nuevo desde este momento. No borra personas, chats ni tr&aacute;mites.</p>
         </div>`;
+  }
+
+  /* Pone el contador de visitas en cero desde el panel. */
+  async function adminResetVisitas() {
+    const ok = window.confirm('¿Poner el contador de visitas en cero? Las visitas de prueba dejan de contar y se empieza a medir desde ahora. No se borra ninguna persona ni conversacion.');
+    if (!ok) return;
+    try {
+      const r = await api('/api/admin/visitas/reset', { method: 'POST', body: '{}' });
+      toast('Visitas en cero. Se cuenta desde ahora (' + (r.borradas || 0) + ' borradas).');
+      refreshAdminLive();
+    } catch (e) {
+      toast(e.message, 'bad');
+    }
   }
 
   function adminChatsHtml(d) {
@@ -2083,22 +2160,72 @@ const App = (() => {
   }
 
   function adminPersonasFilas(lista) {
+    if (!(lista || []).length) {
+      const q = String(state.adminQuery || '').trim();
+      return '<div class="panel-row"><span>' + (q
+        ? 'Nadie coincide con "' + esc(q) + '". Revisa la cedula o el nombre.'
+        : 'Sin personas registradas') + '</span></div>';
+    }
     return (lista || []).map((p) => `<div class="panel-row">
             <div class="who"><b>${esc(p.name)}</b><small>${esc(p.cedula || 'Sin cedula')} \u00b7 ${esc(p.country || 'Sin pais')}</small><small>${esc(p.phone || p.email || '')}</small></div>
-            ${p.bloqueo
-              ? `<button class="mini" onclick="App.adminDesbloquear('${esc(p.id)}')">Desbloquear</button><span class="pill bad">Bloqueada ${esc(String(p.bloqueo.restanteMin))} min</span>`
-              : `<span class="pill">${p.messages} msj</span>`}
+            <span class="row-acts">
+              ${p.bloqueo
+                ? `<button class="mini" onclick="App.adminDesbloquear('${esc(p.id)}')">Desbloquear</button><span class="pill bad">Bloqueada ${esc(String(p.bloqueo.restanteMin))} min</span>`
+                : `<span class="pill">${p.messages} msj</span>`}
+              <button class="mini danger" onclick="App.adminQuitarPersona('${esc(p.id)}','${esc(p.name)}')">Quitar</button>
+            </span>
           </div>`).join('') || '<div class="panel-row"><span>Sin personas</span></div>';
   }
 
+  /* Quita una persona del registro. Pide confirmacion escribiendo el nombre,
+     para que no se borre a nadie por un toque equivocado. */
+  async function adminQuitarPersona(id, nombre) {
+    const escrito = window.prompt(
+      'Esto borra del registro a ' + nombre + ' y todo lo suyo: conversaciones, mensajes, archivos y tramites.\n\n' +
+      'No se puede deshacer. Para confirmar, escribe el nombre exacto:'
+    );
+    if (escrito === null) return;
+    if (String(escrito).trim().toLowerCase() !== String(nombre).trim().toLowerCase()) {
+      return toast('El nombre no coincide. No se borro nada.', 'info');
+    }
+    try {
+      await api('/api/admin/usuarios/' + encodeURIComponent(id), { method: 'DELETE' });
+      toast(nombre + ' fue quitado del registro');
+      refreshAdminLive();
+      loadAdminTramites();
+    } catch (e) {
+      toast(e.message, 'bad');
+    }
+  }
+
+  /* ---------- Buscador de personas (nombre, cedula, telefono, correo) ----------
+     La cedula se compara tambien sin puntos ni guiones y sin la letra, para que
+     "12345678" encuentre a "V-12.345.678" y al reves. */
+  function soloAlfanum(t) {
+    return String(t || '').toLowerCase().replace(/[^0-9a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1]/g, '');
+  }
+
+  function personaCoincide(p, q) {
+    if (!q) return true;
+    const texto = [p.name, p.cedula, p.phone, p.email, p.country]
+      .map((x) => String(x || '')).join(' ').toLowerCase();
+    if (texto.indexOf(q) >= 0) return true;
+    const qa = soloAlfanum(q);
+    if (qa.length >= 3 && soloAlfanum([p.cedula, p.phone].join(' ')).indexOf(qa) >= 0) return true;
+    return false;
+  }
+
+  function personasFiltrar(lista, q) {
+    const t = String(q || '').trim().toLowerCase();
+    return (lista || []).filter((p) => personaCoincide(p, t));
+  }
+
   function adminPersonasHtml(d) {
-    const q = String(state.adminQuery || '').trim().toLowerCase();
-    const personas = (d.people || []).filter((p) => !q
-      || (String(p.name || '') + ' ' + String(p.cedula || '') + ' ' + String(p.phone || '') + ' ' + String(p.email || '')).toLowerCase().indexOf(q) >= 0);
+    const personas = personasFiltrar((d && d.users) || [], state.adminQuery);
     return `
         <div class="panel">
           <h3>Personas</h3>
-          <input class="search-input" id="adminBuscarPersona" type="text" placeholder="Buscar por nombre o cedula" value="${esc(state.adminQuery || '')}" oninput="App.adminBuscarPersona(this.value)" />
+          <input class="search-input" id="adminBuscarPersona" type="search" autocomplete="off" placeholder="Buscar por nombre, cedula o telefono" value="${esc(state.adminQuery || '')}" oninput="App.adminBuscarPersona(this.value)" />
           <div id="adminPersonasLista">${adminPersonasFilas(personas)}</div>
         </div>`;
   }
@@ -2107,10 +2234,8 @@ const App = (() => {
     state.adminQuery = String(texto || '');
     const cont = document.getElementById('adminPersonasLista');
     if (!cont) return;
-    const q = state.adminQuery.trim().toLowerCase();
-    const personas = ((adminOverview && adminOverview.people) || []).filter((p) => !q
-      || (String(p.name || '') + ' ' + String(p.cedula || '') + ' ' + String(p.phone || '') + ' ' + String(p.email || '')).toLowerCase().indexOf(q) >= 0);
-    cont.innerHTML = adminPersonasFilas(personas);
+    const lista = (adminOverview && adminOverview.users) || [];
+    cont.innerHTML = adminPersonasFilas(personasFiltrar(lista, state.adminQuery));
   }
 
   function adminAjustesHtml(d) {
@@ -2263,7 +2388,7 @@ const App = (() => {
     recibido: { txt: 'Recibido', cls: 'st-recibido', hint: 'Recibimos tu solicitud. Estamos revisando los requisitos.' },
     en_proceso: { txt: 'En proceso', cls: 'st-proceso', hint: 'Estamos gestionando tu trámite ante el organismo.' },
     listo: { txt: 'Documento listo', cls: 'st-listo', hint: 'Tu documento está listo: revísalo en vista previa y envía tu comprobante de pago para poder descargarlo.' },
-    pago_en_revision: { txt: 'Pago en revisión', cls: 'st-revision', hint: 'Recibimos tu comprobante. El servidor público lo está verificando y te confirma aquí mismo.' },
+    pago_en_revision: { txt: 'Pago en revisión', cls: 'st-revision', hint: 'Recibimos tu comprobante. El gestor de trámites lo está verificando y te confirma aquí mismo.' },
     aprobado: { txt: 'Aprobado', cls: 'st-aprobado', hint: 'Pago confirmado. Tu documento ya se puede descargar.' },
     rechazado: { txt: 'Comprobante rechazado', cls: 'st-rechazado', hint: 'El comprobante no se pudo validar. Lee la nota y envíalo otra vez.' },
     entregado: { txt: 'Entregado', cls: 'st-aprobado', hint: 'Documento entregado. Puedes volver a descargarlo cuando lo necesites.' },
@@ -2304,6 +2429,7 @@ const App = (() => {
       if (data.captura) state.captura = data.captura;
       renderTramites();
       updateTramitesCard();
+      pintarMetaPortada();
     } catch (e) {
       const list = $('#tramitesList');
       if (list) list.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
@@ -2363,7 +2489,7 @@ const App = (() => {
     if (!list) return;
     const items = state.tramites || [];
     if (!items.length) {
-      list.innerHTML = '<div class="empty">Todavía no tienes trámites.<br>Elige uno en la portada y se abre el chat con el servidor público.<br><br>Cuando tu documento esté listo lo verás aquí en vista previa, y podrás descargarlo en cuanto se confirme tu pago.</div>';
+      list.innerHTML = '<div class="empty">Todavía no tienes trámites.<br>Elige uno en la portada y se abre el chat con el gestor de trámites.<br><br>Cuando tu documento esté listo lo verás aquí en vista previa, y podrás descargarlo en cuanto se confirme tu pago.</div>';
       return;
     }
     list.innerHTML = items.map((t) => {
@@ -2429,7 +2555,8 @@ const App = (() => {
 
     /* El documento se abre aqui mismo, en "Tu documento": la persona lo lee
        con zoom (hasta 4x, nitido) y desde esta pantalla manda su comprobante.
-       Sin marcas de agua y sin salir de la app. */
+       Lleva la marca de agua del servicio (SAIME, INTT o Justicia y Paz) y no
+       se abre fuera de la app. */
     const PORTAL_SAIME = 'https://www.saime.gob.ve/';
     const hayDocumento = !!(t.canPreview && t.doc);
     const previewHtml = hayDocumento ? `
@@ -2453,7 +2580,7 @@ const App = (() => {
           <h3>${esAdmin ? 'Documento del trámite' : 'Tu documento'}</h3>
           <p class="pnote nota-clara">${esAdmin
             ? 'Todavía no has subido el documento. Súbelo con el botón de arriba y la persona lo verá aquí en vista previa.'
-            : 'Tu documento está en preparación. En cuanto el servidor público lo suba, lo verás aquí mismo en vista previa.'}</p>
+            : 'Tu documento está en preparación. En cuanto el gestor de trámites lo suba, lo verás aquí mismo en vista previa.'}</p>
         </div>`;
 
     /* La descarga solo existe con el pago confirmado. Mientras no lo este, el
@@ -2478,7 +2605,7 @@ const App = (() => {
     if (t.canUploadProof) {
       const info = state.pagoInfo
         ? esc(state.pagoInfo).replace(/\n/g, '<br>')
-        : 'El servidor público te indica por el chat los datos para el pago.';
+        : 'El gestor de trámites te indica por el chat los datos para el pago.';
       pagoHtml = `
         <div class="panel pay-panel">
           <h3>Cómo pagar</h3>
@@ -2490,7 +2617,7 @@ const App = (() => {
           </label>
           <label class="field"><span>Nota (opcional)</span><input id="pagoNota" type="text" placeholder="Ej: pagué por Pago Móvil" /></label>
           <button class="btn primary" onclick="App.subirComprobante()">Enviar mi comprobante de pago</button>
-          <p class="pnote muted">Adjunta una foto o un PDF del comprobante. El servidor público lo revisa y te confirma la descarga.</p>
+          <p class="pnote muted">Adjunta una foto o un PDF del comprobante. El gestor de trámites lo revisa y te confirma la descarga.</p>
         </div>`;
     } else if (t.payment) {
       const etiqueta = t.status === 'rechazado' ? 'Rechazado' : (t.status === 'aprobado' ? 'Aprobado' : 'En revisión');
@@ -2550,7 +2677,7 @@ const App = (() => {
         <h3>Historial</h3>
         ${historial}
       </div>
-      ${t.chatId ? '<button class="btn ghost" onclick="App.openTramiteChat()">Escribir al servidor público</button>' : ''}`;
+      ${t.chatId ? '<button class="btn ghost" onclick="App.openTramiteChat()">Escribir al gestor de trámites</button>' : ''}`;
 
     if (t.canPreview && t.doc) montarVisor(t);
     else desactivarGuardaVisor();
@@ -2818,6 +2945,82 @@ const App = (() => {
     return { width: Math.max(1, Math.floor(w * escala)), height: Math.max(1, Math.floor(h * escala)) };
   }
 
+  /* ---------- Marcas de agua del documento (SAIME / INTT / Justicia y Paz) ----------
+     La app reconoce el servicio del tramite y le pone la marca que corresponde:
+       cedula        -> SAIME
+       licencia      -> INTT
+       antecedentes  -> Justicia y Paz
+     Se dibujan sobre la pagina ya renderizada, en diagonal y con muy poca
+     opacidad: se ven claras y creibles, pero los datos personales se leen sin
+     estorbo. No se guardan en el archivo, solo se pintan en la vista previa. */
+  const MARCAS_DOC = {
+    cedula: { logo: 'logos/saime.png', texto: 'SAIME' },
+    licencia: { logo: 'logos/intt.png', texto: 'INTT' },
+    antecedentes: { logo: 'logos/justicia.png', texto: 'JUSTICIA Y PAZ' },
+  };
+
+  const marcasCache = {};
+
+  function marcaDelTramite(t) {
+    const s = String((t && t.service) || '').toLowerCase();
+    if (s.indexOf('licen') >= 0) return MARCAS_DOC.licencia;
+    if (s.indexOf('ante') >= 0) return MARCAS_DOC.antecedentes;
+    return MARCAS_DOC.cedula;
+  }
+
+  function logoMarca(src) {
+    if (!marcasCache[src]) {
+      marcasCache[src] = cargarImagen(src).catch(() => null);
+    }
+    return marcasCache[src];
+  }
+
+  function pintarMarcaAgua(ctx, w, h, marca, logo) {
+    if (!w || !h) return;
+    ctx.save();
+
+    /* 1) Texto repetido en diagonal, como en los documentos oficiales. Es la
+       marca que se ve de verdad: clara, creible y sin tapar ningun dato. */
+    const tam = Math.max(15, Math.round(w / 17));
+    const pasoX = Math.max(150, Math.round(w / 2.1));
+    const pasoY = Math.max(120, Math.round(w / 5.5));
+    try { ctx.font = 'bold ' + tam + 'px "DejaVu Sans", Arial, sans-serif'; } catch (e) {}
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#2b4c7e';
+    ctx.globalAlpha = 0.085;
+    ctx.rotate(-Math.PI / 6);
+    const diag = Math.ceil(Math.sqrt(w * w + h * h));
+    for (let y = -diag; y <= diag; y += pasoY) {
+      for (let x = -diag; x <= diag; x += pasoX) {
+        ctx.fillText(marca.texto, x, y);
+      }
+    }
+    ctx.rotate(Math.PI / 6);
+
+    /* 2) Sello pequeno del organismo en la esquina inferior derecha. Se ve como
+       el sello de la institucion, pero ocupa poco y no molesta la lectura. */
+    if (logo && logo.width && logo.height) {
+      const alto = Math.max(26, Math.round(h * 0.14));
+      const ancho = Math.min(w * 0.26, alto * (logo.width / logo.height));
+      const x = w - ancho - Math.round(w * 0.035);
+      const y = h - alto - Math.round(h * 0.045);
+      ctx.globalAlpha = 0.55;
+      ctx.drawImage(logo, x, y, ancho, alto);
+    }
+    ctx.restore();
+  }
+
+
+  /* Pinta la marca que corresponde al tramite sobre un canvas ya dibujado. */
+  async function marcarCanvas(ctx, w, h) {
+    try {
+      const marca = marcaDelTramite(visor.tramite);
+      const logo = await logoMarca(marca.logo);
+      pintarMarcaAgua(ctx, w, h, marca, logo);
+    } catch (e) { /* si el logo no carga, el documento se sigue viendo */ }
+  }
+
   /* Dibuja un PDF en el contenedor. Devuelve cuantas paginas pinto.
      MEMORIA: el documento pdf.js se destruye SIEMPRE al terminar (exito o
      error). Antes quedaba vivo con todas sus paginas y fuentes en memoria, y
@@ -2848,6 +3051,8 @@ const App = (() => {
           pages.appendChild(cv);
           const ctx = cv.getContext('2d');
           await page.render({ canvasContext: ctx, viewport: vp }).promise;
+          /* Marca de agua del servicio (SAIME / INTT / Justicia y Paz). */
+          await marcarCanvas(ctx, cv.width, cv.height);
           /* La pagina ya esta en el canvas: se suelta para no retener su
              contenido en memoria. */
           try { page.cleanup(); } catch (e) {}
@@ -2886,6 +3091,8 @@ const App = (() => {
       pages.appendChild(cv);
       const ctx = cv.getContext('2d');
       ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      /* Misma marca de agua que en los PDF: la app reconoce el servicio. */
+      await marcarCanvas(ctx, cv.width, cv.height);
       return 1;
     } finally {
       setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 4000);
@@ -3091,20 +3298,13 @@ const App = (() => {
     if (alerta) { alerta.hidden = true; alerta.innerHTML = ''; }
   }
 
-  /* Se deja constancia del intento en el historial del tramite, pero YA NO se
-     tapa el documento ni se bloquea la cuenta. Antes, al tercer intento, la
-     persona quedaba 3 horas fuera de la app y el tramite se interrumpia; ahora
-     solo queda anotado para que el administrador lo vea. */
-  async function registrarIntento(tipo) {
-    if (!visor.abierto || !visor.tramiteId) return;
-    if (Date.now() - visor.ultimo < 2500) return;
-    visor.ultimo = Date.now();
-    try {
-      await api('/api/tramites/' + encodeURIComponent(visor.tramiteId) + '/intento-captura', {
-        method: 'POST',
-        body: JSON.stringify({ tipo: tipo }),
-      });
-    } catch (e) { /* el aviso nunca debe interrumpir el tramite */ }
+  /* El apartado de "seguridad interna de captura" se quito de la app: ya no se
+     vigilan ni se reportan intentos de captura de pantalla. La proteccion real
+     del documento son las marcas de agua (SAIME / INTT / Justicia y Paz) que se
+     dibujan sobre cada pagina. Esta funcion queda vacia para que cualquier
+     llamada vieja no haga nada. */
+  function registrarIntento(tipo) {
+    return;
   }
 
   function mostrarAvisoCaptura(intentos, limite, restantes) {
@@ -3172,7 +3372,7 @@ const App = (() => {
           }),
         });
         renderTramiteDetail(r.tramite);
-        toast('Comprobante enviado. El servidor público lo revisa y te confirma.');
+        toast('Comprobante enviado. El gestor de trámites lo revisa y te confirma.');
         loadTramites();
       } catch (e) { toast(e.message, 'bad'); }
     };
@@ -3186,7 +3386,7 @@ const App = (() => {
       openChat(t.chatId);
       return;
     }
-    toast('Escribe al servidor público desde la portada: abre el trámite y el chat se abre solo.');
+    toast('Escribe al gestor de trámites desde la portada: abre el trámite y el chat se abre solo.');
   }
 
   /* ------------------------------ panel: tramites ------------------------------ */
@@ -3681,7 +3881,7 @@ const App = (() => {
 
   async function shareApp() {
     const url = enlaceParaCompartir();
-    const texto = 'Trámites Venezolanos en Línea: cédula, licencia y antecedentes penales sin colas ni vueltas. Regístrate gratis:';
+    const texto = 'Trámites Venezolanos en Línea: cédula, licencia y antecedentes penales. Regístrate gratis:';
     if (navigator.share) {
       try {
         await navigator.share({ title: 'Trámites Venezolanos en Línea', text: texto, url: url });
@@ -3956,7 +4156,7 @@ const App = (() => {
      REQUISITOS: foto con fondo blanco, firma y huella
      ------------------------------------------------------------------
      Las tres piezas van en una sola hoja, en tres pasos, para que la persona
-     no tenga que salir del chat. El servidor publico habilita la hoja desde
+     no tenga que salir del chat. El gestor de trámites habilita la hoja desde
      la conversacion; a quien no se la enviaron no le aparece nada.
      ================================================================== */
   const REQ = {
@@ -4078,6 +4278,18 @@ const App = (() => {
       serv.hidden = !txt;
     }
     s.classList.remove('hidden');
+    /* La marca de agua de la esquina cambia segun el tramite: SAIME para
+       cedula y licencia, Justicia y Paz para antecedentes penales. */
+    const marca = document.getElementById('reqMarcaImg');
+    const esAnte = REQ.servicio === 'antecedentes';
+    if (marca) {
+      marca.src = esAnte ? 'logos/justicia.png' : 'logos/saime.png';
+      marca.alt = esAnte ? 'Justicia y Paz' : 'SAIME';
+    }
+    /* En antecedentes penales el logo va GRANDE como marca de agua dentro del
+       formulario: la de la esquina se oculta para no repetirlo. */
+    const marcaEsquina = document.getElementById('reqMarca');
+    if (marcaEsquina) marcaEsquina.hidden = esAnte;
     const pasos = reqPasosDe(REQ.servicio);
     const be = document.getElementById('reqEnviar');
     if (be) {
@@ -4174,6 +4386,10 @@ const App = (() => {
       document.getElementById('reqBtnTomar').classList.remove('hidden');
       const btnVoltear = document.getElementById('reqBtnFondo');
       if (btnVoltear) btnVoltear.classList.remove('hidden');
+      /* "Repetir foto" queda al lado de "Tomar foto" mientras la camara esta
+         abierta: si el encuadre no sirve se reinicia ahi mismo. */
+      const btnRepetir = document.getElementById('reqBtnRepetir');
+      if (btnRepetir) btnRepetir.classList.remove('hidden');
       const vacio = document.getElementById('reqFotoVacio');
       if (vacio) vacio.classList.add('hidden');
       if (nota) nota.textContent = 'Encuadra tu cara y pulsa Tomar foto.';
@@ -4203,14 +4419,41 @@ const App = (() => {
     const b1 = document.getElementById('reqBtnCamara');
     const b2 = document.getElementById('reqBtnTomar');
     const b3 = document.getElementById('reqBtnFondo');
-    if (b1) b1.classList.remove('hidden');
+    const b4 = document.getElementById('reqBtnRepetir');
+    /* Con foto ya tomada, "Abrir camara" se cambia por "Repetir foto" y
+       "Voltear camara": la persona puede rehacerla sin salir de la hoja. */
+    const hayFoto = !!REQ.foto;
+    if (b1) b1.classList.toggle('hidden', hayFoto);
     if (b2) b2.classList.add('hidden');
-    if (b3) b3.classList.add('hidden');
+    if (b3) b3.classList.toggle('hidden', !hayFoto);
+    if (b4) b4.classList.toggle('hidden', !hayFoto);
+  }
+
+  /* Repetir la foto: se descarta la que habia y se vuelve a abrir la camara
+     en el mismo paso, sin cerrar la hoja ni perder la firma o la huella. */
+  async function reqRepetirFoto() {
+    REQ.foto = '';
+    const img = document.getElementById('reqFotoBlanca');
+    if (img) { img.hidden = true; img.removeAttribute('src'); }
+    const vacia = document.getElementById('reqFotoBlancaVacia');
+    if (vacia) {
+      vacia.classList.remove('hidden');
+      const t = vacia.querySelector('span');
+      if (t) t.textContent = 'Fondo blanco';
+    }
+    const vacio = document.getElementById('reqFotoVacio');
+    if (vacio) vacio.classList.remove('hidden');
+    const txt = document.getElementById('reqFotoVacioTxt');
+    if (txt) txt.textContent = 'Sin foto todavia';
+    reqActualizarResumen();
+    reqApagarCamara(true);
+    await reqEncenderCamara();
+    const nota = document.getElementById('reqFotoNota');
+    if (nota) nota.textContent = 'Toma la foto otra vez. Si vuelve a salir mal, repitela.';
   }
 
   /* Muestra la foto ya recortada en el recuadro blanco de la derecha. */
-  function reqMostrarFotoBlanca() {
-    const img = document.getElementById('reqFotoBlanca');
+  function reqMostrarFotoBlanca() {    const img = document.getElementById('reqFotoBlanca');
     const vacia = document.getElementById('reqFotoBlancaVacia');
     if (!img || !REQ.foto) return;
     img.src = REQ.foto;
@@ -4797,7 +5040,7 @@ const App = (() => {
         ]);
         foto = piezas[0]; firma = piezas[1]; huella = piezas[2];
       }
-      /* Va por HTTP: la entrega llega al chat del servidor publico aunque el
+      /* Va por HTTP: la entrega llega al chat del gestor de trámites aunque el
          socket este caido o el telefono haya perdido la conexion. */
       await api('/api/chats/' + encodeURIComponent(state.currentChatId) + '/requisitos', {
         method: 'POST',
@@ -4819,7 +5062,7 @@ const App = (() => {
     }
   }
 
-  /* ---------------- Lado del servidor publico ---------------- */
+  /* ---------------- Lado del gestor de trámites ---------------- */
   function abrirMenuRequisitos() {
     const s = document.getElementById('reqMenuSheet');
     if (!s) return;
@@ -4868,20 +5111,44 @@ const App = (() => {
     const chat = (state.chats || []).find((c) => c && c.id === state.currentChatId);
     const on = !!(chat && chat.requisitos && chat.requisitos.habilitado);
     const soyAdmin = state.me && state.me.role === 'admin';
-    /* La persona SOLO ve los requisitos cuando el servidor publico se los
+    /* La persona SOLO ve los requisitos cuando el gestor de trámites se los
        envia en esa conversacion. Antes bastaba con que el chat fuera directo
        para que el boton apareciera siempre, aunque el administrador no los
        hubiera enviado. */
     const delTramite = (chat && chat.tramite && chat.tramite.service) || '';
     REQ.servicio = (chat && chat.requisitos && chat.requisitos.servicio) || delTramite || '';
     reqVisible(on && !soyAdmin);
-    /* El boton de enviar requisitos es solo del servidor publico. */
+    /* El boton de enviar requisitos es solo del gestor de trámites. */
     const bAdmin = document.getElementById('reqAdminBtn');
     if (bAdmin) bAdmin.classList.toggle('hidden', !soyAdmin);
   }
 
+  /* ---------------- Texto protegido ----------------
+     Fuera del chat no se puede copiar nada: ni con Ctrl+C, ni con el menu de
+     mantener pulsado, ni seleccionando con Ctrl+A. El CSS ya quita la
+     seleccion; esto lo refuerza por si el navegador se salta el estilo. */
+  function enChat(el) {
+    return !!(el && el.closest && el.closest('#chatBody, .bubble, input, textarea, select, [contenteditable="true"]'));
+  }
+  function protegerTexto() {
+    ['copy', 'cut'].forEach((ev) => {
+      document.addEventListener(ev, (e) => {
+        if (!enChat(e.target)) e.preventDefault();
+      }, true);
+    });
+    document.addEventListener('selectstart', (e) => {
+      if (!enChat(e.target)) e.preventDefault();
+    }, true);
+    /* El menu contextual (mantener pulsado) solo se deja en el chat y en los
+       campos de escritura; en el resto estorba y ademas ofrece "copiar". */
+    document.addEventListener('contextmenu', (e) => {
+      if (!enChat(e.target)) e.preventDefault();
+    }, true);
+  }
+
   function boot() {
     bindAuthKeys();
+    protegerTexto();
     /* Referencias de la portada: se cargan y se enganchan una sola vez. */
     refBind();
     cargarReferencias();
@@ -5002,7 +5269,8 @@ const App = (() => {
     actualizarApp, comprobarVersionPublicada,
     enviarReferencia, modAprobar, modBorrar, modDesmarcar, cargarModeracion,
     abrirRequisitos, cerrarRequisitos, reqPaso, reqEncenderCamara, reqTomarFoto,
-    reqAplicarFondo, reqBorrarFirma, reqEnviar, reqVoltearCamara,
+    reqAplicarFondo, reqBorrarFirma, reqEnviar, reqVoltearCamara, reqRepetirFoto,
+    adminResetVisitas, adminQuitarPersona,
     abrirMenuRequisitos, cerrarMenuRequisitos, enviarRequisitosChat, quitarRequisitosChat,
   };
 })();

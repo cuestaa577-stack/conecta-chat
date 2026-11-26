@@ -33,7 +33,7 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'enelextranjerovenezolanos@gmail.com').trim().toLowerCase();
 const ADMIN_PHONE = String(process.env.ADMIN_PHONE || '').replace(/\D/g, '');
 const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || '');
-const ADMIN_NAME = process.env.ADMIN_NAME || 'Servidor publico';
+const ADMIN_NAME = process.env.ADMIN_NAME || 'Gestor de trámites';
 
 /* correo saliente (codigos de 6 digitos) */
 const SMTP_HOST = String(process.env.SMTP_HOST || '').trim();
@@ -1154,6 +1154,13 @@ function ensureAdmin() {
     }
     if (admin.emailVerified !== true) { admin.emailVerified = true; changed = true; }
     if (admin.role !== 'admin') { admin.role = 'admin'; changed = true; }
+    /* El administrador se llamaba "Servidor publico" en las cuentas viejas.
+       Ahora se llama "Gestor de tramites": se renombra una sola vez para que
+       los chats que ya existen muestren el nombre nuevo. */
+    const viejo = String(admin.name || '').toLowerCase();
+    if (viejo === 'servidor publico' || viejo === 'servidor p\u00fablico') {
+      admin.name = ADMIN_NAME; changed = true;
+    }
     if (changed) save();
     return;
   }
@@ -1599,7 +1606,7 @@ app.post('/api/forgot', async (req, res) => {
   if (!cedula) return res.status(400).json({ error: 'Cedula no valida. Escribe por ejemplo V-12345678' });
   const user = Object.values(db.users).find((u) => u.cedula === cedula);
   if (!user) return res.status(404).json({ error: 'Esa cedula no esta registrada. Crea una cuenta' });
-  if (!user.email) return res.status(400).json({ error: 'Esa cuenta no tiene correo. Escribe al servidor publico' });
+  if (!user.email) return res.status(400).json({ error: 'Esa cuenta no tiene correo. Escribe al gestor de trámites' });
   const guard = codeGuardOk(cedula);
   if (!guard.ok) return res.status(429).json({ error: guard.error });
   const code = issueCode(user, 'reset');
@@ -1692,7 +1699,7 @@ app.post('/api/profile', auth, (req, res) => {
    (Supabase, tabla de registros) y solo el administrador puede tocar algo. */
 app.delete('/api/account', auth, (req, res) => {
   return res.status(403).json({
-    error: 'Las cuentas no se pueden eliminar. Tu registro queda guardado; si necesitas un cambio escribe al servidor publico.',
+    error: 'Las cuentas no se pueden eliminar. Tu registro queda guardado; si necesitas un cambio escribe al gestor de trámites.',
   });
 });
 
@@ -1773,7 +1780,7 @@ function chatView(chat, forUserId) {
   };
 }
 
-/* Un chat pertenece al servidor publico si alguno de sus miembros es admin.
+/* Un chat pertenece al gestor de trámites si alguno de sus miembros es admin.
    Antes se comparaba contra "el primer admin" que apareciera en la base: si
    habia mas de una cuenta admin (o la cuenta se recreo), el panel mostraba
    conversaciones que luego daban "Chat no encontrado" al abrirlas. */
@@ -1913,9 +1920,9 @@ app.delete('/api/chats/:id', auth, (req, res) => {
 });
 
 /* --- mensajes --- */
-/* Solo el servidor publico (administrador) puede mandar o quitar el menu de
+/* Solo el gestor de trámites (administrador) puede mandar o quitar el menu de
    requisitos de un chat. */
-/* Entrega de requisitos (foto, firma y huella) al servidor publico.
+/* Entrega de requisitos (foto, firma y huella) al gestor de trámites.
    Se llama desde el chat en vivo y tambien por HTTP: si el telefono pierde
    la conexion un segundo, la entrega no se pierde. */
 function entregarRequisitos(userId, chatId, datos) {
@@ -1998,7 +2005,7 @@ function req_user_es_admin(userId) {
 app.get('/api/chats/:id/messages', auth, (req, res) => {
   const chat = db.chats[req.params.id];
   if (!chat) return res.status(404).json({ error: 'Chat no encontrado' });
-  /* El servidor publico puede abrir cualquier conversacion de tramite aunque
+  /* El gestor de trámites puede abrir cualquier conversacion de tramite aunque
      su cuenta se haya recreado: se le agrega como miembro en ese momento. */
   if (!chat.members.includes(req.user.id)) {
     if (req.user.role === 'admin' && esChatDeAdmin(chat)) {
@@ -2314,6 +2321,19 @@ app.post('/api/admin/test-mail', auth, adminOnly, async (req, res) => {
 });
 
 /* --- panel del administrador --- */
+/* Pone el contador de visitas en cero. Sirve para empezar a medir desde el
+   momento en que la app se abre al publico: las visitas de prueba que se
+   hicieron antes dejan de contar. No toca cuentas, chats ni tramites. */
+app.post('/api/admin/visitas/reset', auth, adminOnly, (req, res) => {
+  const antes = Array.isArray(db.visits) ? db.visits.length : 0;
+  db.visits = [];
+  /* Se guarda la marca de cuando se reinicio, para poder decir "desde aqui". */
+  if (!db.settings) db.settings = {};
+  db.settings.visitasDesde = now();
+  save();
+  res.json({ ok: true, borradas: antes, desde: db.settings.visitasDesde });
+});
+
 app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
   const users = Object.values(db.users)
     .filter((u) => u.role !== 'admin')
@@ -2329,7 +2349,8 @@ app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
       return {
         id: u.id,
         name: u.name,
-        phone: u.phone,
+        cedula: u.cedula || '',
+        phone: u.phone || '',
         email: u.email || '',
         country: u.country || 'Sin pais',
         createdAt: u.createdAt,
@@ -2353,7 +2374,7 @@ app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  // Las visitas del propio servidor publico no cuentan: interesan las de las personas
+  // Las visitas del propio gestor de trámites no cuentan: interesan las de las personas
   const visitasReales = db.visits.filter((v) => !v.userId || v.userId !== req.user.id);
   const visits = visitasReales.slice(-500);
 
@@ -2402,7 +2423,7 @@ app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
    ---------------------------------------------------------------------
    Estados:
      recibido         -> la persona pidio el tramite (o el admin lo creo)
-     en_proceso       -> el servidor publico esta gestionando el tramite
+     en_proceso       -> el gestor de trámites esta gestionando el tramite
      listo            -> el documento esta cargado: la persona VE LA VISTA PREVIA
      pago_en_revision -> la persona envio su comprobante de pago
      aprobado         -> el admin confirmo el pago: DESCARGA HABILITADA
@@ -2954,13 +2975,13 @@ app.post('/api/admin/tramites', auth, adminOnly, (req, res) => {
     updatedAt: now(),
     history: [],
   };
-  tramiteHistorial(t, 'recibido', 'Tramite creado por el servidor publico', req.user.id);
+  tramiteHistorial(t, 'recibido', 'Tramite creado por el gestor de trámites', req.user.id);
   tramitesDb()[t.id] = t;
   save();
   sendToUser(user.id, { type: 'tramite:new', tramite: tramiteView(t, user) });
   enviarPush(user.id, {
     title: 'Tienes un tramite nuevo',
-    body: 'El servidor publico abrio un tramite para ti. Entra a verlo.',
+    body: 'El gestor de trámites abrio un tramite para ti. Entra a verlo.',
     url: './?panel=tramites',
     tag: 'tramite:' + t.id
   });
@@ -3020,7 +3041,7 @@ app.post('/api/admin/tramites/:id/estado', auth, adminOnly, (req, res) => {
   t.status = estado;
   t.updatedAt = now();
   if (b.note) t.note = String(b.note).slice(0, 400);
-  tramiteHistorial(t, estado, b.note || 'Estado actualizado por el servidor publico', req.user.id);
+  tramiteHistorial(t, estado, b.note || 'Estado actualizado por el gestor de trámites', req.user.id);
   save();
   const owner = db.users[t.userId];
   if (owner) {
@@ -3087,6 +3108,64 @@ app.post('/api/admin/tramites/:id/rechazar', auth, adminOnly, (req, res) => {
 });
 
 /* El administrador quita el bloqueo de una persona */
+/* Quita una persona del registro desde el panel del gestor de tramites.
+   Borra la cuenta y todo lo suyo: conversaciones, mensajes, archivos,
+   tramites y su registro de visitas. No toca a nadie mas. */
+app.delete('/api/admin/usuarios/:id', auth, adminOnly, (req, res) => {
+  const id = String(req.params.id || '');
+  const u = db.users[id];
+  if (!u) return res.status(404).json({ error: 'Esa persona ya no esta en el registro' });
+  if (u.role === 'admin') return res.status(400).json({ error: 'La cuenta del gestor de tramites no se puede quitar' });
+
+  const archivos = [];
+
+  // 1) Conversaciones donde participa
+  Object.keys(db.chats).forEach((cid) => {
+    const chat = db.chats[cid];
+    if (!chat || !Array.isArray(chat.members)) return;
+    const msgs = db.messages[cid] || [];
+    if (chat.members.includes(id)) {
+      msgs.forEach((m) => { if (m.url) archivos.push(m.url); if (m.file && m.file.url) archivos.push(m.file.url); });
+      delete db.chats[cid];
+      delete db.messages[cid];
+    } else {
+      db.messages[cid] = msgs.filter((m) => m.senderId !== id);
+    }
+  });
+
+  // 2) Archivos subidos por esa persona
+  if (db.uploads) {
+    Object.keys(db.uploads).forEach((nombre) => {
+      if (db.uploads[nombre] === id) { archivos.push('/uploads/' + nombre); delete db.uploads[nombre]; }
+    });
+  }
+
+  // 3) Tramites con su documento y su comprobante
+  const trs = tramitesDb();
+  Object.keys(trs).forEach((tid) => {
+    const t = trs[tid];
+    if (!t || t.userId !== id) return;
+    [t.doc, t.payment].forEach((f) => { if (f && f.url) archivos.push(f.url); });
+    delete trs[tid];
+  });
+
+  archivos.forEach((u2) => {
+    try {
+      const nombre = path.basename(String(u2));
+      if (nombre) fs.unlinkSync(path.join(UPLOAD_DIR, nombre));
+    } catch (e) {}
+  });
+
+  // 4) Visitas
+  if (Array.isArray(db.visits)) db.visits = db.visits.filter((v) => v && v.userId !== id);
+
+  // 5) La cuenta. Se marca para que la sincronizacion no la reviva.
+  borradosExplicitos.add('users:' + id);
+  delete db.users[id];
+  save();
+  res.json({ ok: true, quitado: u.name || '' });
+});
+
 app.post('/api/admin/usuarios/:id/desbloquear', auth, adminOnly, (req, res) => {
   const u = db.users[String((req.params && req.params.id) || '')];
   if (!u) return res.status(404).json({ error: 'Persona no encontrada' });
@@ -3588,7 +3667,7 @@ wss.on('connection', (ws, req) => {
     }
 
     if (msg.type === 'requisitos:enviar') {
-      /* El servidor publico habilita el menu flotante de requisitos en ESTE
+      /* El gestor de trámites habilita el menu flotante de requisitos en ESTE
          chat. Solo el administrador; la persona lo recibe y a partir de ahi
          puede hacer su foto, su firma y su huella sin salir de la app. */
       if (!req_user_es_admin(userId)) return;
