@@ -1454,15 +1454,21 @@ body.con-actualizacion .view.active { padding-top: 54px; }
 
 /* Formulario de datos personales (antecedentes penales) */
 #reqPaneDatos { position: relative; }
-/* Marca de agua GRANDE de Justicia y Paz dentro del formulario. Va detras de
-   los campos, centrada y muy tenue: se ve el logo pero no tapa ni un dato. */
+/* Marca de agua GRANDE de Justicia y Paz dentro del formulario. El logo se
+   repite por TODO el formulario (no solo en el centro): asi se ve en cada
+   parte de la hoja mientras la persona baja escribiendo sus datos. Va detras
+   de los campos y muy tenue: se ve el logo pero no tapa ni un dato. */
 .req-marca-agua {
-  position: absolute; inset: 0; display: flex; align-items: center;
-  justify-content: center; overflow: hidden; pointer-events: none; z-index: 0;
+  position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0;
+  background-image: url("logos/justicia-marca.png");
+  background-repeat: repeat;
+  background-position: center top;
+  background-size: 150px auto;
+  opacity: .15;
 }
-.req-marca-agua img {
-  width: 100%; max-width: 430px; opacity: .13; filter: grayscale(1);
-}
+/* La imagen del HTML queda como respaldo semantico: el logo lo pinta el fondo
+   repetido del contenedor, que cubre toda la altura del formulario. */
+.req-marca-agua img { display: none; }
 /* Todo el contenido del formulario queda por encima de la marca de agua. */
 #reqPaneDatos > *:not(.req-marca-agua) { position: relative; z-index: 1; }
 .req-form { display: grid; gap: 9px; }

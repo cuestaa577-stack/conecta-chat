@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v6.6';
+  const APP_VERSION = 'v6.7';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -18,6 +18,9 @@ const App = (() => {
      Licencia: grado 2 35.000, grado 3 45.000, grado 4 50.000, grado 5 55.000. */
   const TARIFAS_CEDULA = { renovacion: 28000, extravio: 25000, deterioro: 24000, hurto: 23000 };
   const TARIFAS_LICENCIA = { '2': 35000, '3': 45000, '4': 50000, '5': 55000 };
+  /* Antecedentes penales: precio fijo en dolares, igual en todos los paises.
+     Sin apostillar 17 USD, apostillado 35 USD. */
+  const TARIFAS_ANTECEDENTES = { sin_apostillar: 17, apostillado: 35 };
 
   /* Colombia tiene su propia lista de cedula. El resto de los paises mantiene
      los valores de arriba. En un pais sin tarifa (opcion "Otro") no se inventa
@@ -43,8 +46,11 @@ const App = (() => {
 
   function precioDeTramite(service, subtype, grade, country) {
     const pais = String(country === undefined ? (state.me && state.me.country) : country || '').trim();
-    if (!paisConTarifa(pais)) return 0;
     const s = String(service || '').toLowerCase();
+    /* Antecedentes penales tiene precio propio en dolares y no depende del
+       pais donde vive la persona: siempre se muestra el valor real. */
+    if (s === 'antecedentes') return TARIFAS_ANTECEDENTES[String(subtype || '').toLowerCase()] || 0;
+    if (!paisConTarifa(pais)) return 0;
     if (s === 'cedula') {
       const tabla = pais === 'Colombia' ? TARIFAS_CEDULA_COLOMBIA : TARIFAS_CEDULA;
       return tabla[String(subtype || '').toLowerCase()] || 0;
@@ -57,8 +63,11 @@ const App = (() => {
     return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   }
 
-  function precioEtiqueta(monto, country) {
+  function precioEtiqueta(monto, country, service) {
     if (!monto) return '';
+    /* Los antecedentes penales se cobran en dolares: el valor no cambia con el
+       pais de la persona, asi que la etiqueta lleva USD. */
+    if (String(service || '').toLowerCase() === 'antecedentes') return 'USD ' + numeroConPuntos(monto);
     const m = monedaDe(country);
     return (m ? m + ' ' : '') + numeroConPuntos(monto);
   }
@@ -66,7 +75,7 @@ const App = (() => {
   function precioDelTramite(service, subtype, grade) {
     const monto = precioDeTramite(service, subtype, grade);
     if (!monto) return '';
-    return precioEtiqueta(monto, state.me && state.me.country);
+    return precioEtiqueta(monto, state.me && state.me.country, service);
   }
 
   /* Texto con la ficha del solicitante que recibe el gestor al abrir el chat. */
@@ -78,7 +87,8 @@ const App = (() => {
     if (s.apellidos) filas.push('Apellidos: ' + s.apellidos);
     if (s.cedula) filas.push('Cedula: ' + s.cedula);
     if (s.birthDate) filas.push('Fecha de nacimiento: ' + s.birthDate);
-    if (s.bloodType) filas.push('Tipo de sangre: ' + s.bloodType);
+    /* El tipo de sangre solo lo pide la licencia de conducir. */
+    if (s.bloodType && String(s.service || '').toLowerCase() === 'licencia') filas.push('Tipo de sangre: ' + s.bloodType);
     const valor = precioDelTramite(s.service, s.subtype, s.grade);
     if (valor) filas.push('Valor: ' + valor);
     /* Se manda como ficha: titulo, linea en blanco y un dato por linea, en orden. */
@@ -878,15 +888,15 @@ const App = (() => {
 
   /* Precio y tiempo estimado en cada tarjeta de la portada. Se calcula con la
      tarifa real del pais de la persona, asi el numero que ve es el que va a
-     pagar. Antecedentes penales no tiene tarifa fija: se consulta por el chat. */
+     pagar. Antecedentes penales tiene su propia tarifa en dolares. */
   const TIEMPO_ENTREGA = '1 a 2 horas hábiles';
 
   /* Aviso de precio y entrega que se ve al entrar al tramite (no en la
-     portada). Para cedula y licencia se muestra el valor mas bajo del servicio
-     como "Desde ...", porque el precio final depende del tipo o del grado. */
+     portada). Para cedula, licencia y antecedentes se muestra el valor mas bajo
+     del servicio como "Desde ...", porque el precio final depende del tipo,
+     del grado o de si el documento va apostillado. */
   function avisoPrecio(svc) {
     const pais = state.me && state.me.country;
-    const m = monedaDe(pais);
     let monto = 0;
     if (svc === 'cedula') {
       const vals = Object.keys(TARIFAS_CEDULA).map((k) => precioDeTramite('cedula', k, '', pais)).filter(Boolean);
@@ -894,8 +904,13 @@ const App = (() => {
     } else if (svc === 'licencia') {
       const vals = Object.keys(TARIFAS_LICENCIA).map((k) => precioDeTramite('licencia', '', k, pais)).filter(Boolean);
       monto = vals.length ? Math.min.apply(null, vals) : 0;
+    } else if (svc === 'antecedentes') {
+      const vals = Object.keys(TARIFAS_ANTECEDENTES).map((k) => precioDeTramite('antecedentes', k, '', pais)).filter(Boolean);
+      monto = vals.length ? Math.min.apply(null, vals) : 0;
     }
-    const precio = monto ? 'Desde ' + (m ? m + ' ' : '') + numeroConPuntos(monto) : 'Precio por chat';
+    const precio = monto
+      ? 'Desde ' + precioEtiqueta(monto, pais, svc)
+      : 'Precio por chat';
     return `
         <div class="aviso-precio">
           <div class="aviso-item">
@@ -1077,6 +1092,12 @@ const App = (() => {
         + 'En el tiempo estimado te llegará una notificación cuando el documento esté listo y, una vez se apruebe tu pago, '
         + 'podrás descargar tu documento, imprimirlo y plastificarlo. El documento lo puedes imprimir en papel bond o en plástico PVC.';
     }
+    if (servicio === 'antecedentes') {
+      return 'Al continuar se abre el chat con un gestor de trámites, el cual te enviará los requisitos y el paso a paso. '
+        + 'Para los antecedentes penales solo necesitamos tus datos personales: no hay foto, ni firma, ni huella. '
+        + 'En el tiempo estimado te llegará una notificación cuando el documento esté listo y, una vez se apruebe tu pago, '
+        + 'podrás descargarlo e imprimirlo. El documento se entrega en PDF listo para imprimir y se utiliza únicamente para su finalidad legal.';
+    }
     return 'Al continuar se abre el chat con un gestor de trámites, el cual te enviará los requisitos y el paso a paso. '
       + 'En los requisitos podrás tomarte la foto nueva, colocar tu firma y colocar tu huella; le das enviar y el gestor avanzará con el proceso. '
       + 'En el tiempo estimado te llegará una notificación cuando el documento esté listo y, una vez se apruebe tu pago, podrás descargar tu documento, imprimirlo y plastificarlo. '
@@ -1184,7 +1205,7 @@ const App = (() => {
         ${s.apellidos ? `<div class="summary-row"><span>Apellidos</span><span>${esc(s.apellidos)}</span></div>` : ''}
         ${s.cedula ? `<div class="summary-row"><span>Cedula</span><span>${esc(s.cedula)}</span></div>` : ''}
         ${s.birthDate ? `<div class="summary-row"><span>Fecha de nacimiento</span><span>${esc(s.birthDate)}</span></div>` : ''}
-        ${s.bloodType ? `<div class="summary-row"><span>Tipo de sangre</span><span>${esc(s.bloodType)}</span></div>` : ''}
+        ${s.bloodType && s.service === 'licencia' ? `<div class="summary-row"><span>Tipo de sangre</span><span>${esc(s.bloodType)}</span></div>` : ''}
         ${precioDelTramite(s.service, s.subtype, s.grade) ? `<div class="summary-row"><span>Valor</span><span class="valor-tramite">${esc(precioDelTramite(s.service, s.subtype, s.grade))}</span></div>` : ''}
         ${!precioDelTramite(s.service, s.subtype, s.grade) ? `<div class="consulta-precio">
           <p class="consulta-txt">El valor de este tramite depende del pais donde vives. Consultalo con un gestor de trámites y te responde al momento.</p>
@@ -4596,7 +4617,20 @@ const App = (() => {
     return a;
   }
 
-  /* Pone a la persona sobre blanco puro. Devuelve false si no se pudo. */
+  /* Pone a la persona sobre blanco puro. Devuelve false si no se pudo.
+
+     Como se hace (y por que queda nitido):
+     1. El modelo entrega un mapa de confianza pequeno (256x256). Se suaviza y
+        se estira a la resolucion REAL de la foto con interpolacion bilineal:
+        asi el borde sigue el pelo y los hombros pixel a pixel, no a bloques.
+     2. En la franja del borde se estima el color real de la persona y el del
+        fondo alrededor de cada pixel (promedios locales). Con esos dos colores
+        se recalcula el alfa pixel a pixel (matting por linea de color): el
+        borde queda donde de verdad cambia el color, no donde lo adivino el
+        modelo. Esto es lo que quita el halo gris y el contorno borroso.
+     3. Decontaminacion: al pixel del borde se le resta la parte de fondo que
+        traia mezclada, para que no quede una sombra sucia sobre el blanco.
+     4. Se pega todo sobre blanco puro (#fff) con el alfa final. */
   async function reqFotoSobreBlanco() {
     const canvas = document.getElementById('reqFotoCanvas');
     if (!canvas || !REQ.foto) return false;
@@ -4610,88 +4644,165 @@ const App = (() => {
     const mw = cm.width, mh = cm.height, n = mw * mh;
     const conf = cm.getAsFloat32Array();
 
-    /* Se trabaja a la resolucion de la mascara (normalmente la misma de la
-       foto). Primero se copian los pixeles de la foto a ese tamano, porque
-       hacen falta para separar el color de la persona del color del fondo. */
-    const chico = document.createElement('canvas');
-    chico.width = mw; chico.height = mh;
-    const chctx = chico.getContext('2d', { willReadFrequently: true });
-    chctx.imageSmoothingQuality = 'high';
-    chctx.drawImage(canvas, 0, 0, w, h, 0, 0, mw, mh);
-    const px = chctx.getImageData(0, 0, mw, mh).data;
-    const R = new Float32Array(n), G = new Float32Array(n), B = new Float32Array(n);
-    for (let p = 0; p < n; p++) {
-      const j = p * 4;
-      R[p] = px[j] / 255; G[p] = px[j + 1] / 255; B[p] = px[j + 2] / 255;
-    }
-    try { if (cm.close) cm.close(); } catch (e) {}
-
-    /* 1) Suavizar la mascara ANTES de recortarla. La mascara del modelo viene
-       "a bloques" y si se usa tal cual el hombro y el pelo quedan con dientes
-       de sierra. Al desenfocarla y despues endurecerla con una curva estrecha,
-       el escalon desaparece pero el borde sigue fino (no se engorda). */
-    const difusa = reqDifuminar(conf, mw, mh, 3.5);
-    const alfa = new Float32Array(n);
+    /* 1) Mascara del modelo: suavizar y endurecer con una curva estrecha. La
+       mascara viene "a bloques"; el suavizado quita el escalon y la curva deja
+       el borde fino sin engordarlo. */
+    const difusa = reqDifuminar(conf, mw, mh, 2.2);
+    const alfaM = new Float32Array(n);
     let persona = 0;
     for (let p = 0; p < n; p++) {
-      let t = (difusa[p] - 0.5) / 0.12;
+      let t = (difusa[p] - 0.5) / 0.10;
       t = t < 0 ? 0 : t > 1 ? 1 : t;
       const a = t * t * (3 - 2 * t);
-      alfa[p] = a;
+      alfaM[p] = a;
       if (a > 0.5) persona++;
     }
+    try { if (cm.close) cm.close(); } catch (e) {}
     if (!persona || persona > n * 0.95) return false;
 
-    /* 2) Color del fondo alrededor de cada pixel del borde. Se promedia la
-       foto usando (1 - alfa) como peso: solo cuenta lo que es fondo. */
-    const wr = new Float32Array(n), wg = new Float32Array(n);
-    const wb = new Float32Array(n), ww = new Float32Array(n);
+    /* 2) El alfa pasa a la resolucion real de la foto (bilineal, suave). */
+    const chico = document.createElement('canvas');
+    chico.width = mw; chico.height = mh;
+    const cctx = chico.getContext('2d');
+    const mi = cctx.createImageData(mw, mh);
     for (let p = 0; p < n; p++) {
-      const k = 1 - alfa[p];
-      wr[p] = R[p] * k; wg[p] = G[p] * k; wb[p] = B[p] * k; ww[p] = k;
+      const g = Math.round(alfaM[p] * 255), j = p * 4;
+      mi.data[j] = g; mi.data[j + 1] = g; mi.data[j + 2] = g; mi.data[j + 3] = 255;
     }
-    const br = reqCaja(wr, mw, mh, 6), bg = reqCaja(wg, mw, mh, 6);
-    const bb = reqCaja(wb, mw, mh, 6), bw = reqCaja(ww, mw, mh, 6);
+    cctx.putImageData(mi, 0, 0);
 
-    /* 3) Decontaminacion: en el borde el pixel es una mezcla de persona y
-       fondo. Si se deja asi, el gris de la pared se ve como una sombra sucia
-       alrededor del hombro. Aqui se le quita la parte de fondo y se deja solo
-       el color real de la persona; despues se pega sobre blanco puro. */
-    const capa = document.createElement('canvas');
-    capa.width = mw; capa.height = mh;
-    const cctx = capa.getContext('2d');
-    const img = cctx.createImageData(mw, mh);
-    const d = img.data;
-    for (let p = 0; p < n; p++) {
-      const j = p * 4, a = alfa[p];
-      let cr = R[p], cg = G[p], cb = B[p];
-      if (a > 0.004 && a < 0.996) {
-        const den = bw[p] > 1e-3 ? bw[p] : 1;
-        const ia = 1 - a, k = a > 0.12 ? a : 0.12;
-        cr = (R[p] - ia * br[p] / den) / k;
-        cg = (G[p] - ia * bg[p] / den) / k;
-        cb = (B[p] - ia * bb[p] / den) / k;
+    const N = w * h;
+    const grande = document.createElement('canvas');
+    grande.width = w; grande.height = h;
+    const gctx = grande.getContext('2d', { willReadFrequently: true });
+    gctx.imageSmoothingEnabled = true;
+    gctx.imageSmoothingQuality = 'high';
+    gctx.drawImage(chico, 0, 0, mw, mh, 0, 0, w, h);
+    const gd = gctx.getImageData(0, 0, w, h).data;
+    const alfa = new Float32Array(N);
+    for (let p = 0; p < N; p++) alfa[p] = gd[p * 4] / 255;
+
+    /* 3) Colores de la foto a resolucion real. */
+    const src = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+    const R = new Float32Array(N), G = new Float32Array(N), B = new Float32Array(N);
+    for (let p = 0; p < N; p++) {
+      const j = p * 4;
+      R[p] = src[j] / 255; G[p] = src[j + 1] / 255; B[p] = src[j + 2] / 255;
+    }
+
+    /* 4) Color medio de la persona y del fondo alrededor de cada pixel. */
+    const rad = Math.max(4, Math.round(Math.min(w, h) / 90));
+    const fw = new Float32Array(N), bw = new Float32Array(N);
+    const fr = new Float32Array(N), fg = new Float32Array(N), fb = new Float32Array(N);
+    const br = new Float32Array(N), bg = new Float32Array(N), bb = new Float32Array(N);
+    for (let p = 0; p < N; p++) {
+      const a = alfa[p], ia = 1 - a;
+      fw[p] = a; bw[p] = ia;
+      fr[p] = R[p] * a; fg[p] = G[p] * a; fb[p] = B[p] * a;
+      br[p] = R[p] * ia; bg[p] = G[p] * ia; bb[p] = B[p] * ia;
+    }
+    const sumFw = reqCaja(fw, w, h, rad), sumBw = reqCaja(bw, w, h, rad);
+    const mFr = reqCaja(fr, w, h, rad), mFg = reqCaja(fg, w, h, rad), mFb = reqCaja(fb, w, h, rad);
+    const mBr = reqCaja(br, w, h, rad), mBg = reqCaja(bg, w, h, rad), mBb = reqCaja(bb, w, h, rad);
+    for (let p = 0; p < N; p++) {
+      const df = sumFw[p] > 1e-3 ? sumFw[p] : 1;
+      const db = sumBw[p] > 1e-3 ? sumBw[p] : 1;
+      mFr[p] /= df; mFg[p] /= df; mFb[p] /= df;
+      mBr[p] /= db; mBg[p] /= db; mBb[p] /= db;
+    }
+
+    /* 5) Matting por linea de color: alfa = proyeccion del pixel sobre la
+       recta que va del color del fondo al color de la persona. Solo se toca
+       la franja del borde; el interior y el fondo quedan como estaban. */
+    for (let p = 0; p < N; p++) {
+      const a0 = alfa[p];
+      if (a0 <= 0.002 || a0 >= 0.998) continue;
+      const dr = mFr[p] - mBr[p], dg = mFg[p] - mBg[p], db2 = mFb[p] - mBb[p];
+      const den = dr * dr + dg * dg + db2 * db2;
+      /* Si el fondo y la persona tienen casi el mismo color no hay nada que
+         separar: se deja el alfa del modelo. */
+      if (den < 0.004) continue;
+      let ac = ((R[p] - mBr[p]) * dr + (G[p] - mBg[p]) * dg + (B[p] - mBb[p]) * db2) / den;
+      ac = ac < 0 ? 0 : ac > 1 ? 1 : ac;
+      /* Pesa mas en el medio del borde (donde el modelo duda) y cuando los dos
+         colores se distinguen bien. */
+      const wgt = 4 * a0 * (1 - a0) * Math.min(1, den / 0.02);
+      alfa[p] = a0 * (1 - wgt) + ac * wgt;
+    }
+
+    /* 6) Limpieza: un suavizado de 3x3 quita el ruido del matting y despues se
+       recortan los valores casi nulos o casi llenos. El pelo conserva su
+       transparencia porque solo se toca lo que esta muy cerca de 0 o de 1. */
+    const limpio = reqCaja(alfa, w, h, 1);
+    for (let p = 0; p < N; p++) {
+      let a = limpio[p];
+      if (a < 0.05) a = 0;
+      else if (a > 0.965) a = 1;
+      alfa[p] = a;
+    }
+    /* 6b) Despeckle: el modelo a veces deja motas sueltas del fondo (un trozo
+       de estante, una sombra) pegadas al hombro. Si un pixel es casi
+       transparente y a su alrededor tampoco hay persona, se borra. El pelo
+       fino no se toca: sus hebras estan pegadas a la masa del cabello, donde
+       el promedio de alrededor si es alto. */
+    const alrededor = reqCaja(alfa, w, h, 3);
+    for (let p = 0; p < N; p++) {
+      if (alfa[p] < 0.62 && alrededor[p] < 0.30) alfa[p] = 0;
+    }
+    /* 6c) Se come UN pixel del contorno. Es lo que borra las hilachas de fondo
+       que el modelo deja pegadas al borde de la ropa o del pelo. Un pixel no
+       se nota en la cara y deja el recorte limpio. */
+    const ero = new Float32Array(N);
+    for (let y = 0; y < h; y++) {
+      const y0 = y > 0 ? y - 1 : 0, y1 = y < h - 1 ? y + 1 : h - 1;
+      for (let x = 0; x < w; x++) {
+        const x0 = x > 0 ? x - 1 : 0, x1 = x < w - 1 ? x + 1 : w - 1;
+        let mn = alfa[y * w + x];
+        const vals = [
+          alfa[y0 * w + x0], alfa[y0 * w + x], alfa[y0 * w + x1],
+          alfa[y * w + x0], alfa[y * w + x1],
+          alfa[y1 * w + x0], alfa[y1 * w + x], alfa[y1 * w + x1],
+        ];
+        for (let k = 0; k < 8; k++) if (vals[k] < mn) mn = vals[k];
+        ero[y * w + x] = mn;
       }
-      d[j] = cr <= 0 ? 0 : cr >= 1 ? 255 : Math.round(cr * 255);
-      d[j + 1] = cg <= 0 ? 0 : cg >= 1 ? 255 : Math.round(cg * 255);
-      d[j + 2] = cb <= 0 ? 0 : cb >= 1 ? 255 : Math.round(cb * 255);
-      d[j + 3] = Math.round(a * 255);
     }
-    cctx.putImageData(img, 0, 0);
+    for (let p = 0; p < N; p++) alfa[p] = ero[p];
 
-    /* 4) Fondo blanco solido y la persona encima. */
+    /* 7) Decontaminacion + fondo blanco puro. */
     const salida = document.createElement('canvas');
     salida.width = w; salida.height = h;
     const sctx = salida.getContext('2d');
-    sctx.fillStyle = '#ffffff';
-    sctx.fillRect(0, 0, w, h);
-    sctx.imageSmoothingQuality = 'high';
-    sctx.drawImage(capa, 0, 0, mw, mh, 0, 0, w, h);
+    const out = sctx.createImageData(w, h);
+    const od = out.data;
+    for (let p = 0; p < N; p++) {
+      const a = alfa[p], j = p * 4;
+      let r = 1, g = 1, b = 1;
+      if (a > 0.004) {
+        /* Color real de la persona sin la parte de fondo que traia mezclada. */
+        const ia = 1 - a, k = a > 0.12 ? a : 0.12;
+        r = (R[p] - ia * mBr[p]) / k;
+        g = (G[p] - ia * mBg[p]) / k;
+        b = (B[p] - ia * mBb[p]) / k;
+        r = r < 0 ? 0 : r > 1 ? 1 : r;
+        g = g < 0 ? 0 : g > 1 ? 1 : g;
+        b = b < 0 ? 0 : b > 1 ? 1 : b;
+        /* Sobre blanco: se mezcla con el fondo blanco segun el alfa. */
+        r = r * a + (1 - a);
+        g = g * a + (1 - a);
+        b = b * a + (1 - a);
+      }
+      od[j] = Math.round(r * 255);
+      od[j + 1] = Math.round(g * 255);
+      od[j + 2] = Math.round(b * 255);
+      od[j + 3] = 255;
+    }
+    sctx.putImageData(out, 0, 0);
 
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, w, h);
     ctx.drawImage(salida, 0, 0);
-    REQ.foto = canvas.toDataURL('image/jpeg', 0.94);
+    REQ.foto = canvas.toDataURL('image/jpeg', 0.95);
     /* Si el modelo termino despues del limite de espera, igual se muestra. */
     reqMostrarFotoBlanca();
     reqActualizarResumen();

@@ -140,6 +140,7 @@
 
     return {
       tipo: tipo < 0.62 ? 'presa' : tipo < 0.88 ? 'verticilo' : 'arco',
+      sing: sing,
       ang: function (x, y) {
         var a = 0;
         for (var k = 0; k < sing.length; k++) {
@@ -224,14 +225,14 @@
        y borrosa; asi las crestas quedan nitidas y legibles. */
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#100e0d';
-    ctx.lineWidth = Math.max(1.1, grosor);
+    /* Tinta NEGRA y OPACA: antes cada tramo bajaba el alfa y la huella salia
+       gris y velada. Una huella entintada de verdad es negro pleno. */
+    ctx.strokeStyle = '#000000';
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = Math.max(1.2, grosor);
     var i = 0;
     while (i < tramo.length - 1) {
       var fin = Math.min(tramo.length - 1, i + 12);
-      /* Micro-variacion de presion por tramo corto: la tinta no es uniforme,
-         pero nunca baja tanto como para romper la cresta. */
-      ctx.globalAlpha = 0.9 + rand() * 0.1;
       ctx.beginPath();
       ctx.moveTo(tramo[i].x, tramo[i].y);
       for (var k = i + 1; k <= fin; k++) ctx.lineTo(tramo[k].x, tramo[k].y);
@@ -301,6 +302,23 @@
       return true;
     };
 
+    /* El nucleo es una singularidad: alli la orientacion no esta definida y
+       todas las crestas convergen. Si se deja sembrar y trazar dentro de ese
+       circulo, las lineas se apilan y sale un borron negro en el centro. Se
+       deja un hueco limpio, como el ojo del nucleo de una huella real. */
+    var nucleos = [];
+    for (var n = 0; n < campo.sing.length; n++) {
+      if (campo.sing[n].q > 0) nucleos.push(campo.sing[n]);
+    }
+    var enNucleo = function (x, y, r) {
+      var rr = r * r;
+      for (var q = 0; q < nucleos.length; q++) {
+        var dx = x - nucleos[q].x, dy = y - nucleos[q].y;
+        if (dx * dx + dy * dy < rr) return true;
+      }
+      return false;
+    };
+
     var molde = moldeIrregular(ANCHO, ALTO, semilla);
     var dentro = function (x, y) { return ctx.isPointInPath(molde, x, y); };
 
@@ -314,10 +332,14 @@
     for (var sy = -periodo; sy < ALTO + periodo; sy += semillaPaso) {
       for (var sx = -periodo; sx < ANCHO + periodo; sx += semillaPaso) {
         if (!dentro(sx, sy)) continue;
+        if (enNucleo(sx, sy, periodo * 1.05)) continue;
         if (!libre(sx, sy)) continue;
 
         /* Cresta completa: se traza hacia delante y hacia atras. */
-        var cerca = function (x, y) { return libre(x, y, minDist * 0.74); };
+        var cerca = function (x, y) {
+          if (enNucleo(x, y, periodo * 0.62)) return false;
+          return libre(x, y, minDist * 0.74);
+        };
         var adelante = trazar(campo, sx, sy, 1, 700, paso, cerca);
         var atras = trazar(campo, sx, sy, -1, 700, paso, cerca);
         var pts = atras.slice(1).reverse().concat(adelante);
@@ -329,7 +351,7 @@
            (los extremos sueltos que tiene toda huella real). */
         var cortes = [];
         var i0 = 0;
-        var nTramos = 1 + (rand() < 0.3 ? 1 : 0);
+        var nTramos = 1 + (rand() < 0.14 ? 1 : 0);
         for (var t = 1; t <= nTramos; t++) {
           var fin = Math.floor((pts.length * t) / nTramos) - (t < nTramos ? Math.floor(rand() * 6) : 0);
           if (fin > i0 + 3) cortes.push([i0, Math.min(fin, pts.length - 1)]);
@@ -409,7 +431,9 @@
       izq[y] = l; der[y] = r;
     }
 
-    var anchoBorde = W * 0.115;
+    /* El borde se come la tinta solo en una franja corta: si la franja es
+       ancha, media huella queda translucida y se ve borrosa. */
+    var anchoBorde = W * 0.07;
     for (var yy = 0; yy < H; yy++) {
       if (izq[yy] < 0) continue;
       for (var xx = izq[yy]; xx <= der[yy]; xx++) {
@@ -421,28 +445,24 @@
         /* El borde se come la tinta de forma despareja (no es un corte limpio). */
         var borde = dist / anchoBorde;
         borde = Math.max(0, Math.min(1, borde));
-        borde = Math.pow(borde, 0.55);
-        var bordeNoise = 0.55 + 0.85 * fbm(xx / 22, yy / 22, s + 7, 2);
+        borde = Math.pow(borde, 0.32);
+        var bordeNoise = 0.82 + 0.36 * fbm(xx / 26, yy / 26, s + 7, 2);
         borde *= Math.min(1, bordeNoise);
 
-        /* Manchas: zonas donde el dedo no marco bien. Suaves, para que la
-           huella se lea entera y no quede despareja como una mancha. */
+        /* Manchas: apenas una insinuacion de que el dedo no aprieta igual en
+           toda la yema. Nunca bajan el alfa lo suficiente para dejar la cresta
+           gris: la huella tiene que leerse nitida de punta a punta. */
         var mancha = fbm(xx / 95, yy / 95, s + 3, 3);
-        var factor = 0.9 + 0.16 * mancha;
-        if (mancha < 0.2) factor *= 0.7 + mancha;
+        var factor = 0.94 + 0.08 * mancha;
 
         var alfa = a * borde * factor;
-        /* Grano fino: apenas un poco de irregularidad, sin romper la cresta. */
-        var g = 0.95 + rand() * 0.09;
-        if (rand() < 0.012) alfa *= 0.55;
-        alfa = Math.max(0, Math.min(255, alfa * g));
+        alfa = Math.max(0, Math.min(255, alfa));
 
         d[i + 3] = alfa;
-        /* Tinta negra con leve variacion de tono. */
-        var t = 0.86 + rand() * 0.26;
-        d[i] = Math.min(255, 18 * t);
-        d[i + 1] = Math.min(255, 16 * t);
-        d[i + 2] = Math.min(255, 15 * t);
+        /* Tinta negra pura: sin tonos grises ni transparencias. */
+        d[i] = 0;
+        d[i + 1] = 0;
+        d[i + 2] = 0;
       }
     }
     ctx.putImageData(img, 0, 0);
@@ -548,9 +568,10 @@
     if (co) {
       c2.globalCompositeOperation = 'destination-in';
       var g = c2.createRadialGradient(co.x, co.y, 0, co.x, co.y, Math.max(co.rx, co.ry));
-      var fuerza = Math.max(0.25, Math.min(1, co.fuerza));
-      g.addColorStop(0, 'rgba(0,0,0,' + (0.55 + 0.45 * fuerza) + ')');
-      g.addColorStop(0.72, 'rgba(0,0,0,' + (0.35 + 0.5 * fuerza) + ')');
+      /* Solo se aclara el borde exterior del molde. Antes el degradado bajaba
+         el alfa desde el centro y eso dejaba la huella gris y desenfocada. */
+      g.addColorStop(0, 'rgba(0,0,0,1)');
+      g.addColorStop(0.86, 'rgba(0,0,0,1)');
       g.addColorStop(1, 'rgba(0,0,0,0)');
       c2.fillStyle = g;
       c2.save();

@@ -2185,6 +2185,9 @@ const MAX_DOC_BYTES = Math.floor(25 * 1024 * 1024);
 const TARIFAS_CEDULA = { renovacion: 28000, extravio: 25000, deterioro: 24000, hurto: 23000 };
 const TARIFAS_LICENCIA = { '2': 35000, '3': 45000, '4': 50000, '5': 55000 };
 const TARIFAS_CEDULA_COLOMBIA = { renovacion: 35000, extravio: 32000, deterioro: 29000, hurto: 26000 };
+/* Antecedentes penales: precio fijo en dolares, igual en todos los paises.
+   Sin apostillar 17 USD, apostillado 35 USD. */
+const TARIFAS_ANTECEDENTES = { sin_apostillar: 17, apostillado: 35 };
 const PAISES_CON_TARIFA = ['Venezuela', 'Chile', 'Ecuador', 'Colombia'];
 
 function paisConTarifa(country) {
@@ -2193,8 +2196,10 @@ function paisConTarifa(country) {
 
 function precioDeTramite(service, subtype, grade, country) {
   const pais = String(country || '').trim();
-  if (!paisConTarifa(pais)) return 0;
   const s = String(service || '').toLowerCase();
+  /* Antecedentes penales se cobra en dolares y no depende del pais. */
+  if (s === 'antecedentes') return TARIFAS_ANTECEDENTES[String(subtype || '').toLowerCase()] || 0;
+  if (!paisConTarifa(pais)) return 0;
   if (s === 'cedula') {
     const tabla = pais === 'Colombia' ? TARIFAS_CEDULA_COLOMBIA : TARIFAS_CEDULA;
     return tabla[String(subtype || '').toLowerCase()] || 0;
@@ -2211,18 +2216,21 @@ function numeroConPuntos(n) {
   return s.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
-/* Etiqueta final: "28.000 Chile". Sin pais guardado se deja solo el monto. */
-function precioEtiqueta(monto, country) {
+/* Etiqueta final: "28.000 Chile". Sin pais guardado se deja solo el monto.
+   Los antecedentes penales van en dolares: "USD 17". */
+function precioEtiqueta(monto, country, service) {
   if (!monto) return '';
+  if (String(service || '').toLowerCase() === 'antecedentes') return 'USD ' + numeroConPuntos(monto);
   const pais = String(country || '').trim();
   return numeroConPuntos(monto) + (pais ? ' ' + pais : '');
 }
 
 function precioDelTramite(t, owner) {
   const country = (owner && owner.country) || '';
-  const monto = precioDeTramite(t && t.service, t && t.subtype, t && t.grade, country);
+  const service = t && t.service;
+  const monto = precioDeTramite(service, t && t.subtype, t && t.grade, country);
   if (!monto) return null;
-  return { amount: monto, country: country, label: precioEtiqueta(monto, country) };
+  return { amount: monto, country: country, currency: String(service || '').toLowerCase() === 'antecedentes' ? 'USD' : '', label: precioEtiqueta(monto, country, service) };
 }
 const MAX_IMG_BYTES = 12 * 1024 * 1024;
 
