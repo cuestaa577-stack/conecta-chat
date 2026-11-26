@@ -1473,26 +1473,24 @@ app.post('/api/register', async (req, res) => {
   }
   if (!cedula) return res.status(400).json({ error: 'Cedula no valida. Escribe por ejemplo V-12345678' });
   if (!isValidBirth(birthDate)) return res.status(400).json({ error: 'Fecha de nacimiento no valida' });
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Correo electronico no valido' });
+  /* El correo es OPCIONAL: la cuenta se crea con los datos personales y la
+     clave que la persona inventa. Si escribe un correo se valida el formato. */
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Correo electronico no valido' });
   if (password.length < 8) return res.status(400).json({ error: 'La contrasena debe tener al menos 8 caracteres' });
   const existing = Object.values(db.users).find((u) => u.cedula === cedula);
   if (existing) {
     /* La cuenta ya existe. Si la contrasena coincide se entra de una (cuando el
        correo no es obligatorio): asi nadie queda afuera por un correo pausado. */
     if (!REQUIRE_EMAIL_VERIFY && existing.passHash === hashPassword(password, existing.salt)) {
-      let codeSent = false;
-      try {
-        const code = issueCode(existing, 'verify');
-        codeSent = await sendCodeEmail(existing.email || email, code, 'verify', publicBase(req));
-      } catch (e) { codeSent = false; }
+      /* Misma cedula y misma clave: es la misma persona, entra directo. */
       existing.lastSeen = now();
       save();
       return res.json({
         ok: true,
         token: tokenFor(existing),
         user: publicUser(existing),
-        emailPending: existing.emailVerified === false,
-        codeSent,
+        emailPending: !!(existing.email && existing.emailVerified === false),
+        codeSent: false,
       });
     }
     // Si la cuenta existe pero NO ha confirmado el correo, reenviamos el código
@@ -1510,7 +1508,7 @@ app.post('/api/register', async (req, res) => {
     }
     return res.status(409).json({ error: 'Esa cedula ya tiene una cuenta. Entra con tu cedula y tu contrasena' });
   }
-  if (Object.values(db.users).some((u) => (u.email || '') === email)) {
+  if (email && Object.values(db.users).some((u) => (u.email || '') === email)) {
     return res.status(409).json({ error: 'Ese correo ya tiene una cuenta' });
   }
 
@@ -1525,15 +1523,9 @@ app.post('/api/register', async (req, res) => {
   db.users[user.id] = user;
   save();
 
-  let codeSent = false;
-  try {
-    const code = issueCode(user, 'verify');
-    codeSent = await sendCodeEmail(email, code, 'verify', publicBase(req));
-  } catch (e) { codeSent = false; }
-
-  /* Por defecto la cuenta entra de inmediato con cedula + contrasena. El correo
-     queda como confirmacion opcional (la app se lo recuerda). Si algun dia se
-     define REQUIRE_EMAIL_VERIFY=on, se vuelve al codigo obligatorio. */
+  /* La clave que la persona acaba de crear ES su verificacion: no se pide
+     ningun codigo. Solo en modo estricto (REQUIRE_EMAIL_VERIFY=on) se envia el
+     codigo de 6 digitos y se exige antes de entrar. */
   if (!REQUIRE_EMAIL_VERIFY) {
     user.lastSeen = now();
     save();
@@ -1541,10 +1533,16 @@ app.post('/api/register', async (req, res) => {
       ok: true,
       token: tokenFor(user),
       user: publicUser(user),
-      emailPending: true,
-      codeSent,
+      emailPending: !!email,
+      codeSent: false,
     });
   }
+
+  let codeSent = false;
+  try {
+    const code = issueCode(user, 'verify');
+    codeSent = await sendCodeEmail(email, code, 'verify', publicBase(req));
+  } catch (e) { codeSent = false; }
 
   // Modo estricto: NO se entrega sesión. Hay que escribir el código de 6 dígitos.
   res.json({

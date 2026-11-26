@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v7.3';
+  const APP_VERSION = 'v7.4';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -241,18 +241,6 @@ const App = (() => {
 
   /* Aviso discreto y descartable: la cuenta entro sin confirmar el correo.
      No bloquea nada; solo recuerda confirmarlo cuando el correo vuelva a salir. */
-  function avisoCorreoPendiente() {
-    if (document.getElementById('mailBanner')) return;
-    const el = document.createElement('div');
-    el.id = 'mailBanner';
-    el.className = 'mail-banner';
-    el.innerHTML = '<span>Tu cuenta ya esta activa. Cuando puedas, confirma tu correo desde Mi cuenta; mientras tanto puedes usar la app con normalidad.</span>' +
-      '<button type="button" aria-label="Cerrar aviso">&times;</button>';
-    const b = el.querySelector('button');
-    if (b) b.onclick = function () { el.remove(); };
-    document.body.appendChild(el);
-  }
-
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -460,7 +448,7 @@ const App = (() => {
   });
 
   /* ------------------------------ acceso ------------------------------ */
-  const AUTH_PANELS = ['login', 'register', 'forgot', 'reset', 'recover', 'code', 'verify', 'adminAuth'];
+  const AUTH_PANELS = ['login', 'register', 'recover', 'adminAuth'];
   let authPending = { cedula: '' };
 
   /* Recordar los datos del acceso (casilla pequena bajo el boton Entrar).
@@ -513,7 +501,7 @@ const App = (() => {
   }
 
   function authTab(name) {
-    if (name !== 'register' && name !== 'forgot' && name !== 'adminAuth') name = 'login';
+    if (name !== 'register' && name !== 'recover' && name !== 'adminAuth') name = 'login';
     showAuthPanel(name);
   }
 
@@ -534,7 +522,7 @@ const App = (() => {
   }
 
   function bindAuthKeys() {
-    ['loginCedula', 'regCedula', 'forgotCedula', 'codeCedula'].forEach((id) => {
+    ['loginCedula', 'regCedula', 'recoverCedula'].forEach((id) => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('blur', () => { el.value = cedulaText(el.value); });
@@ -542,13 +530,11 @@ const App = (() => {
     const enter = {
       loginCedula: () => { const el = $('#loginPassword'); if (el) el.focus(); },
       regCedula: () => { const el = $('#regBirth'); if (el) el.focus(); },
-      forgotCedula: () => sendForgot(),
-      codeCedula: () => { const el = $('#codeInput'); if (el) el.focus(); },
       loginPassword: () => submitLogin(),
       regPassword: () => submitRegister(),
-      resetCode: () => { const el = $('#resetPassword'); if (el) el.focus(); },
-      resetPassword: () => submitReset(),
-      codeInput: () => submitCode(),
+      recoverCedula: () => { const el = $('#recoverBirth'); if (el) el.focus(); },
+      recoverBirth: () => { const el = $('#recoverPassword'); if (el) el.focus(); },
+      recoverPassword: () => submitRecover(),
     };
     Object.keys(enter).forEach((id) => {
       const el = document.getElementById(id);
@@ -600,11 +586,11 @@ const App = (() => {
       });
       guardarRecordado(REC_CEDULA, $('#rememberLogin'), cedula);
       await finishAuth(data, false);
-      if (data && data.emailPending) avisoCorreoPendiente();
     } catch (e) {
+      /* Modo estricto del servidor (REQUIRE_EMAIL_VERIFY=on): avisa sin salir
+         de la pantalla de acceso. */
       if (e.data && e.data.needVerify) {
-        showVerifyPanel(e.data.cedula || cedula, e.data.email, e.data.codeSent);
-        return;
+        return toast('Confirma tu correo con el codigo que te enviamos', 'bad');
       }
       toast(e.message, 'bad');
     }
@@ -707,7 +693,7 @@ const App = (() => {
     const name = (nombres + ' ' + apellidos).trim();
     const cedula = cedulaText($('#regCedula').value);
     const birthDate = $('#regBirth').value || '';
-    const email = ($('#regEmail').value || '').trim();
+    /* Sin correo: la cuenta se crea con los datos personales y la clave. */
     const password = ($('#regPassword').value || '');
     const country = paisElegido();
 
@@ -715,7 +701,6 @@ const App = (() => {
     if (apellidos.length < 2) return toast('Escribe tus apellidos');
     if (!cedulaOk(cedula)) return toast('La cedula debe tener al menos 8 digitos');
     if (!birthDate) return toast('Escribe tu fecha de nacimiento');
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return toast('Escribe un correo valido');
     if (password.length < 8) return toast('La contrasena debe tener al menos 8 caracteres');
     if (!country) return toast('Escribe el pais donde vives');
     if (!comprobarPais()) return toast('Debes registrarte con el pais donde vives actualmente');
@@ -724,17 +709,16 @@ const App = (() => {
     try {
       const data = await api('/api/register', {
         method: 'POST',
-        body: JSON.stringify({ name, nombres, apellidos, cedula, birthDate, email, password, country }),
+        body: JSON.stringify({ name, nombres, apellidos, cedula, birthDate, email: '', password, country }),
       });
       // Si el servidor ya entrego sesion (correo opcional), se entra de una.
       if (data && data.token) {
         await finishAuth(data, true);
         toast('Tu cuenta esta creada. Bienvenido');
-        if (data.emailPending) avisoCorreoPendiente();
         return;
       }
       // Modo estricto: primero debe escribir el c\u00f3digo del correo.
-      showVerifyPanel(data.cedula || cedula, data.email, data.codeSent);
+      toast('Confirma tu correo con el codigo que te enviamos', 'bad');
     } catch (e) {
       if (e.data && e.data.code === 'country_mismatch') {
         mostrarGeo('Debes registrarte con el pais donde vives actualmente para poder crear tu cuenta. ' +
@@ -749,96 +733,6 @@ const App = (() => {
   }
 
   /* Olvide mi contrasena: pide el codigo al correo */
-  async function sendForgot() {
-    const cedula = cedulaText($('#forgotCedula').value);
-    if (!cedulaOk(cedula)) return toast('Escribe tu cedula, por ejemplo V-12345678');
-    try {
-      const data = await api('/api/forgot', {
-        method: 'POST',
-        body: JSON.stringify({ cedula }),
-      });
-      authPending = { cedula };
-      /* Si el correo no sale (Brevo pausado, cuenta sin correo), se ofrece la
-         recuperacion con cedula + fecha de nacimiento. */
-      if (data && data.codeSent === false) {
-        const rHint = $('#recoverHint');
-        if (rHint) {
-          rHint.textContent = data.message ||
-            'El correo no esta saliendo en este momento. Escribe tu cedula, tu fecha de nacimiento y una nueva contrasena.';
-        }
-        const rc = $('#recoverCedula');
-        if (rc) rc.value = cedula;
-        showAuthPanel('recover');
-        toast('Recupera tu cuenta sin correo', 'info');
-        return;
-      }
-      const hint = $('#resetHint');
-      if (hint) {
-        hint.textContent = data.email
-          ? 'Enviamos un codigo de 6 digitos a ' + data.email + '. Escribelo aqui con tu nueva contrasena.'
-          : 'Enviamos un codigo de 6 digitos a tu correo.';
-      }
-      showAuthPanel('reset');
-      toast('Revisa tu correo');
-    } catch (e) {
-      /* Aunque el servidor falle, no se deja a la persona sin salida. */
-      const rHint = $('#recoverHint');
-      if (rHint) rHint.textContent = e.message || 'No pudimos enviar el correo. Recupera tu cuenta con tu cedula y tu fecha de nacimiento.';
-      const rc = $('#recoverCedula');
-      if (rc) rc.value = cedula;
-      showAuthPanel('recover');
-    }
-  }
-
-  async function resendReset() {
-    if (!cedulaOk(authPending.cedula)) return authTab('forgot');
-    try {
-      await api('/api/resend-code', {
-        method: 'POST',
-        body: JSON.stringify({ cedula: authPending.cedula, purpose: 'reset' }),
-      });
-      toast('Codigo enviado otra vez');
-    } catch (e) { toast(e.message, 'bad'); }
-  }
-
-  /* Cambiar la contrasena con el codigo del correo */
-  async function submitReset() {
-    const code = ($('#resetCode').value || '').trim();
-    const password = ($('#resetPassword').value || '');
-    if (!/^\d{6}$/.test(code)) return toast('Escribe el codigo de 6 digitos');
-    if (password.length < 8) return toast('La contrasena debe tener al menos 8 caracteres');
-    if (!cedulaOk(authPending.cedula)) return authTab('forgot');
-    try {
-      const data = await api('/api/reset-password', {
-        method: 'POST',
-        body: JSON.stringify({ cedula: authPending.cedula, code, password }),
-      });
-      await finishAuth(data, false);
-      toast('Contrasena cambiada');
-    } catch (e) { toast(e.message, 'bad'); }
-  }
-
-  /* Confirmar el correo desde Mi cuenta (opcional, no bloquea nada) */
-  async function confirmarCorreo() {
-    if (!state.me) return;
-    if (!state.me.email) return toast('Primero agrega tu correo y guarda los cambios');
-    try {
-      const data = await api('/api/resend-code', {
-        method: 'POST',
-        body: JSON.stringify({ cedula: state.me.cedula, purpose: 'verify' }),
-      });
-      if (data && data.codeSent === false) {
-        return toast('El correo no esta saliendo ahora. Intenta mas tarde', 'bad');
-      }
-      const cc = $('#codeCedula');
-      if (cc) cc.value = state.me.cedula || '';
-      const ci = $('#codeInput');
-      if (ci) ci.value = '';
-      showAuthPanel('code');
-      toast('Te enviamos el codigo. Escribelo para confirmar');
-    } catch (e) { toast(e.message, 'bad'); }
-  }
-
   /* Recuperar la cuenta sin correo: cedula + fecha de nacimiento + nueva clave */
   let recuperando = false;
   async function submitRecover() {
@@ -857,7 +751,6 @@ const App = (() => {
       });
       await finishAuth(data, false);
       toast('Contrasena cambiada. Bienvenido');
-      if (data && data.emailPending) avisoCorreoPendiente();
     } catch (e) { toast(e.message, 'bad'); }
     finally { recuperando = false; }
   }
@@ -886,84 +779,7 @@ const App = (() => {
   }
 
   /* Pantalla obligatoria de verificaci\u00f3n (antes de entrar a la app) */
-  function showVerifyPanel(cedula, email, codeSent) {
-    authPending = { cedula: cedula || '', email: email || '' };
-    const hint = $('#verifyHint');
-    if (hint) {
-      hint.textContent = (codeSent === false
-        ? 'Tu cuenta esta creada, pero no pudimos enviar el correo. Toca "Reenviar codigo".'
-        : 'Enviamos un codigo de 6 digitos' + (email ? ' a ' + email : ' a tu correo') + '. Escribelo para entrar.');
-    }
-    const inp = $('#verifyCode');
-    if (inp) inp.value = '';
-    showAuthPanel('verify');
-    if (codeSent !== false) toast('Revisa tu correo y escribe el codigo');
-    setTimeout(() => { const i = $('#verifyCode'); if (i) i.focus(); }, 250);
-  }
 
-  let verificando = false;
-  async function submitVerify() {
-    if (verificando) return;
-    const code = ($('#verifyCode').value || '').replace(/\D/g, '');
-    if (!/^\d{6}$/.test(code)) return toast('Escribe el codigo de 6 digitos');
-    if (!authPending.cedula) return authTab('login');
-    verificando = true;
-    try {
-      const data = await api('/api/verify-email', {
-        method: 'POST',
-        body: JSON.stringify({ cedula: authPending.cedula, code }),
-      });
-      // C\u00f3digo correcto: ahora s\u00ed se inicia la sesi\u00f3n y entra a la app.
-      await finishAuth(data, true);
-      toast('Correo confirmado. Bienvenido');
-    } catch (e) { toast(e.message, 'bad'); }
-    finally { verificando = false; }
-  }
-
-  async function resendVerify() {
-    if (!authPending.cedula) return authTab('register');
-    try {
-      const data = await api('/api/resend-code', {
-        method: 'POST',
-        body: JSON.stringify({ cedula: authPending.cedula, purpose: 'verify' }),
-      });
-      if (data && data.codeSent === false) return toast('No pudimos enviar el correo. Intenta mas tarde');
-      toast('Codigo enviado otra vez a tu correo');
-    } catch (e) { toast(e.message, 'bad'); }
-  }
-
-  /* Confirmar el correo con el codigo de 6 digitos */
-  async function submitCode() {
-    const cedula = cedulaText($('#codeCedula').value);
-    const code = ($('#codeInput').value || '').trim();
-    if (!cedulaOk(cedula)) return toast('Escribe tu cedula');
-    if (!/^\d{6}$/.test(code)) return toast('Escribe el codigo de 6 digitos');
-    try {
-      const data = await api('/api/verify-email', {
-        method: 'POST',
-        body: JSON.stringify({ cedula, code }),
-      });
-      /* Si ya hay sesion abierta (confirmacion desde Mi cuenta) solo se
-         actualiza el perfil; no se vuelve a entrar a la app. */
-      if (state.token && state.me) {
-        if (data && data.user) state.me = data.user;
-        else state.me.emailVerified = true;
-        const banner = document.getElementById('mailBanner');
-        if (banner) banner.remove();
-        renderMyData();
-        showView('profile', false);
-        toast('Correo confirmado');
-        return;
-      }
-      if (data && data.token) {
-        await finishAuth(data, false);
-        toast('Correo confirmado');
-        return;
-      }
-      toast('Correo confirmado');
-      authTab('login');
-    } catch (e) { toast(e.message, 'bad'); }
-  }
 
   /* Saludo de la portada: "Buenos dias, Carlos" con el primer nombre real
      de la persona registrada y la franja del dia segun su hora local. */
@@ -1844,18 +1660,6 @@ const App = (() => {
       naceEl.value = mf ? (mf[3] + '/' + mf[2] + '/' + mf[1]) : b;
     }
     $('#profilePhone').value = state.me.phone || '';
-    $('#profileEmail').value = state.me.email || '';
-    /* Estado del correo: confirmado o pendiente. El boton solo aparece cuando
-       hay algo que confirmar, para no ensuciar el perfil. */
-    const mailStatus = $('#mailStatus');
-    const confirmBtn = $('#confirmMailBtn');
-    const pendiente = state.me.emailVerified === false;
-    if (mailStatus) {
-      mailStatus.textContent = !state.me.email
-        ? 'Sin correo registrado. Puedes agregarlo y confirmarlo cuando quieras.'
-        : (pendiente ? 'Correo sin confirmar. Puedes usar la app igual.' : 'Correo confirmado.');
-    }
-    if (confirmBtn) confirmBtn.style.display = (pendiente && state.me.email) ? 'block' : 'none';
     $('#profileCountry').value = state.me.country || '';
     $('#appVersion').textContent = 'Tramites Venezolanos en Linea ' + APP_VERSION;
     const adminBtn = $('#adminBtn');
@@ -1929,19 +1733,16 @@ const App = (() => {
 
   async function saveProfileChanges() {
     if (!state.me) return;
-    const email = ($('#profileEmail').value || '').trim();
     const phone = ($('#profilePhone').value || '').trim();
     const country = ($('#profileCountry').value || '').trim();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return toast('Escribe un correo valido');
     if (phone.replace(/\D/g, '').length < 7) return toast('Escribe un numero de celular valido');
     try {
       const data = await api('/api/profile', {
         method: 'POST',
-        body: JSON.stringify({ email, phone, country }),
+        body: JSON.stringify({ phone, country }),
       });
       state.me = data.user;
       $('#profilePhone').value = state.me.phone || '';
-      $('#profileEmail').value = state.me.email || '';
       $('#profileCountry').value = state.me.country || '';
       toast('Cambios guardados');
     } catch (e) { toast(e.message, 'bad'); }
@@ -1970,7 +1771,6 @@ const App = (() => {
   function autoVerifyCedula() { /* sin verificacion de cedula */ }
   function openEditData() {
     if (!state.me) return;
-    $('#editEmail').value = state.me.email || '';
     $('#editPhone').value = state.me.phone || '';
     const pais = state.me.country || 'Venezuela';
     const enLista = ['Venezuela', 'Chile', 'Ecuador', 'Colombia'];
@@ -1996,21 +1796,18 @@ const App = (() => {
   function closeEditData() { $('#editDataSheet').classList.add('hidden'); }
 
   async function savePersonalData() {
-    const email = ($('#editEmail').value || '').trim();
     const phone = ($('#editPhone').value || '').trim();
     const selPais = $('#editCountry').value;
     const country = selPais === 'Otro' ? ($('#editCountryOther').value || '').trim() : selPais;
     if (!country) return toast('Escribe tu pais');
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return toast('Escribe un correo valido');
     if (phone.replace(/\D/g, '').length < 7) return toast('Escribe un numero de celular valido');
     try {
       const data = await api('/api/profile', {
         method: 'POST',
-        body: JSON.stringify({ email, phone, country }),
+        body: JSON.stringify({ phone, country }),
       });
       state.me = data.user;
       $('#profilePhone').value = state.me.phone || '';
-      $('#profileEmail').value = state.me.email || '';
       $('#profileCountry').value = state.me.country || '';
       closeEditData();
       toast('Datos personales actualizados');
@@ -5672,8 +5469,7 @@ const App = (() => {
   document.addEventListener('DOMContentLoaded', boot);
 
   return {
-    authTab, submitLogin, submitRegister, sendForgot, submitReset, submitCode, resendReset,
-    submitVerify, resendVerify, showAdminAuth, submitAdminLogin, submitRecover, confirmarCorreo,
+    authTab, submitLogin, submitRegister, showAdminAuth, submitAdminLogin, submitRecover,
     back, pickService, pickOption, pickGrade, pickBlood, guardarDatosFlow, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
     openProfile, pickAvatar, saveProfileChanges, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat,

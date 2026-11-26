@@ -77,7 +77,7 @@ Desde el panel de administrador hay dos rutas para lo mismo:
 
 Todo se maneja con la **cédula venezolana**, con la V y al menos 8 dígitos (`V-12345678`). Se acepta escribirlos con o sin la V y sin puntos.
 
-**Crear cuenta.** La persona escribe nombre y apellido, cédula, fecha de nacimiento, correo, contraseña y el país donde vive. Al enviar el formulario la cuenta queda creada y la aplicación se abre sola. Además se envía un **código de 6 dígitos** al correo, pero confirmarlo es **opcional**: si el correo no llega, la cuenta funciona igual y la app recuerda confirmarlo desde *Mi cuenta*.
+**Crear cuenta.** La persona escribe nombres, apellidos, cédula, fecha de nacimiento, contraseña y el país donde vive. El correo es **opcional**. Al enviar el formulario la cuenta queda creada y la aplicación se abre sola: **la contraseña que la persona inventa es su clave de acceso y de verificación**, no se pide ningún código. Si escribió correo, la app le recuerda confirmarlo cuando quiera desde *Mi cuenta* (opcional, no bloquea nada).
 
 **Entrar.** Cédula y contraseña. Nada más. No depende del correo.
 

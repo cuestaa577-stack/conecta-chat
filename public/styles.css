@@ -1576,3 +1576,12 @@ body.con-actualizacion .view.active { padding-top: 54px; }
 @media (min-width: 760px) {
   .mail-banner { left: auto; right: 20px; bottom: 88px; max-width: 420px; }
 }
+
+/* Aviso sobre la contrasena en el formulario de registro: es la unica llave
+   de la cuenta, asi que se resalta sin gritar. */
+.pass-warning {
+  margin: 8px 0 0; padding: 9px 11px;
+  border-left: 3px solid #c8871a; border-radius: 8px;
+  background: #fdf6e6; color: #6b4a08;
+  font-size: 12.5px; line-height: 1.4;
+}
