@@ -150,10 +150,29 @@
     } else if (tipo === 'verticilo') {
       /* Dos nucleos juntos en el centro (el "ojo" del verticilo) y un delta a
          cada lado, abajo: las crestas dan vueltas cerradas alrededor del ojo. */
-      sing.push({ x: W * (0.455 + (rand() - 0.5) * 0.04), y: H * (0.375 + (rand() - 0.5) * 0.04), q: 1 });
-      sing.push({ x: W * (0.565 + (rand() - 0.5) * 0.04), y: H * (0.435 + (rand() - 0.5) * 0.04), q: 1 });
-      sing.push({ x: W * (0.235 + (rand() - 0.5) * 0.04), y: H * (0.700 + (rand() - 0.5) * 0.04), q: -1 });
-      sing.push({ x: W * (0.790 + (rand() - 0.5) * 0.04), y: H * (0.720 + (rand() - 0.5) * 0.04), q: -1 });
+      /* Los dos nucleos NO van equidistantes ni a la misma altura: en un
+         verticilo real el "ojo" esta descuadrado y una vuelta queda mas
+         apretada que la otra. Igual los dos deltas: uno baja mas que el otro.
+         Esa falta de simetria es justo lo que hace que la huella parezca
+         tomada de un dedo y no dibujada con compas. */
+      var desvioX = (rand() - 0.5) * 0.10;
+      var desvioY = (rand() - 0.5) * 0.08;
+      sing.push({
+        x: W * (0.448 + desvioX + (rand() - 0.5) * 0.05),
+        y: H * (0.362 + desvioY + (rand() - 0.5) * 0.05), q: 1
+      });
+      sing.push({
+        x: W * (0.575 + desvioX + (rand() - 0.5) * 0.06),
+        y: H * (0.452 + desvioY + (rand() - 0.5) * 0.07), q: 1
+      });
+      sing.push({
+        x: W * (0.222 + (rand() - 0.5) * 0.05),
+        y: H * (0.690 + (rand() - 0.5) * 0.07), q: -1
+      });
+      sing.push({
+        x: W * (0.800 + (rand() - 0.5) * 0.05),
+        y: H * (0.745 + (rand() - 0.5) * 0.08), q: -1
+      });
     } else {
       /* Arco: en la yema no hay ni nucleo ni delta. Las crestas son arcos
          paralelos que se levantan en el centro, como las lineas de una cebolla
@@ -166,8 +185,13 @@
            abajo los arcos salen casi rectos y el me\u00f1ique parece un codigo de
            barras. Con el centro cerca, las crestas suben en el medio como el
            arco de una huella real. */
-        cy: H * (1.10 + rand() * 0.14),
-        sq: 0.80 + rand() * 0.12          /* aplasta el arco: mas ancho que alto */
+        /* El centro va por DEBAJO de la yema (si queda dentro se ve un nucleo
+           de diana, y un arco no tiene nucleo). Para que los arcos se levanten
+           de verdad aunque el centro este lejos, se aplasta mucho la elipse
+           (sq chico): asi la curvatura del arco es alta y el menique deja de
+           parecer un codigo de barras. */
+        cy: H * (1.10 + rand() * 0.10),
+        sq: 0.30 + rand() * 0.10
       };
     }
 
@@ -194,8 +218,17 @@
            unas de otras. Se desplaza el punto de muestreo con ruido suave
            antes de calcular el angulo, y la cresta sale ondulada como la de
            una huella real. */
-        x += (fbm(x / 155, y / 155, 517, 2) - 0.5) * 30;
-        y += (fbm(x / 155, y / 155, 733, 2) - 0.5) * 30;
+        /* Deformacion en DOS escalas. La escala grande (periodo ~260 px)
+           desplaza el conjunto de crestas decenas de pixeles y rompe la
+           simetria de "diana": un verticilo real no son circulos
+           concentricos, son anillos aplastados por un lado y estirados por
+           otro. La escala corta (~95 px) mete el temblor fino que tienen las
+           crestas al apoyar la yema. Con una sola escala las vueltas quedaban
+           demasiado redondas y se notaba que era un dibujo. */
+        x += (fbm(x / 260, y / 260, 517, 2) - 0.5) * 36;
+        y += (fbm(x / 260, y / 260, 733, 2) - 0.5) * 36;
+        x += (fbm(x / 95, y / 95, 941, 2) - 0.5) * 15;
+        y += (fbm(x / 95, y / 95, 113, 2) - 0.5) * 15;
         var a;
         if (arco) {
           /* Perpendicular al radio que va del centro (abajo) al punto: da arcos
@@ -304,85 +337,6 @@
   }
 
   /* --------------------- Generacion de la imagen de huella ---------------- */
-  /* Devuelve un canvas con las crestas ya dibujadas (sin recortar). */
-  /* --------------------------- Ruido de valor ----------------------------- */
-  /* Ruido suave y reproducible: sirve para el borde irregular del dedo, las
-     zonas donde la tinta queda mas clara y el grano del papel. */
-  function hash2(i, j, s) {
-    var v = Math.sin(i * 127.1 + j * 311.7 + s * 74.7) * 43758.5453123;
-    return v - Math.floor(v);
-  }
-  function suave(t) { return t * t * (3 - 2 * t); }
-  function ruido(x, y, s) {
-    var xi = Math.floor(x), yi = Math.floor(y);
-    var xf = suave(x - xi), yf = suave(y - yi);
-    var a = hash2(xi, yi, s), b = hash2(xi + 1, yi, s);
-    var c = hash2(xi, yi + 1, s), d = hash2(xi + 1, yi + 1, s);
-    return (a * (1 - xf) + b * xf) * (1 - yf) + (c * (1 - xf) + d * xf) * yf;
-  }
-  function fbm(x, y, s, oct) {
-    var v = 0, amp = 0.5, f = 1, tot = 0;
-    for (var o = 0; o < (oct || 3); o++) {
-      v += amp * ruido(x * f, y * f, s + o * 13.7);
-      tot += amp; amp *= 0.5; f *= 2.1;
-    }
-    return v / tot;
-  }
-
-  /* --------------------- Tinta: una cresta punteada ----------------------- */
-  /* La huella entintada no son lineas lisas: son cadenas de puntos con
-     micro-huecos. Se recorre el trazo y se van poniendo gotitas. */
-  function pintarCresta(ctx, tramo, grosor, rand, dens) {
-    if (!tramo || tramo.length < 2) return;
-    /* Cresta CONTINUA: se dibuja como trazo, no como cadena de gotas. Antes
-       cada punto era un circulo con alfa variable y la huella salia esponjosa
-       y borrosa; asi las crestas quedan nitidas y legibles. */
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    /* Tinta NEGRA y OPACA: antes cada tramo bajaba el alfa y la huella salia
-       gris y velada. Una huella entintada de verdad es negro pleno. */
-    ctx.strokeStyle = '#000000';
-    ctx.globalAlpha = 1;
-    var base = Math.max(1.1, grosor);
-    var i = 0;
-    while (i < tramo.length - 1) {
-      var fin = Math.min(tramo.length - 1, i + 9);
-      var p = tramo[i];
-      /* Grosor VARIABLE a lo largo de la cresta, pero de variacion LENTA: el
-         calibre se muestrea con ruido de gran escala. Antes el ruido era de
-         escala corta y el grosor saltaba de un tramo al siguiente, dejando
-         unas cuentas negras que se veian como un dibujo hecho a mano. */
-      var calibre = base * (0.90 + 0.20 * ruido(p.x / 210, p.y / 210, 917));
-      ctx.lineWidth = Math.max(0.9, calibre);
-
-      /* Terminacion de cresta: la tinta se adelgaza y se corta, que es como
-         muere una cresta en una huella real. Se dibuja el tramo entero y, si
-         toca terminar, los ultimos puntos van con menos calibre y luego queda
-         un hueco corto antes de retomar. */
-      if (rand() < 0.022 && fin - i > 3) {
-        var medio = i + Math.max(2, Math.floor((fin - i) * 0.62));
-        ctx.beginPath();
-        ctx.moveTo(tramo[i].x, tramo[i].y);
-        for (var k1 = i + 1; k1 <= medio; k1++) ctx.lineTo(tramo[k1].x, tramo[k1].y);
-        ctx.stroke();
-        ctx.lineWidth = Math.max(0.7, calibre * 0.55);
-        ctx.beginPath();
-        ctx.moveTo(tramo[medio].x, tramo[medio].y);
-        for (var k2 = medio + 1; k2 <= fin; k2++) ctx.lineTo(tramo[k2].x, tramo[k2].y);
-        ctx.stroke();
-        i = fin + 1 + Math.floor(rand() * 3);
-        continue;
-      }
-
-      ctx.beginPath();
-      ctx.moveTo(tramo[i].x, tramo[i].y);
-      for (var k = i + 1; k <= fin; k++) ctx.lineTo(tramo[k].x, tramo[k].y);
-      ctx.stroke();
-      i = fin;
-    }
-  }
-
-  /* --------------------- Generacion de la imagen de huella ---------------- */
   function generarCrestas(semilla, dedo) {
     var cv = document.createElement('canvas');
     cv.width = ANCHO;
@@ -393,8 +347,8 @@
     var rand = mulberry32(xmur3(semilla + '|tinta')());
     /* Separacion real de crestas. El pulgar es el dedo mas grande y de crestas
        mas separadas; el meñique, el mas pequeño y de crestas mas juntas. */
-    var periodo = (ALTO / 76) * (campo.periodo || 1);
-    var grosor = periodo * 0.46;
+    var periodo = (ALTO / 52) * (campo.periodo || 1);
+    var grosor = periodo * 0.50;
     var paso = 2;
 
     /* Densidad de tinta: zonas mas cargadas y zonas mas flojas, como cuando
@@ -410,7 +364,14 @@
        en una mancha: cada punto trazado se guarda en una rejilla espacial y
        antes de sembrar se comprueba que no haya otra cresta al lado. */
     var minDist = periodo * 0.88;
-    var celda = minDist;
+    /* La separacion entre crestas no es igual en toda la yema: hay zonas
+       donde se aprietan y zonas donde se abren. Se modula con ruido suave de
+       escala grande. Sin esto todas las crestas quedaban equidistantes, que es
+       el detalle que mas delata un dibujo hecho por computadora. */
+    var sepAt = function (x, y) {
+      return periodo * (0.84 + 0.30 * fbm(x / 200, y / 200, semillaRuido + 77, 2));
+    };
+    var celda = periodo * 1.2;
     var cols = Math.ceil(ANCHO / celda) + 2;
     var filas = Math.ceil(ALTO / celda) + 2;
     var rejilla = new Array(cols * filas);
@@ -428,7 +389,7 @@
     var libre = function (x, y, tol) {
       var cx = Math.floor(x / celda) + 1;
       var cy = Math.floor(y / celda) + 1;
-      var d = tol || minDist;
+      var d = tol || sepAt(x, y);
       var lim = d * d;
       for (var j = cy - 1; j <= cy + 1; j++) {
         if (j < 0 || j >= filas) continue;
@@ -475,7 +436,7 @@
     for (var sy = -periodo; sy < ALTO + periodo; sy += semillaPaso) {
       for (var sx = -periodo; sx < ANCHO + periodo; sx += semillaPaso) {
         if (!dentro(sx, sy)) continue;
-        if (enNucleo(sx, sy, periodo * 1.45)) continue;
+        if (enNucleo(sx, sy, periodo * 0.55)) continue;
         if (!libre(sx, sy)) continue;
 
         /* Cresta completa: se traza hacia delante y hacia atras. */
@@ -483,8 +444,8 @@
           /* El hueco del nucleo se respeta con holgura: asi la cresta mas
              interna da la vuelta alrededor del ojo en vez de clavarse en el
              centro y dejar un pico negro. */
-          if (enNucleo(x, y, periodo * 1.0)) return false;
-          return libre(x, y, minDist * 0.74);
+          if (enNucleo(x, y, periodo * 0.30)) return false;
+          return libre(x, y, sepAt(x, y) * 0.74);
         };
         var adelante = trazar(campo, sx, sy, 1, 700, paso, cerca);
         var atras = trazar(campo, sx, sy, -1, 700, paso, cerca);
@@ -497,11 +458,11 @@
            (los extremos sueltos que tiene toda huella real). */
         var cortes = [];
         var i0 = 0;
-        var nTramos = 1 + (rand() < 0.14 ? 1 : 0);
+        var nTramos = 1 + (rand() < 0.06 ? 1 : 0);
         for (var t = 1; t <= nTramos; t++) {
           var fin = Math.floor((pts.length * t) / nTramos) - (t < nTramos ? Math.floor(rand() * 6) : 0);
           if (fin > i0 + 3) cortes.push([i0, Math.min(fin, pts.length - 1)]);
-          i0 = fin + 2 + Math.floor(rand() * 4);
+          i0 = fin + 2 + Math.floor(rand() * 2);
         }
 
         for (var c = 0; c < cortes.length; c++) {
@@ -564,7 +525,7 @@
 
     /* El borde se come la tinta solo en una franja corta: si la franja es
        ancha, media huella queda translucida y se ve borrosa. */
-    var anchoBorde = W * 0.07;
+    var anchoBorde = W * 0.10;
     for (var yy = 0; yy < H; yy++) {
       if (izq[yy] < 0) continue;
       for (var xx = izq[yy]; xx <= der[yy]; xx++) {
@@ -574,22 +535,31 @@
 
         var dist = Math.min(xx - izq[yy], der[yy] - xx);
         /* El borde se come la tinta de forma despareja (no es un corte limpio). */
-        var borde = dist / anchoBorde;
-        borde = Math.max(0, Math.min(1, borde));
-        borde = Math.pow(borde, 0.32);
-        var bordeNoise = 0.82 + 0.36 * fbm(xx / 26, yy / 26, s + 7, 2);
-        borde *= Math.min(1, bordeNoise);
+        var borde = Math.max(0, Math.min(1, dist / anchoBorde));
+        borde = Math.pow(borde, 0.26);
+        /* Borde deshilachado: dos escalas de ruido para que el contorno se
+           rompa en lenguetas, como cuando la yema no apoya parejo. */
+        var bn = 0.55 + 0.75 * fbm(xx / 30, yy / 30, s + 7, 2)
+                       + 0.30 * (fbm(xx / 9, yy / 9, s + 19, 2) - 0.5);
+        borde *= Math.max(0, Math.min(1, bn));
 
-        /* Manchas: apenas una insinuacion de que el dedo no aprieta igual en
-           toda la yema. Nunca bajan el alfa lo suficiente para dejar la cresta
-           gris: la huella tiene que leerse nitida de punta a punta. */
+        /* Transferencia de tinta: hay parches donde la yema estaba seca y la
+           tinta no paso al papel. Se modelan con un campo de baja frecuencia
+           que, donde cae bajo, casi borra la cresta. Es el detalle que mas se
+           parece a una huella entintada de verdad: no es negro parejo. */
+        var trans = fbm(xx / 62, yy / 62, s + 31, 3);
+        var falta = 1;
+        if (trans < 0.32) {
+          var t2 = (0.32 - trans) / 0.32;          /* 0..1 dentro del parche */
+          falta = 1 - 0.90 * Math.min(1, t2 * 1.3);
+        }
+
         /* Presion despareja: hay zonas donde la yema aprieta mas y la tinta
-           queda mas cargada, y zonas donde queda mas clara. Se mantiene por
-           encima de 0.86 para que la cresta nunca se pierda. */
+           queda mas cargada, y zonas donde queda mas clara. */
         var mancha = fbm(xx / 95, yy / 95, s + 3, 3);
-        var factor = 0.86 + 0.16 * mancha;
+        var factor = 0.80 + 0.24 * mancha;
 
-        var alfa = a * borde * factor;
+        var alfa = a * borde * factor * falta;
         alfa = Math.max(0, Math.min(255, alfa));
 
         d[i + 3] = alfa;
@@ -603,7 +573,7 @@
        perforan al azar sobre las crestas (nunca en el fondo) y con un tamano
        de uno a tres pixeles. Es uno de los detalles que hace que la huella
        parezca una impresion y no un dibujo. */
-    var nPoros = Math.round((W * H) / 900);
+    var nPoros = Math.round((W * H) / 1500);
     for (var pp = 0; pp < nPoros; pp++) {
       var pxp = Math.floor(rand() * W);
       var pyp = Math.floor(rand() * H);
@@ -650,6 +620,26 @@
       if (a0 < 24) continue;
       var dif = difuso[k2];
       if (dif > a0) d[ia] = Math.min(255, a0 + (dif - a0) * 0.18);
+    }
+
+    /* Grano de tinta: el borde de una cresta entintada no es una curva
+       limpia, esta mordido por el papel. Se pasa un umbral de ruido de alta
+       frecuencia sobre el alfa: los pixeles del borde se cortan o se engordan
+       de forma irregular y la cresta deja de verse como un trazo de vectores.
+       Es el ultimo paso y el que mas acerca la imagen a una impresion real. */
+    for (var yg = 0; yg < H; yg++) {
+      for (var xg = 0; xg < W; xg++) {
+        var ig = (yg * W + xg) * 4 + 3;
+        var ag = d[ig];
+        if (ag === 0) continue;
+        var rg = ruido(xg / 2.1, yg / 2.1, s + 53) - 0.5;
+        var rg2 = ruido(xg / 5.3, yg / 5.3, s + 67) - 0.5;
+        var corte = 0.28 + rg * 0.50 + rg2 * 0.22;
+        var m = ((ag / 255) - corte) * 3.2 + 0.5;
+        if (m <= 0) d[ig] = 0;
+        else if (m >= 1) d[ig] = 255;
+        else d[ig] = Math.round(m * 255);
+      }
     }
 
     ctx.putImageData(img, 0, 0);
