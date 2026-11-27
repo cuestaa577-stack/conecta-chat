@@ -25,8 +25,8 @@ const App = (() => {
      el servidor usan la misma estructura. */
   const TARIFAS_POR_PAIS = {
     Venezuela: {
-      cedula: { renovacion: 1900, extravio: 1700, deterioro: 1600, hurto: 1500 },
-      licencia: { '2': 31000, '3': 100000, '4': 375000, '5': 375000 },
+      cedula: { renovacion: 19000, extravio: 17000, deterioro: 15000, hurto: 13000 },
+      licencia: { '2': 50000, '3': 55000, '4': 60000, '5': 65000 },
     },
     Colombia: {
       cedula: { renovacion: 35000, extravio: 32000, deterioro: 29000, hurto: 26000 },
