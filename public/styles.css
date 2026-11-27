@@ -197,8 +197,16 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .version-line { font-size: 12.5px; text-align: center; margin: 16px 0 0; }
 
 /* ---------------- App ---------------- */
-/* Fondo blanco limpio: sin marcas de agua repetidas por toda la app. */
+/* Marca de agua del SAIME en toda la app: se ve clara pero sin tapar el texto.
+   Escudos grandes y pocos, para que se note sin verse cargado. */
 body { background: #ffffff; }
+body::before {
+  content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: url('marca-agua-saime.png');
+  background-repeat: repeat;
+  background-size: 300px 300px;
+  opacity: .16;
+}
 .view {
   position: absolute; inset: 0; display: none; flex-direction: column;
   background: transparent; z-index: 1;
@@ -840,7 +848,7 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .req-marca {
   position: absolute; right: 10px; bottom: 8px; width: 104px; height: 104px;
   display: flex; align-items: center; justify-content: center;
-  pointer-events: none; z-index: 0; opacity: .08;
+  pointer-events: none; z-index: 0; opacity: .20;
 }
 .req-marca img { width: 100%; height: 100%; object-fit: contain; filter: grayscale(1); }
 .req-card .sheet-head { gap: 8px; }
@@ -1510,8 +1518,8 @@ body.con-actualizacion .view.active { padding-top: 54px; }
   background-image: url("logos/justicia-marca.png");
   background-repeat: repeat;
   background-position: center top;
-  background-size: 150px auto;
-  opacity: .15;
+  background-size: 175px auto;
+  opacity: .26;
 }
 /* La imagen del HTML queda como respaldo semantico: el logo lo pinta el fondo
    repetido del contenedor, que cubre toda la altura del formulario. */
