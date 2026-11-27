@@ -197,18 +197,19 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .version-line { font-size: 12.5px; text-align: center; margin: 16px 0 0; }
 
 /* ---------------- App ---------------- */
-.app {
-  height: 100%; position: relative;
-  background:
-    /* Fondo blanco con la marca de agua del SAIME muy suave. Se ve la marca,
-       pero no tapa nada: todo el texto queda sobre blanco y se lee limpio. */
-    url('marca-agua-saime.png') repeat,
-    #ffffff;
-  background-size: 300px 300px;
+/* Marca de agua del SAIME en toda la app. Va en una capa fija por detras del
+   contenido, con opacidad controlada: se nota, pero no estorba la lectura. */
+body { background: #ffffff; }
+body::before {
+  content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: url('marca-agua-saime.png');
+  background-repeat: repeat;
+  background-size: 240px 240px;
+  opacity: .12;
 }
 .view {
   position: absolute; inset: 0; display: none; flex-direction: column;
-  background: transparent;
+  background: transparent; z-index: 1;
 }
 .view.active { display: flex; }
 
@@ -336,16 +337,16 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 
 /* Franja de confianza bajo el hero */
 .trust-row {
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 4px;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 5px;
   margin: 11px auto 0; max-width: 100%; width: 100%;
 }
 .trust {
-  display: inline-flex; align-items: center; gap: 3px; min-width: 0;
-  font-size: 9.5px; font-weight: 600; color: #eaf1ff; white-space: nowrap;
-  background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .28);
-  padding: 3px 6px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%;
+  font-size: 11px; font-weight: 700; color: #f2f7ff; white-space: nowrap;
+  background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .32);
+  padding: 4px 8px; border-radius: 999px;
 }
-.trust svg { width: 10px; height: 10px; flex-shrink: 0; stroke: currentColor; fill: none; stroke-width: 1.9; }
+.trust svg { width: 12px; height: 12px; flex-shrink: 0; stroke: currentColor; fill: none; stroke-width: 1.9; }
 .inst-sub { font-size: 12.5px; color: var(--muted); text-align: center; margin: -6px 0 13px; line-height: 1.4; }
 .chev { color: #98a2b3; display: flex; }
 .chev svg { width: 20px; height: 20px; }
@@ -847,7 +848,7 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .req-marca {
   position: absolute; right: 10px; bottom: 8px; width: 104px; height: 104px;
   display: flex; align-items: center; justify-content: center;
-  pointer-events: none; z-index: 0; opacity: .08;
+  pointer-events: none; z-index: 0; opacity: .16;
 }
 .req-marca img { width: 100%; height: 100%; object-fit: contain; filter: grayscale(1); }
 .req-card .sheet-head { gap: 8px; }
@@ -1517,8 +1518,8 @@ body.con-actualizacion .view.active { padding-top: 54px; }
   background-image: url("logos/justicia-marca.png");
   background-repeat: repeat;
   background-position: center top;
-  background-size: 150px auto;
-  opacity: .15;
+  background-size: 170px auto;
+  opacity: .22;
 }
 /* La imagen del HTML queda como respaldo semantico: el logo lo pinta el fondo
    repetido del contenedor, que cubre toda la altura del formulario. */
