@@ -1647,3 +1647,47 @@ body.con-actualizacion .view.active { padding-top: 54px; }
 .pnote, .summary-note { color: #3f5165; }
 .desc, .field-hint { color: #4e6076; }
 .bv-ic img { width: 34px; height: 34px; object-fit: contain; }
+
+/* ================= v8.2: saludo con logo del SAIME y letras mas visibles ================= */
+
+/* Saludo de la portada: logo del SAIME, "Bienvenida, Maria" y el boton de voz.
+   Se arma en fila para que el logo quede pegado al texto y el boton al final. */
+.home-greeting {
+  display: flex; align-items: center; gap: 10px;
+  margin: 16px 16px 12px; font-size: 19.5px; font-weight: 800;
+  color: var(--navy); letter-spacing: -.01em; line-height: 1.25;
+}
+.greet-logo {
+  width: 40px; height: 40px; flex-shrink: 0; border-radius: 11px;
+  object-fit: contain; background: #fff; padding: 3px;
+  box-shadow: 0 2px 8px rgba(11, 27, 58, .18);
+}
+.greet-txt { flex: 1; min-width: 0; }
+.home-greeting .greet-voice { margin-left: 0; flex-shrink: 0; }
+
+/* Letras mas grandes donde se lee la explicacion, sin salirse de las tarjetas.
+   Los textos de apoyo suben de 12.5 a 13.5, los parrafos a 14 y el subtitulo de
+   cada servicio a 14.5. Los titulos suben apenas para no romper el diseno. */
+.pnote, .summary-note, .desc, .aviso-pdf { font-size: 14px; line-height: 1.5; }
+.pnote, .summary-note { color: #2f4258; }
+.desc, .field-hint { color: #3d5068; }
+.field-hint { font-size: 13.5px; }
+.service-sub { font-size: 14.5px; color: #4a5c74; }
+.service-title { font-size: 16.5px; }
+.service-meta { font-size: 13.5px; }
+.hero p { font-size: 15px; }
+.empty { font-size: 14.5px; }
+.field > span { font-size: 13.5px; color: #46586f; }
+.aviso-lbl { font-size: 12.5px; }
+.trust { font-size: 11px; }
+.trust svg { width: 12px; height: 12px; }
+.step .stxt { font-size: 13px; }
+.brand-sub { font-size: clamp(10px, 2.9vw, 12.5px); }
+
+/* Textos de apoyo cortos (horas, pildoras, notas al pie de cada panel). */
+.chat-row .time, .pill, .tc-doc, .tc-date, .at-pay, .at-note, .ref-note,
+.req-note, .install-sub, .inst-sub, .version-line, .auth-note,
+.panel-row .who small, .ref-who small, .ref-team-head small, .at-top .who small,
+.stat .l, .ref-counter, .req-mini i {
+  font-size: 13.5px;
+}

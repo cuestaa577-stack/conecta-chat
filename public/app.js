@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v8.1';
+  const APP_VERSION = 'v8.2';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -847,16 +847,22 @@ const App = (() => {
     if (!el) return;
     const nombre = String((state.me && state.me.name) || '').trim();
     if (!nombre) { el.style.display = 'none'; return; }
-    /* Siempre saludo + el primer nombre de la persona: "Buenos dias, Carlos". */
-    /* Franjas del dia (hora local del telefono):
-       00:00 a 11:59 buenos dias | 12:00 a 18:59 buenas tardes | 19:00 a 23:59 buenas noches.
-       La madrugada cuenta como dia nuevo: a la 1:00 AM ya dice "Buenos dias". */
-    const hora = new Date().getHours();
-    let saludo = 'Buenas noches';
-    if (hora < 12) saludo = 'Buenos días';
-    else if (hora < 19) saludo = 'Buenas tardes';
-    el.textContent = saludo + ', ' + nombre.split(/\s+/)[0];
-    el.style.display = 'block';
+    /* "Bienvenida, Maria" si es mujer y "Bienvenido, Carlos" si es hombre, con
+       el logo del SAIME al lado. Antes se pintaba con textContent y eso borraba
+       el boton de la voz; ahora se arma completo con innerHTML. */
+    const mujer = esMujer(nombre);
+    const texto = '¡' + (mujer ? 'Bienvenida' : 'Bienvenido') + ', ' + primerNombre(nombre) + '!';
+    /* Se repinta cada minuto por si cambia el nombre o la foto: si el texto es
+       el mismo no se toca nada, para no recargar el logo ni el boton. */
+    if (el.dataset.firma === texto && el.style.display === 'flex') return;
+    el.dataset.firma = texto;
+    el.innerHTML =
+      '<img class="greet-logo" src="logos/saime.png" alt="SAIME" />' +
+      '<span class="greet-txt">' + esc(texto) + '</span>' +
+      '<button class="greet-voice" type="button" aria-label="Escuchar el saludo" onclick="App.repetirSaludo()">' +
+      '<svg viewBox="0 0 24 24"><path d="M4 9.5v5h3.2L12 18.5V5.5L7.2 9.5H4z"/>' +
+      '<path d="M15.5 8.6a4.6 4.6 0 010 6.8M18 6a8 8 0 010 12"/></svg></button>';
+    el.style.display = 'flex';
   }
   let saludoTimer = null;
 
@@ -1871,15 +1877,31 @@ const App = (() => {
     'mercedes', 'rosario', 'soledad', 'pilar', 'beatriz', 'cruz', 'nieves', 'dolores', 'angeles',
     'amparo', 'consuelo', 'nubia', 'yoselin', 'yorbelis', 'marisela', 'yosely', 'yesenia', 'gloria',
     'nohemi', 'abigail', 'ruth', 'judith', 'edith', 'iris', 'mabel', 'naomi', 'yulimar', 'milagros',
-    'yajaira', 'yaneth', 'zaida', 'zuleima', 'belkis', 'nayrobis', 'yuleisi', 'danielys'];
+    'yajaira', 'yaneth', 'zaida', 'zuleima', 'belkis', 'nayrobis', 'yuleisi', 'danielys',
+    /* Nombres que no terminan en "a" y por eso la regla sola no los acertaba. */
+    'yxamar', 'yosmar', 'rosimar', 'yarimar', 'naymar', 'yurimar', 'marielis', 'mariangel',
+    'genesis', 'yanelis', 'yuleima', 'dailyn', 'daimarys', 'yudith', 'yusmary', 'yeraldine',
+    'katiuska', 'raimarys', 'estefani', 'estefania', 'nayelis', 'yulibeth', 'yurbelis', 'yerlin',
+    'yurley', 'oriana', 'dayana', 'karelis', 'karina', 'marialejandra', 'yulissa', 'sorangel'];
   const NOMBRES_HOMBRE = ['jose', 'jhon', 'juan', 'andres', 'rafael', 'wilmer', 'luis', 'carlos',
     'jhonatan', 'jesus', 'angel', 'adan', 'ivan', 'elias', 'tobias', 'nicolas', 'matias', 'lucas',
     'isaias', 'isaac', 'josue', 'moises', 'noe', 'eneas', 'urias', 'zacarias', 'bautista', 'yorman',
-    'yeison', 'jhonny', 'mauricio', 'richard', 'freddy', 'gustavo', 'jorge', 'miguel', 'pedro'];
+    'yeison', 'jhonny', 'mauricio', 'richard', 'freddy', 'gustavo', 'jorge', 'miguel', 'pedro',
+    /* Nombres de hombre que terminan en "is", "eth" o "el": la regla de las
+       terminaciones los confundia con nombres de mujer. */
+    'kenneth', 'denis', 'dennis', 'alexis', 'daniel', 'emanuel', 'manuel', 'gabriel', 'rafael',
+    'abraham', 'adonis', 'joel', 'samuel', 'ismael', 'yender', 'yohan', 'jhoan', 'franklin',
+    'wladimir', 'yefferson', 'jefferson', 'anthony', 'yordi', 'yorfran', 'yhon', 'yackson'];
 
   function primerNombre(nombre) {
     return String(nombre || '').trim().split(/\s+/)[0] || '';
   }
+
+  /* Terminaciones tipicas de nombres de mujer que no acaban en "a":
+     Yulimar, Yxamar, Yorbelis, Marielis, Yaneth, Yoselin... */
+  const FIN_MUJER = /(mar|belis|elis|elys|yelin|yelis|yulis|erlin|elin|eth|ith|arys|eidy|aire|yuli|nelis)$/;
+  /* Nombres de hombre que se parecen a esas terminaciones. */
+  const FIN_HOMBRE = /(luis|kenneth|denis|dennis|alexis|adonis|elias|isaias|tobias|matias|nicolas|zacarias|urias)$/;
 
   function esMujer(nombre) {
     const n = primerNombre(nombre).toLowerCase()
@@ -1887,6 +1909,8 @@ const App = (() => {
     if (!n) return false;
     if (NOMBRES_MUJER.indexOf(n) >= 0) return true;
     if (NOMBRES_HOMBRE.indexOf(n) >= 0) return false;
+    if (FIN_HOMBRE.test(n)) return false;
+    if (FIN_MUJER.test(n)) return true;
     if (/a$/.test(n)) return true;
     if (/o$/.test(n)) return false;
     return false;
@@ -1930,16 +1954,24 @@ const App = (() => {
   function textoSaludo() {
     const nombre = String((state.me && state.me.name) || '').trim();
     if (!nombre) return '';
-    const hora = new Date().getHours();
-    const saludo = hora < 12 ? 'Buenos días' : hora < 19 ? 'Buenas tardes' : 'Buenas noches';
-    return saludo + ', ' + nombre.split(/\s+/)[0];
+    /* La voz dice lo mismo que se lee en pantalla. */
+    return (esMujer(nombre) ? 'Bienvenida, ' : 'Bienvenido, ') + primerNombre(nombre);
   }
 
-  function vozEspanol() {
+  /* El telefono trae varias voces en espanol. Se elige una de mujer cuando la
+     persona es mujer y una de hombre cuando es hombre; si el telefono solo
+     tiene una, se cambia el tono para que suene acorde. */
+  const VOCES_MUJER = /mujer|female|monica|mónica|paulina|sabina|helena|lucia|lucía|marisol|esperanza|sofia|sofía|elena|dalia|isabela|camila|salome|salomé/i;
+  const VOCES_HOMBRE = /hombre|male|diego|jorge|carlos|juan|pablo|miguel|enrique|raul|raúl|javier|andres|andrés|alvaro|álvaro|gonzalo|ricardo|esteban/i;
+
+  function vozEspanol(mujer) {
     const voces = (window.speechSynthesis && window.speechSynthesis.getVoices()) || [];
     const es = voces.filter((v) => /^es/i.test(v.lang || ''));
-    return es.find((v) => /ve|venezuela|mx|us|lat/i.test(v.lang)) ||
-      es.find((v) => /mujer|female|monica|mónica|paulina|sabina|helena/i.test(v.name || '')) ||
+    if (!es.length) return null;
+    const busca = mujer ? VOCES_MUJER : VOCES_HOMBRE;
+    const evita = mujer ? VOCES_HOMBRE : VOCES_MUJER;
+    return es.find((v) => busca.test(v.name || '')) ||
+      es.find((v) => !evita.test(v.name || '')) ||
       es[0] || null;
   }
 
@@ -1949,11 +1981,12 @@ const App = (() => {
     try {
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(txt);
-      const v = vozEspanol();
+      const mujer = esMujer((state.me && state.me.name) || '');
+      const v = vozEspanol(mujer);
       if (v) u.voice = v;
       u.lang = (v && v.lang) || 'es-ES';
-      u.rate = 0.98;
-      u.pitch = 1.05;
+      u.rate = 0.97;
+      u.pitch = mujer ? 1.14 : 0.88;
       window.speechSynthesis.speak(u);
       vozPendiente = false;
     } catch (e) { vozPendiente = true; }
