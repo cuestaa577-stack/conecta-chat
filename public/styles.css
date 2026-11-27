@@ -200,12 +200,11 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .app {
   height: 100%; position: relative;
   background:
-    /* El velo blanco baja de .78/.86 a .58/.70: antes tapaba tanto la foto que
-       se veia lavada. Las tarjetas siguen siendo blancas, asi que el texto se
-       lee igual. */
-    linear-gradient(rgba(244, 246, 251, .58), rgba(244, 246, 251, .70)),
-    url('bg.jpg') center/cover no-repeat fixed,
-    var(--bg);
+    /* Fondo blanco con la marca de agua del SAIME muy suave. Se ve la marca,
+       pero no tapa nada: todo el texto queda sobre blanco y se lee limpio. */
+    url('marca-agua-saime.png') repeat,
+    #ffffff;
+  background-size: 300px 300px;
 }
 .view {
   position: absolute; inset: 0; display: none; flex-direction: column;
