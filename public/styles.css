@@ -1720,3 +1720,13 @@ body.con-actualizacion .view.active { padding-top: 54px; }
 
 /* Los avisos vacios del resto de la app tambien un poco mas oscuros. */
 .empty { color: #3d5068; }
+
+/* --- Cita virtual dentro del trámite --- */
+.cita-panel .cita-cuando {
+  margin: 0 0 8px; font-size: 15px; font-weight: 800; color: var(--navy);
+  text-transform: capitalize; line-height: 1.3;
+}
+.cita-panel.pendiente { border-left: 4px solid var(--gold); }
+.cita-panel.ok { border-left: 4px solid var(--ok); }
+.cita-panel.cancelada { border-left: 4px solid var(--red); }
+.cita-panel .btn { margin-top: 10px; }

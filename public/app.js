@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v8.5';
+  const APP_VERSION = 'v8.6';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -170,7 +170,11 @@ const App = (() => {
     try {
       const data = await api('/api/chats/start', {
         method: 'POST',
-        body: JSON.stringify({ tramite: { service: s.service, serviceLabel: s.serviceLabel, subtype: s.subtype, subtypeLabel: s.subtypeLabel, grade: s.grade } }),
+        body: JSON.stringify({ tramite: {
+          service: s.service, serviceLabel: s.serviceLabel, subtype: s.subtype,
+          subtypeLabel: s.subtypeLabel, grade: s.grade,
+          citaFecha: s.citaFecha || '', citaHora: s.citaHora || '',
+        } }),
       });
       await loadChats();
       state.viewStack = ['homeView'];
@@ -3111,6 +3115,34 @@ const App = (() => {
         <p class="pnote muted">Se abre el explorador de archivos del teléfono: elige el PDF o la foto. Al terminar, la persona lo ve en vista previa dentro de la app.</p>
       </div>` : '';
 
+    /* Cita virtual: dia, hora y si ya la confirmo. Sin confirmar, la cita se
+       cancela sola 10 minutos despues de la hora. */
+    let citaHtml = '';
+    if (t.cita) {
+      const c = t.cita;
+      const cuando = fechaLegible(c.fecha) + ' a las ' + horaLegible(c.hora);
+      if (c.estado === 'confirmada') {
+        citaHtml = `<div class="panel cita-panel ok">
+          <h3>Tu cita virtual</h3>
+          <p class="cita-cuando">${esc(cuando)}</p>
+          <p class="pnote muted">Cita confirmada. Llega 10 minutos antes de tu hora.</p>
+        </div>`;
+      } else if (c.estado === 'cancelada') {
+        citaHtml = `<div class="panel cita-panel cancelada">
+          <h3>Tu cita virtual</h3>
+          <p class="cita-cuando">${esc(cuando)}</p>
+          <p class="pnote muted">La cita se canceló porque no se confirmó a tiempo. Puedes agendar otra desde la portada.</p>
+        </div>`;
+      } else {
+        citaHtml = `<div class="panel cita-panel pendiente">
+          <h3>Tu cita virtual</h3>
+          <p class="cita-cuando">${esc(cuando)}</p>
+          <p class="pnote muted">Confirma tu cita. Si no la confirmas, se cancela sola 10 minutos después de la hora.</p>
+          <button class="btn primary" onclick="App.confirmarCita('${esc(t.id)}')">Confirmar mi cita</button>
+        </div>`;
+      }
+    }
+
     box.innerHTML = `
       <div class="tramite-head">
         <span class="chip ${st.cls}">${esc(st.txt)}</span>
@@ -3118,6 +3150,7 @@ const App = (() => {
         ${t.status === 'rechazado' && t.note ? '<p class="rechazo-nota">' + esc(t.note) + '</p>' : ''}
       </div>
       <div class="steps">${pasosHtml}</div>
+      ${citaHtml}
       ${adminDocHtml}
       ${previewHtml}
       ${descargaHtml}
@@ -3132,6 +3165,16 @@ const App = (() => {
     else desactivarGuardaVisor();
   }
 
+
+  /* Confirmar la cita virtual del tramite que esta abierto. */
+  async function confirmarCita(id) {
+    try {
+      const data = await api('/api/tramites/' + encodeURIComponent(id) + '/confirmar-cita', { method: 'POST' });
+      if (data && data.tramite) renderTramiteDetail(data.tramite);
+      toast('Cita confirmada');
+      loadTramites();
+    } catch (e) { toast(e.message, 'bad'); }
+  }
 
   /* --------------------- visor del documento (sin salir de la app) --------------------- */
   /* El PDF se dibuja en canvas con marca de agua: se ve dentro de la app, no se abre
@@ -5993,7 +6036,7 @@ const App = (() => {
     openAdmin, openChatFromAdmin, openFirstChat,
     adminTab, adminIr, adminFiltrar, adminBuscarPersona, adminBuscarTramite, salirPanel,
     viewImage, closeViewer, logout, notifActivar, ocultarNotifBanner,
-    cerrarBienvenida, repetirSaludo, mostrarBienvenida,
+    cerrarBienvenida, repetirSaludo, mostrarBienvenida, confirmarCita,
     installApp, dismissInstall, closeIosSheet, testMail, shareApp, consultarPrecio, countryChanged, cargarPaisDetectado, editCountryChanged,
     openTramites, loadTramites, openTramite, openTramiteChat, subirComprobante, avisoDescarga,
     adminFillSubtypes, crearTramite, adminSubirDocumento, adminAprobar, adminRechazar,

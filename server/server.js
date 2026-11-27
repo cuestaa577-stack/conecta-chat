@@ -2009,6 +2009,7 @@ app.post('/api/chats/start', auth, (req, res) => {
         grade: String(tramite.grade || '').slice(0, 20),
         title: tramiteTitulo(tramite.serviceLabel, tramite.subtypeLabel, tramite.grade),
         status: 'recibido',
+        cita: citaDeTramite(tramite.citaFecha, tramite.citaHora),
         doc: null,
         payment: null,
         note: '',
@@ -2694,6 +2695,46 @@ function archivoResumen(f) {
 }
 
 /* Lo que se manda al navegador: sin direcciones internas de archivos. */
+/* ------------------------- cita virtual -------------------------
+   Cada tramite puede llevar su cita con dia y hora. La cita nace en
+   "pendiente": la persona tiene que confirmarla desde la app. Si llega la hora
+   y sigue sin confirmar, se cancela sola pasados 10 minutos, que es la
+   tolerancia que se le avisa en pantalla. */
+const CITA_TOLERANCIA_MS = 10 * 60 * 1000;
+
+function citaDeTramite(fecha, hora) {
+  const f = String(fecha || '').trim();
+  const h = String(hora || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(f)) return null;
+  if (!/^\d{2}:\d{2}$/.test(h)) return null;
+  return { fecha: f, hora: h, estado: 'pendiente', confirmadaEn: 0, canceladaEn: 0 };
+}
+
+function citaMomento(cita) {
+  const q = String(cita.fecha).split('-');
+  const p = String(cita.hora).split(':');
+  return new Date(Number(q[0]), Number(q[1]) - 1, Number(q[2]), Number(p[0]), Number(p[1])).getTime();
+}
+
+/* Cancela las citas que vencieron sin confirmar. Si se pasa usuarioId se
+   revisan solo las de esa persona. */
+function revisarCitas(usuarioId) {
+  let cambio = false;
+  Object.values(tramitesDb()).forEach((t) => {
+    if (usuarioId && t.userId !== usuarioId) return;
+    const c = t.cita;
+    if (!c || c.estado !== 'pendiente') return;
+    if (Date.now() <= citaMomento(c) + CITA_TOLERANCIA_MS) return;
+    c.estado = 'cancelada';
+    c.canceladaEn = now();
+    t.updatedAt = now();
+    tramiteHistorial(t, t.status, 'La cita se cancelo: no se confirmo a tiempo', null);
+    cambio = true;
+  });
+  if (cambio) save();
+  return cambio;
+}
+
 function tramiteView(t, forUser) {
   const owner = db.users[t.userId] || {};
   const esAdmin = !!(forUser && forUser.role === 'admin');
@@ -2719,6 +2760,7 @@ function tramiteView(t, forUser) {
     grade: t.grade || '',
     status: t.status,
     statusLabel: TRAMITE_ESTADO_TXT[t.status] || t.status,
+    cita: t.cita || null,
     chatId: t.chatId || '',
     doc: doc ? { name: doc.name, mime: doc.mime, size: doc.size, uploadedAt: doc.uploadedAt } : null,
     payment: pago ? {
@@ -3174,6 +3216,7 @@ async function enviarDocumentoPdfPorCorreo(t, baseUrl) {
 /* --- la persona: mis tramites --- */
 app.get('/api/tramites', auth, (req, res) => {
   const esAdmin = req.user.role === 'admin';
+  revisarCitas(esAdmin ? null : req.user.id);
   const lista = Object.values(tramitesDb())
     .filter((t) => esAdmin || t.userId === req.user.id)
     .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
@@ -3183,7 +3226,30 @@ app.get('/api/tramites', auth, (req, res) => {
 app.get('/api/tramites/:id', auth, (req, res) => {
   const t = tramiteDe(req);
   if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
+  revisarCitas(t.userId);
   res.json({ tramite: tramiteView(t, req.user), pagoInfo: pagoInfo(), captura: capturaConfig() });
+});
+
+/* La persona confirma su cita virtual. Sin esta confirmacion la cita se
+   cancela sola diez minutos despues de la hora. */
+app.post('/api/tramites/:id/confirmar-cita', auth, (req, res) => {
+  const t = tramiteDe(req);
+  if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
+  if (!t.cita) return res.status(400).json({ error: 'Este tramite no tiene cita virtual' });
+  revisarCitas(t.userId);
+  if (t.cita.estado === 'cancelada') {
+    return res.status(409).json({ error: 'La cita se cancelo porque no se confirmo a tiempo. Agenda otra desde la portada.' });
+  }
+  if (t.cita.estado !== 'confirmada') {
+    t.cita.estado = 'confirmada';
+    t.cita.confirmadaEn = now();
+    t.updatedAt = now();
+    tramiteHistorial(t, t.status, 'La persona confirmo su cita', req.user.id);
+    save();
+    const admin = Object.values(db.users).find((u) => u.role === 'admin');
+    if (admin) sendToUser(admin.id, { type: 'tramite:updated', tramite: tramiteView(t, admin) });
+  }
+  res.json({ ok: true, tramite: tramiteView(t, req.user) });
 });
 
 /* La persona intento capturar o guardar el documento */
@@ -3297,6 +3363,8 @@ app.post('/api/tramites/:id/comprobante', auth, (req, res) => {
 
 /* --- administrador: gestion de tramites --- */
 app.get('/api/admin/tramites', auth, adminOnly, (req, res) => {
+  /* El panel del gestor tambien cancela las citas vencidas sin confirmar. */
+  revisarCitas(null);
   const lista = Object.values(tramitesDb())
     .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
   const people = Object.values(db.users)
