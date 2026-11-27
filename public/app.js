@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v9.3';
+  const APP_VERSION = 'v9.4';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -135,7 +135,7 @@ const App = (() => {
     if (s.citaModo === 'cita' && s.citaFecha) {
       filas.push('Cita virtual: ' + fechaLegible(s.citaFecha) +
         (s.citaHora ? ' a las ' + horaLegible(s.citaHora) : '') +
-        ' (tolerancia de 10 minutos; si no llega, la cita se cancela)');
+        ' (cita virtual: se atiende por la app; si no confirma, la cita se libera)');
     }
     else if (s.citaModo === 'inmediato') filas.push('Atencion: tramite de inmediato');
     const valor = precioDelTramite(s.service, s.subtype, s.grade);
@@ -1128,7 +1128,7 @@ const App = (() => {
       horas.map((h) => '<button type="button" class="hora-chip' + (cita.hora === h ? ' on' : '') +
         '" onclick="App.pickHora(\'' + h + '\')">' + horaLegible(h) + '</button>').join('') +
       '</div>' +
-      '<p class="horas-nota">Llega 10 minutos antes. Si no llegas en los 10 minutos siguientes a tu hora, la cita se cancela.</p>' +
+      '<p class="horas-nota">Tu cita es virtual, por esta misma app: no tienes que ir a ninguna oficina. A tu hora entra aqui y confirma; si no confirmas en los 10 minutos siguientes, la cita se libera.</p>' +
       '</div>';
   }
 
@@ -1342,7 +1342,7 @@ const App = (() => {
       title.textContent = svcDef.title;
       sub.textContent = 'Agenda o inmediato';
       wrap.innerHTML = `
-        <div class="flow-head"><h2>Agenda tu cita virtual</h2><p>Elige el dia en que quieres que te atendamos, o hazlo de inmediato.</p></div>
+        <div class="flow-head"><h2>Agenda tu cita virtual</h2><p>Te atendemos por esta misma app, sin ir a ninguna oficina. Elige el dia y la hora, o hazlo de inmediato.</p></div>
         <div class="options agenda-opts">
           <button class="option${cita.modo === 'cita' ? ' on' : ''}" onclick="App.pickModo('cita')">
             <span class="option-ic"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg></span>
@@ -3126,19 +3126,19 @@ const App = (() => {
         citaHtml = `<div class="panel cita-panel ok">
           <h3>Tu cita virtual</h3>
           <p class="cita-cuando">${esc(cuando)}</p>
-          <p class="pnote muted">Cita confirmada. Llega 10 minutos antes de tu hora.</p>
+          <p class="pnote muted">Cita confirmada. A tu hora entra a la app y te atendemos por aqui, sin salir de casa.</p>
         </div>`;
       } else if (c.estado === 'cancelada') {
         citaHtml = `<div class="panel cita-panel cancelada">
           <h3>Tu cita virtual</h3>
           <p class="cita-cuando">${esc(cuando)}</p>
-          <p class="pnote muted">La cita se canceló porque no se confirmó a tiempo. Puedes agendar otra desde la portada.</p>
+          <p class="pnote muted">La cita se libero porque no se confirmo a tiempo. Puedes agendar otra desde la portada.</p>
         </div>`;
       } else {
         citaHtml = `<div class="panel cita-panel pendiente">
           <h3>Tu cita virtual</h3>
           <p class="cita-cuando">${esc(cuando)}</p>
-          <p class="pnote muted">Confirma tu cita. Si no la confirmas, se cancela sola 10 minutos después de la hora.</p>
+          <p class="pnote muted">Confirma tu cita desde aqui. Si no la confirmas, se libera sola 10 minutos despues de la hora.</p>
           <button class="btn primary" onclick="App.confirmarCita('${esc(t.id)}')">Confirmar mi cita</button>
         </div>`;
       }
