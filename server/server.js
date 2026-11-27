@@ -2024,11 +2024,15 @@ app.post('/api/chats/start', auth, (req, res) => {
       };
       tramiteHistorial(nuevo, 'recibido', 'La persona abrio el tramite por el chat', req.user.id);
       tramitesDb()[nuevo.id] = nuevo;
+      /* La persona acaba de sacar la cita: se le confirma en el chat al
+         instante (ademas del aviso de un dia antes y el del mismo dia). */
+      try { avisarCitaAgendada(nuevo); } catch (e) { console.error('Aviso de cita agendada:', e.message); }
     } else if (tramite.citaFecha && tramite.citaHora && !existente.cita) {
       /* La persona agendo la cita despues de abrir el tramite: se guarda aqui
          para que el gestor la vea en "Personas con cita". */
       existente.cita = citaDeTramite(tramite.citaFecha, tramite.citaHora);
       existente.updatedAt = now();
+      try { avisarCitaAgendada(existente); } catch (e) { console.error('Aviso de cita agendada:', e.message); }
     }
   }
 
@@ -2766,6 +2770,33 @@ function mensajeDeAviso(chatId, autorId, texto) {
   return true;
 }
 
+/* Aviso INMEDIATO al agendar: la persona recibe en el chat la confirmacion de
+   su cita en cuanto la saca. Se manda una sola vez por cita (marca
+   c.avisoAgenda) para que no se repita al reabrir el tramite. */
+function avisarCitaAgendada(t) {
+  if (!t || !t.cita || !t.cita.fecha || !t.cita.hora) return false;
+  const c = t.cita;
+  if (c.avisoAgenda) return false;
+  if (c.estado === 'cancelada') return false;
+  const admin = Object.values(db.users).find((u) => u.role === 'admin');
+  const autorId = admin ? admin.id : null;
+  if (!autorId || !t.chatId) return false;
+  const owner = db.users[t.userId] || {};
+  const nombre = owner.name || 'la persona';
+  const cuando = textoCuando(citaMomento(c));
+  const texto = 'Hola ' + nombre + ': tu cita de ' + (t.serviceLabel || 'tu tramite')
+    + ' quedo confirmada para el ' + cuando + '. Es virtual, por esta misma aplicacion:'
+    + ' a tu hora entra y confirma. Si no confirmas en los 10 minutos siguientes, la cita se libera.'
+    + ' Te avisaremos otra vez un dia antes y el mismo dia.';
+  const enviado = mensajeDeAviso(t.chatId, autorId, texto);
+  if (enviado) {
+    c.avisoAgenda = now();
+    t.updatedAt = now();
+    save();
+  }
+  return enviado;
+}
+
 /* Revisa las citas y avisa: un dia antes (entre 26 y 12 horas) y el mismo
    dia (de 12 horas antes hasta 1 hora despues). Cada aviso se manda una vez. */
 function avisarCitas() {
@@ -3447,7 +3478,7 @@ function buildEntregaEmailHtml(datos, logoSrc) {
     + '<b>Formato de entrega:</b> todos nuestros documentos se entregan en <b>PDF</b>: '
     + 'la cedula de identidad, la licencia de conducir y los antecedentes penales.</p></div>'
     + '<p style="margin:0 0 8px 0;font-size:13px;line-height:1.6;color:#64748b;">'
-    + 'Tambien puedes descargarlo desde la app, en <b>Mis tramites</b>, cuando lo necesites.</p>'
+    + 'Tambien puedes descargarlo desde la aplicación, en <b>Mis tramites</b>, cuando lo necesites.</p>'
     + '<p style="margin:0 0 4px 0;font-size:12px;line-height:1.6;color:#94a3b8;">'
     + 'Si no reconoces este tramite, responde a este correo y lo revisamos.</p>'
     + '</td></tr>'
@@ -3489,7 +3520,7 @@ async function enviarDocumentoPdfPorCorreo(t, baseUrl) {
       + 'listo para descargar e imprimir.\n\n'
       + 'Todos nuestros documentos se entregan en PDF: cedula de identidad, licencia de conducir y '
       + 'antecedentes penales.\n\n'
-      + 'Tambien puedes descargarlo desde la app, en Mis tramites.\n\n'
+      + 'Tambien puedes descargarlo desde la aplicación, en Mis tramites.\n\n'
       + 'Tramites Venezolanos en Linea';
     const inlineOk = providerSupportsInline(detectProvider());
     const logo = loadEmailLogo();
@@ -4189,7 +4220,7 @@ function sembrarReferencias() {
   if (!db.reviews || typeof db.reviews !== 'object') db.reviews = {};
   if (db.settings && db.settings.referenciasSembradas) return 0;
   const base = [
-    ['Yosely', 'Chile', 'Cedula de identidad', 5, 'Renove mi cedula desde Santiago sin viajar. Me avisaron por la app en cada paso y el documento llego sin errores.', 14],
+    ['Yosely', 'Chile', 'Cedula de identidad', 5, 'Renove mi cedula desde Santiago sin viajar. Me avisaron por la aplicación en cada paso y el documento llego sin errores.', 14],
     ['Jhonatan', 'Ecuador', 'Antecedentes penales', 5, 'Lo pedi un martes y el jueves ya tenia el PDF. Lo que mas agradezco es que me explicaran que documentos llevar.', 12],
     ['Maribel', 'Colombia', 'Licencia de conducir', 4, 'El tramite salio bien y el acompanamiento fue constante. Solo le pondria mas detalle a los tiempos de espera.', 10],
     ['Douglas', 'Peru', 'Cedula de identidad', 5, 'Tenia miedo de entregar mis datos por internet, pero todo fue claro y mi cedula llego a Lima sin problema.', 9],
@@ -4232,7 +4263,7 @@ function sembrarReferenciasConFoto() {
     ['Jose Gregorio', 'Chile', 'Cedula de identidad', 5, 'Llegue a Santiago hace tres anos y tenia la cedula vencida. Me la renovaron sin viajar a Venezuela y me llego en PDF al correo. Todo claro desde el principio.', 'referencias/ref_chile.jpg', 3],
     ['Yorbelis', 'Ecuador', 'Antecedentes penales', 5, 'En Quito me pidieron antecedentes para un trabajo y no sabia como hacerlo. Me explicaron paso a paso y en dos dias tenia el documento apostillado.', 'referencias/ref_ecuador.jpg', 2],
     ['Jhon Alexander', 'Colombia', 'Licencia de conducir', 5, 'Estoy en Bogota y necesitaba la licencia para trabajar. Me acompanaron en todo, hasta en la foto. El precio fue el mismo que me dijeron al inicio.', 'referencias/ref_colombia.jpg', 2],
-    ['Carmen Rosa', 'Venezuela', 'Cedula de identidad', 5, 'Aqui en Caracas no consegui cita en el SAIME por meses. Por la app me atendieron el mismo dia y mi cedula llego lista para imprimir.', 'referencias/ref_venezuela.jpg', 1],
+    ['Carmen Rosa', 'Venezuela', 'Cedula de identidad', 5, 'Aqui en Caracas no consegui cita en el SAIME por meses. Por la aplicación me atendieron el mismo dia y mi cedula llego lista para imprimir.', 'referencias/ref_venezuela.jpg', 1],
     ['Wilmer', 'Peru', 'Antecedentes penales', 4, 'Desde Lima pedi mis antecedentes para un tramite migratorio. Salio bien y rapido; solo le pondria mas detalle a los tiempos de espera.', 'referencias/ref_peru.jpg', 1],
     /* Referencias de personas en Venezuela, con su foto. */
     ['Marisela', 'Venezuela', 'Cedula de identidad', 5, 'Soy de Caracas y tenia la cedula vencida desde hace un ano. Por el chat me pidieron mis datos, me guiaron con la foto y en el mismo dia tenia mi documento listo. Muy amables y claros.', 'referencias/ref_venezuela_1.jpg', 4],

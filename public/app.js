@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v9.7';
+  const APP_VERSION = 'v9.8';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -507,7 +507,46 @@ const App = (() => {
     showView('home', false);
   }
 
+  /* ------------------- boton atras del telefono -------------------
+     El boton/gesto de atras NUNCA debe salir de la aplicacion: siempre
+     retrocede dentro de ella. Para eso se mantiene una entrada de historial
+     "centinela": cuando el atras la consume, se vuelve a poner, de modo que
+     siempre queda una entrada que consumir y el telefono no cierra la app. */
+  const HIST_CENTINELA = { tve: 'centinela' };
+
+  function histPonerCentinela() {
+    try { history.pushState(HIST_CENTINELA, '', location.pathname); } catch (e) {}
+  }
+
+  /* Capas que se abren encima de la pantalla (hojas, visor, avisos). El atras
+     las cierra una por una antes de moverse entre pantallas. */
+  const CAPAS_ATRAS = [
+    ['reqSheet', cerrarRequisitos],
+    ['reqMenuSheet', cerrarMenuRequisitos],
+    ['attachSheet', closeAttach],
+    ['borrarMsgSheet', cerrarBorrarMensaje],
+    ['editDataSheet', closeEditData],
+    ['iosSheet', closeIosSheet],
+    ['fileViewer', cerrarArchivo],
+    ['viewer', closeViewer],
+  ];
+
+  function cerrarCapaAbierta() {
+    for (let i = 0; i < CAPAS_ATRAS.length; i++) {
+      const el = document.getElementById(CAPAS_ATRAS[i][0]);
+      if (el && !el.classList.contains('hidden')) {
+        try { CAPAS_ATRAS[i][1](); } catch (e) { el.classList.add('hidden'); }
+        return true;
+      }
+    }
+    return false;
+  }
+
   window.addEventListener('popstate', () => {
+    /* Se repone el centinela ANTES de navegar: asi el proximo atras tambien
+       se queda dentro de la aplicacion. */
+    histPonerCentinela();
+    if (cerrarCapaAbierta()) return;
     const active = $('.view.active');
     if (!active) return;
     if (active.id === 'homeView') return;
@@ -1128,7 +1167,7 @@ const App = (() => {
       horas.map((h) => '<button type="button" class="hora-chip' + (cita.hora === h ? ' on' : '') +
         '" onclick="App.pickHora(\'' + h + '\')">' + horaLegible(h) + '</button>').join('') +
       '</div>' +
-      '<p class="horas-nota">Tu cita es virtual, por esta misma app: no tienes que ir a ninguna oficina. A tu hora entra aqui y confirma; si no confirmas en los 10 minutos siguientes, la cita se libera.</p>' +
+      '<p class="horas-nota">Tu cita es virtual, por esta misma aplicación: no tienes que ir a ninguna oficina. A tu hora entra aqui y confirma; si no confirmas en los 10 minutos siguientes, la cita se libera.</p>' +
       '</div>';
   }
 
@@ -1342,7 +1381,7 @@ const App = (() => {
       title.textContent = svcDef.title;
       sub.textContent = 'Agenda o inmediato';
       wrap.innerHTML = `
-        <div class="flow-head"><h2>Agenda tu cita virtual</h2><p>Te atendemos por esta misma app, sin ir a ninguna oficina. Elige el dia y la hora, o hazlo de inmediato.</p></div>
+        <div class="flow-head"><h2>Agenda tu cita virtual</h2><p>Te atendemos por esta misma aplicación, sin ir a ninguna oficina. Elige el dia y la hora, o hazlo de inmediato.</p></div>
         <div class="options agenda-opts">
           <button class="option${cita.modo === 'cita' ? ' on' : ''}" onclick="App.pickModo('cita')">
             <span class="option-ic"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg></span>
@@ -1958,7 +1997,7 @@ const App = (() => {
     const barra = $('#updateBar');
     if (!barra) return;
     const txt = barra.querySelector('.ub-txt');
-    if (txt) txt.textContent = 'Hay una actualización de la app lista (' + versionNueva + ')';
+    if (txt) txt.textContent = 'Hay una actualización de la aplicación lista (' + versionNueva + ')';
     barra.hidden = false;
     document.body.classList.add('con-actualizacion');
   }
@@ -1986,7 +2025,7 @@ const App = (() => {
     if (intentos >= 2) {
       try { sessionStorage.removeItem('tve_recargas'); } catch (e) {}
       versionNueva = '';
-      toast('No se pudo actualizar sola. Cierra y abre la app para ver la version nueva.', 'info');
+      toast('No se pudo actualizar sola. Cierra y abre la aplicación para ver la version nueva.', 'info');
       return;
     }
     try { sessionStorage.setItem('tve_recargas', String(intentos + 1)); } catch (e) {}
@@ -2016,7 +2055,7 @@ const App = (() => {
   }
 
   async function actualizarApp() {
-    toast('Actualizando la app...');
+    toast('Actualizando la aplicación...');
     await aplicarActualizacion();
   }
 
@@ -2885,7 +2924,7 @@ const App = (() => {
           <button class="btn ghost" onclick="App.guardarPagoInfo()">Guardar datos de pago</button>
         </div>
         <div class="panel">
-          <h3>Correo de la app</h3>
+          <h3>Correo de la aplicación</h3>
           <p class="pnote muted">Envia un codigo de prueba para confirmar que los registros llegan.</p>
           <input id="mailTestTo" class="mail-input" type="email" placeholder="tucorreo@ejemplo.com" value="${esc((d && d.mail && d.mail.to) || '')}" />
           <button class="btn primary" id="mailTestBtn" onclick="App.testMail()">Enviar prueba</button>
@@ -3208,7 +3247,7 @@ const App = (() => {
             <span class="doc-zoom-lbl" id="docZoomLbl">100%</span>
           </div>
           <p class="pnote nota-clara">${esAdmin
-            ? 'Así lo ve la persona en su app: lo puede leer con zoom, pero no descargarlo hasta que confirmes el pago.'
+            ? 'Así lo ve la persona en su aplicación: lo puede leer con zoom, pero no descargarlo hasta que confirmes el pago.'
             : 'Acércalo con dos dedos o con los botones para leerlo bien. Cuando esté todo correcto, envía tu comprobante de pago aquí abajo.'}</p>
         </div>` : `
         <div class="panel">
@@ -3308,7 +3347,7 @@ const App = (() => {
         citaHtml = `<div class="panel cita-panel ok">
           <h3>Tu cita virtual</h3>
           <p class="cita-cuando">${esc(cuando)}</p>
-          <p class="pnote muted">Cita confirmada. A tu hora entra a la app y te atendemos por aqui, sin salir de casa.</p>
+          <p class="pnote muted">Cita confirmada. A tu hora entra a la aplicación y te atendemos por aqui, sin salir de casa.</p>
         </div>`;
       } else if (c.estado === 'cancelada') {
         citaHtml = `<div class="panel cita-panel cancelada">
@@ -4207,8 +4246,8 @@ const App = (() => {
       const r = await api('/api/admin/captura-config', { method: 'POST', body: JSON.stringify({ salirCuenta: !!salirCuenta }) });
       if (r && r.captura) state.captura = r.captura;
       toast(salirCuenta
-        ? 'Listo: salir de la app con el documento abierto cuenta como intento'
-        : 'Listo: salir de la app ya no cuenta como intento');
+        ? 'Listo: salir de la aplicación con el documento abierto cuenta como intento'
+        : 'Listo: salir de la aplicación ya no cuenta como intento');
       loadAdminTramites();
     } catch (e) { toast(e.message, 'bad'); }
   }
@@ -4406,7 +4445,7 @@ const App = (() => {
     const pendientes = colaLeer().length;
     if (sinRed || pendientes) {
       barra.textContent = sinRed
-        ? 'Sin conexión. La app sigue abierta y lo que escribas se envía al volver internet.'
+        ? 'Sin conexión. La aplicación sigue abierta y lo que escribas se envía al volver internet.'
         : 'Tienes ' + pendientes + ' mensaje' + (pendientes === 1 ? '' : 's') + ' por enviar. Se manda al recuperar la conexión.';
       barra.classList.remove('hidden');
     } else {
@@ -4613,7 +4652,7 @@ const App = (() => {
   }
 
   async function installApp() {
-    if (isStandalone()) return toast('La app ya esta instalada en tu celular');
+    if (isStandalone()) return toast('La aplicación ya esta instalada en tu celular');
 
     if (state.installEvent) {
       try {
@@ -6106,7 +6145,12 @@ const App = (() => {
        hubiera enviado. */
     const delTramite = (chat && chat.tramite && chat.tramite.service) || '';
     REQ.servicio = (chat && chat.requisitos && chat.requisitos.servicio) || delTramite || '';
-    reqVisible(on && !soyAdmin);
+    /* El boton se ve cuando el gestor envio los requisitos O cuando el chat ya
+       tiene un tramite abierto: si la persona entro por un tramite, tiene que
+       poder continuar aunque el gestor no haya pulsado "Enviar requisitos".
+       Antes solo aparecia con el envio del gestor y la persona se quedaba sin
+       forma de avanzar. */
+    reqVisible((on || !!delTramite) && !soyAdmin);
     /* El boton de enviar requisitos es solo del gestor de trámites. */
     const bAdmin = document.getElementById('reqAdminBtn');
     if (bAdmin) bAdmin.classList.toggle('hidden', !soyAdmin);
@@ -6138,6 +6182,9 @@ const App = (() => {
   function boot() {
     bindAuthKeys();
     protegerTexto();
+    /* Entrada de historial centinela: el boton atras del telefono se queda
+       siempre dentro de la aplicacion (ver popstate). */
+    histPonerCentinela();
     /* Referencias de la portada: se cargan y se enganchan una sola vez. */
     refBind();
     cargarReferencias();
@@ -6233,11 +6280,11 @@ const App = (() => {
       if (!state.token) {
         // App instalada y sin cuenta: se abre el registro para que la cree
         authTab('register');
-        toast('App instalada. Crea tu cuenta para empezar');
+        toast('Aplicación instalada. Crea tu cuenta para empezar');
         const idField = $('#regNombres');
         if (idField) setTimeout(() => { try { idField.focus(); } catch (e) {} }, 400);
       } else {
-        toast('App instalada. Ya la tienes en tu celular');
+        toast('Aplicación instalada. Ya la tienes en tu celular');
       }
     });
     // En iPhone no hay aviso automatico: se muestra el boton con los pasos
