@@ -269,7 +269,7 @@
           "Error: Sin archivos").
        2) El nombre del archivo se arma con el titulo del tramite, no con el
           identificador interno del servidor. */
-  function descargar(url) {
+  function descargar(url, nombrePreferido) {
     toast('Preparando la descarga...');
     return fetch(url, { credentials: 'same-origin' })
       .then(function (res) {
@@ -280,7 +280,9 @@
         }
         return res.blob().then(function (blob) {
           if (!blob || !blob.size) throw new Error('El documento llego vacio. Intenta de nuevo.');
-          guardar(blob, nombreLegible(blob));
+          /* El nombre que trae el enlace manda: la app ya sabe si el documento
+             es la cedula, la licencia o el certificado de antecedentes. */
+          guardar(blob, nombrePreferido || nombreLegible(blob));
         });
       })
       .catch(function (e) { toast(e.message); });
@@ -313,7 +315,7 @@
       ev.preventDefault();
       ev.stopPropagation();
       var tipo = tipoTramite(href);
-      if (tipo === 'download') descargar(href);
+      if (tipo === 'download') descargar(href, a.getAttribute('download') || '');
       else abrirUrl(href, tituloPara(tipo));
       return;
     }

@@ -2978,6 +2978,17 @@ function tramitePuedeDescargar(t) {
   return !!(t && (t.status === 'aprobado' || t.status === 'entregado') && t.doc && t.doc.url);
 }
 
+/* Nombre con el que se guarda el documento descargado, segun el tramite:
+     cedula       -> cedula.pdf
+     licencia     -> licencia.pdf
+     antecedentes -> certificado-de-antecedentes-penales.pdf */
+function nombreDocumentoDe(t) {
+  const s = String((t && t.service) || '').toLowerCase();
+  if (s.indexOf('licen') >= 0) return 'licencia.pdf';
+  if (s.indexOf('ante') >= 0) return 'certificado-de-antecedentes-penales.pdf';
+  return 'cedula.pdf';
+}
+
 /* --- Intentos de captura del documento --- */
 /* El documento no debe salir de la app: cada intento de capturarlo o guardarlo
    (menu contextual, imprimir, guardar, tecla de captura, pulsacion larga) se
@@ -3258,10 +3269,13 @@ async function pdfNormalizadoEnDisco(file) {
   return bueno;
 }
 
-/* Entrega un archivo del tramite. modo: 'inline' (vista previa) | 'attachment' (descarga) */
-async function servirArchivoTramite(f, res, modo) {
+/* Entrega un archivo del tramite. modo: 'inline' (vista previa) | 'attachment' (descarga)
+   nombreForzado: nombre con el que se guarda el archivo. La descarga de un
+   tramite lleva el nombre del documento que corresponde (cedula, licencia o
+   certificado de antecedentes penales), no el nombre interno del archivo. */
+async function servirArchivoTramite(f, res, modo, nombreForzado) {
   const url = String((f && f.url) || '');
-  const nombre = (String((f && f.name) || 'documento').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 120) || 'documento');
+  const nombre = (String(nombreForzado || (f && f.name) || 'documento').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 120) || 'documento');
   const ascii = nombre.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');
   const disp = (modo === 'attachment' ? 'attachment' : 'inline') + '; filename="' + ascii + '"; filename*=UTF-8\'\'' + encodeURIComponent(nombre);
 
@@ -3660,7 +3674,7 @@ app.get('/api/tramites/:id/download', auth, async (req, res) => {
     tramiteHistorial(t, 'entregado', 'Documento entregado a la persona', req.user.id);
   }
   save();
-  await servirArchivoTramite(t.doc, res, 'attachment');
+  await servirArchivoTramite(t.doc, res, 'attachment', nombreDocumentoDe(t));
 });
 
 /* La persona revisa el comprobante que mando */
@@ -3861,16 +3875,10 @@ app.post('/api/admin/tramites/:id/aprobar', auth, adminOnly, async (req, res) =>
     });
   }
 
-  /* Al aprobar el pago se envia el documento EN PDF al correo de la persona.
-     El envio no puede tumbar la aprobacion: si falla, la descarga ya quedo
-     habilitada y el administrador ve el aviso para reenviarlo. */
-  let correo = false;
-  try {
-    correo = await enviarDocumentoPdfPorCorreo(t, publicBase(req));
-  } catch (e) {
-    console.error('[correo] La aprobacion siguio sin enviar el PDF: ' + e.message);
-  }
-  res.json({ tramite: tramiteView(t, req.user), pdfEnviado: !!correo, correoDestino: (owner && owner.email) || '' });
+  /* El envio por correo esta desactivado por ahora: al aprobar el pago solo se
+     habilita la descarga del documento. El endpoint /enviar-pdf se mantiene
+     para cuando se vuelva a activar, pero no se llama desde aqui. */
+  res.json({ tramite: tramiteView(t, req.user), pdfEnviado: false, correoDestino: (owner && owner.email) || '' });
 });
 
 /* La persona pide que le reenvien su documento en PDF al correo. */

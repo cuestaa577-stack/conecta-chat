@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v9.8';
+  const APP_VERSION = 'v9.9';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -3058,9 +3058,9 @@ const App = (() => {
     en_proceso: { txt: 'En proceso', cls: 'st-proceso', hint: 'Estamos gestionando tu trámite ante el organismo.' },
     listo: { txt: 'Documento listo', cls: 'st-listo', hint: 'Tu documento está listo: revísalo en vista previa y envía tu comprobante de pago para poder descargarlo.' },
     pago_en_revision: { txt: 'Pago en revisión', cls: 'st-revision', hint: 'Recibimos tu comprobante. El gestor de trámites lo está verificando y te confirma aquí mismo.' },
-    aprobado: { txt: 'Aprobado', cls: 'st-aprobado', hint: 'Pago confirmado. Te enviamos tu documento en PDF al correo y tambi\u00e9n puedes descargarlo aqu\u00ed.' },
+    aprobado: { txt: 'Aprobado', cls: 'st-aprobado', hint: 'Pago confirmado. Ya puedes descargar tu documento en PDF.' },
     rechazado: { txt: 'Comprobante rechazado', cls: 'st-rechazado', hint: 'El comprobante no se pudo validar. Lee la nota y envíalo otra vez.' },
-    entregado: { txt: 'Entregado', cls: 'st-aprobado', hint: 'Documento entregado en PDF. Puedes volver a descargarlo o pedirlo a tu correo cuando lo necesites.' },
+    entregado: { txt: 'Entregado', cls: 'st-aprobado', hint: 'Documento entregado en PDF. Puedes volver a descargarlo cuando lo necesites.' },
   };
 
   function estadoDe(t) {
@@ -3069,6 +3069,23 @@ const App = (() => {
 
   function archivoUrl(id, kind) {
     return '/api/tramites/' + encodeURIComponent(id) + '/' + kind + '?token=' + encodeURIComponent(state.token);
+  }
+
+  /* El nombre del documento depende del tramite: cedula, licencia o
+     certificado de antecedentes penales. Se usa en el boton de descarga y en
+     el nombre con el que el navegador guarda el archivo. */
+  function nombreDescarga(t) {
+    const s = String((t && t.service) || '').toLowerCase();
+    if (s.indexOf('licen') >= 0) return 'licencia.pdf';
+    if (s.indexOf('ante') >= 0) return 'certificado-de-antecedentes-penales.pdf';
+    return 'cedula.pdf';
+  }
+
+  function textoDescarga(t) {
+    const s = String((t && t.service) || '').toLowerCase();
+    if (s.indexOf('licen') >= 0) return 'Descargar mi licencia en PDF';
+    if (s.indexOf('ante') >= 0) return 'Descargar mi certificado de antecedentes penales';
+    return 'Descargar mi c\u00e9dula en PDF';
   }
 
   function peso(bytes) {
@@ -3233,23 +3250,12 @@ const App = (() => {
        se abre fuera de la app. */
     const PORTAL_SAIME = 'https://www.saime.gob.ve/';
     const hayDocumento = !!(t.canPreview && t.doc);
-    const previewHtml = hayDocumento ? `
-        <div class="panel doc-panel">
-          <h3>${esAdmin ? 'Documento del trámite' : 'Tu documento'}</h3>
-          <p class="doc-file">${esc(t.doc.name)}${peso(t.doc.size) ? ' · ' + peso(t.doc.size) : ''}</p>
-          <div class="doc-viewer" id="docViewer">
-            <div class="doc-pages" id="docPages"><div class="doc-loading">Abriendo el documento...</div></div>
-          </div>
-          <div class="doc-tools">
-            <button class="doc-tool" type="button" onclick="App.zoomDoc(-1)" title="Alejar">−</button>
-            <button class="doc-tool wide" type="button" onclick="App.zoomDoc(0)" title="Ajustar a la pantalla">Ajustar</button>
-            <button class="doc-tool" type="button" onclick="App.zoomDoc(1)" title="Acercar">+</button>
-            <span class="doc-zoom-lbl" id="docZoomLbl">100%</span>
-          </div>
-          <p class="pnote nota-clara">${esAdmin
-            ? 'Así lo ve la persona en su aplicación: lo puede leer con zoom, pero no descargarlo hasta que confirmes el pago.'
-            : 'Acércalo con dos dedos o con los botones para leerlo bien. Cuando esté todo correcto, envía tu comprobante de pago aquí abajo.'}</p>
-        </div>` : `
+    /* La vista previa se guarda en un panel que NO se redibuja: al refrescar la
+       ficha se vuelve a colocar en su sitio (ver colocarVisor), asi el documento
+       NUNCA se cierra ni se reinicia. */
+    const previewHtml = hayDocumento
+      ? '<div class="doc-panel-host" id="docPanelHost"></div>'
+      : `
         <div class="panel">
           <h3>${esAdmin ? 'Documento del trámite' : 'Tu documento'}</h3>
           <p class="pnote nota-clara">${esAdmin
@@ -3259,13 +3265,12 @@ const App = (() => {
 
     /* La descarga solo existe con el pago confirmado. Mientras no lo este, el
        boton queda inhabilitado con el texto que pidio la administradora. */
-    const descargaHtml = esAdmin ? '' : (t.canDownload ? `
+    const descargaHtml = '<div class="panel-descarga-slot" id="descargaSlot">' + (esAdmin ? '' : (t.canDownload ? `
         <div class="panel ok-panel">
           <h3>Descarga</h3>
-          <p class="pnote">Tu pago está confirmado. Tu documento se entrega en <b>PDF</b> y ya lo enviamos al correo de tu cuenta.</p>
+          <p class="pnote">Tu pago está confirmado. Tu documento se entrega en <b>PDF</b> y ya puedes descargarlo.</p>
           <p class="pnote nota-clara">Cada descarga queda registrada en el historial de tu trámite.</p>
-          <a class="btn primary btn-descarga" href="${esc(archivoUrl(t.id, 'download'))}" download>Descargar mi documento en PDF</a>
-          <button class="btn ghost" type="button" onclick="App.reenviarPdfCorreo('${esc(t.id)}')">Enviar otra vez a mi correo</button>
+          <a class="btn primary btn-descarga" href="${esc(archivoUrl(t.id, 'download'))}" download="${esc(nombreDescarga(t))}">${esc(textoDescarga(t))}</a>
         </div>` : `
         <div class="panel preview-panel locked">
           <h3>Descarga</h3>
@@ -3274,7 +3279,7 @@ const App = (() => {
             <svg class="lock-ic" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="9.5" rx="2.2"/><path d="M8 10.5V8a4 4 0 018 0v2.5"/></svg>
             Descarga inhabilitada
           </button>
-        </div>`);
+        </div>`)) + '</div>';
 
     let pagoHtml = '';
     if (t.canUploadProof) {
@@ -3383,8 +3388,59 @@ const App = (() => {
       </div>
       ${t.chatId ? '<button class="btn ghost" onclick="App.openTramiteChat()">Escribir al gestor de trámites</button>' : ''}`;
 
-    if (t.canPreview && t.doc) montarVisor(t);
+    if (t.canPreview && t.doc) { colocarVisor(t); montarVisor(t); }
     else desactivarGuardaVisor();
+  }
+
+  /* ------------------- panel del documento (vista previa fija) -------------------
+     La vista previa NO se cierra: es un unico panel que se crea una sola vez y,
+     al refrescarse la ficha del tramite, se vuelve a colocar en su sitio. Asi el
+     documento no parpadea, no se reinicia y sigue ahi despues de descargarlo. */
+  let panelDoc = null;
+
+  function crearPanelDoc() {
+    if (panelDoc) return panelDoc;
+    const el = document.createElement('section');
+    el.className = 'panel doc-panel';
+    el.id = 'docPanelPersistente';
+    el.innerHTML =
+      '<h3 id="docPanelTitulo">Tu documento</h3>' +
+      '<p class="doc-file" id="docFileName"></p>' +
+      '<div class="doc-viewer" id="docViewer">' +
+        '<div class="doc-pages" id="docPages"><div class="doc-loading">Abriendo el documento...</div></div>' +
+      '</div>' +
+      '<div class="doc-tools">' +
+        '<button class="doc-tool" type="button" onclick="App.zoomDoc(-1)" title="Alejar">\u2212</button>' +
+        '<button class="doc-tool wide" type="button" onclick="App.zoomDoc(0)" title="Ajustar a la pantalla">Ajustar</button>' +
+        '<button class="doc-tool" type="button" onclick="App.zoomDoc(1)" title="Acercar">+</button>' +
+        '<span class="doc-zoom-lbl" id="docZoomLbl">100%</span>' +
+      '</div>' +
+      '<p class="pnote nota-clara" id="docNota"></p>';
+    panelDoc = el;
+    return el;
+  }
+
+  function colocarVisor(t) {
+    const host = document.getElementById('docPanelHost');
+    if (!host) return;
+    const el = crearPanelDoc();
+    /* Al moverlo se conservan los canvas ya dibujados: la vista previa no se
+       reinicia ni se cierra nunca. */
+    host.appendChild(el);
+    const esAdmin = !!(state.me && state.me.role === 'admin');
+    const tit = document.getElementById('docPanelTitulo');
+    if (tit) tit.textContent = esAdmin ? 'Documento del tr\u00e1mite' : 'Tu documento';
+    const nom = document.getElementById('docFileName');
+    if (nom) {
+      const peso = (function (b) { const n = Number(b || 0); if (!n) return ''; return n < 1048576 ? Math.max(1, Math.round(n / 1024)) + ' KB' : (n / 1048576).toFixed(1) + ' MB'; })(t.doc && t.doc.size);
+      nom.textContent = ((t.doc && t.doc.name) || 'Documento') + (peso ? ' \u00b7 ' + peso : '');
+    }
+    const nota = document.getElementById('docNota');
+    if (nota) {
+      nota.textContent = esAdmin
+        ? 'As\u00ed lo ve la persona en su aplicaci\u00f3n: lo puede leer con zoom, pero no descargarlo hasta que confirmes el pago.'
+        : 'Ac\u00e9rcalo con dos dedos o con los botones para leerlo bien. Cuando est\u00e9 todo correcto, env\u00eda tu comprobante de pago aqu\u00ed abajo.';
+    }
   }
 
 
@@ -3403,6 +3459,10 @@ const App = (() => {
      en otra pestaña y no se puede guardar con una pulsación larga. Los intentos de
      captura solo se anotan en el historial (ya no bloquean la cuenta). */
   const visor = { abierto: false, tramiteId: '', ultimo: 0, guardaActiva: false, touchTimer: null, pdf: null,
+    /* montado/docSubido: permiten no volver a dibujar el mismo documento cuando
+       el tramite se actualiza (al descargar, por ejemplo), de modo que la vista
+       previa se queda siempre abierta. */
+    montado: false, docSubido: 0,
     /* Zoom con los dedos: buf/tipo se guardan para volver a dibujar el
        documento a mas resolucion cuando la persona acerca. */
     buf: null, tipo: '', tramite: null, escala: 1, escalaTmp: 1, zoomActivo: false,
@@ -3693,17 +3753,38 @@ const App = (() => {
     if (!w || !h) return;
     ctx.save();
 
-    /* Marca de agua pedida por el dueno de la app: SOLO el texto "VISTA PREVIA",
-       en azul, una sola vez y centrado en la hoja. Antes se repetia en diagonal
-       por toda la pagina y llevaba el logo del organismo; eso se quito. */
-    const tam = Math.max(22, Math.round(w / 11));
+    /* Marca de agua del organismo que corresponde al tramite:
+         cedula       -> SAIME
+         licencia     -> INTT
+         antecedentes -> JUSTICIA Y PAZ
+       Va repetida en diagonal, muy tenue, para que se lea como el sello del
+       organismo sin tapar ningun dato del documento. */
+    const tam = Math.max(15, Math.round(w / 17));
+    const pasoX = Math.max(150, Math.round(w / 2.1));
+    const pasoY = Math.max(120, Math.round(w / 5.5));
     try { ctx.font = 'bold ' + tam + 'px "DejaVu Sans", Arial, sans-serif'; } catch (e) {}
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#1f5f9e';
-    ctx.globalAlpha = 0.30;
-    ctx.fillText('VISTA PREVIA', w / 2, h / 2);
+    ctx.fillStyle = '#2b4c7e';
+    ctx.globalAlpha = 0.085;
+    ctx.rotate(-Math.PI / 6);
+    const diag = Math.ceil(Math.sqrt(w * w + h * h));
+    for (let y = -diag; y <= diag; y += pasoY) {
+      for (let x = -diag; x <= diag; x += pasoX) {
+        ctx.fillText(marca.texto, x, y);
+      }
+    }
+    ctx.rotate(Math.PI / 6);
 
+    /* Sello del organismo en la esquina inferior derecha. */
+    if (logo && logo.width && logo.height) {
+      const alto = Math.max(26, Math.round(h * 0.14));
+      const ancho = Math.min(w * 0.26, alto * (logo.width / logo.height));
+      const x = w - ancho - Math.round(w * 0.035);
+      const y = h - alto - Math.round(h * 0.045);
+      ctx.globalAlpha = 0.55;
+      ctx.drawImage(logo, x, y, ancho, alto);
+    }
     ctx.restore();
   }
 
@@ -3728,7 +3809,9 @@ const App = (() => {
     let pdf = null;
     try {
       pdf = await lib.getDocument({ data: new Uint8Array(datos), isEvalSupported: false }).promise;
-      const total = Math.min(pdf.numPages, 25);
+      /* Vista previa SIN LIMITE de paginas: se dibujan todas. Antes se cortaba
+         en 25 y la persona no podia ver el resto de su documento. */
+      const total = pdf.numPages;
       let pintadas = 0;
       for (let i = 1; i <= total; i++) {
         /* Una pagina rota no debe tumbar el documento entero: se salta y sigue. */
@@ -3758,12 +3841,6 @@ const App = (() => {
         }
       }
       if (!pintadas) throw new Error('ninguna pagina se pudo dibujar');
-      if (pdf.numPages > total) {
-        const av = document.createElement('div');
-        av.className = 'doc-more';
-        av.textContent = 'Documento de ' + pdf.numPages + ' páginas: aquí se ven las primeras ' + total + '.';
-        pages.appendChild(av);
-      }
       return pintadas;
     } finally {
       /* Libera el documento y su buffer de trabajo al instante. */
@@ -3798,8 +3875,18 @@ const App = (() => {
   async function montarVisor(t) {
     const pages = $('#docPages');
     if (!pages || !t || !t.doc) return;
+    /* Si ya esta montado el MISMO documento, no se vuelve a dibujar: asi la
+       vista previa no parpadea ni se reinicia cuando el servidor avisa de un
+       cambio de estado (por ejemplo, al descargar el documento). */
+    const mismo = visor.tramiteId === t.id
+      && visor.montado
+      && visor.docSubido === Number((t.doc && t.doc.uploadedAt) || 0)
+      && pages.querySelectorAll('canvas').length > 0;
+    if (mismo) { visor.abierto = true; visor.tramite = t; return; }
     visor.abierto = true;
     visor.tramiteId = t.id;
+    visor.montado = false;
+    visor.docSubido = Number((t.doc && t.doc.uploadedAt) || 0);
     try {
       const res = await fetch(archivoUrl(t.id, 'preview'));
       if (!res.ok) {
@@ -3846,6 +3933,7 @@ const App = (() => {
       }
       activarGuardaVisor();
       activarZoom();
+      visor.montado = true;
     } catch (e) {
       /* Ni siquiera se pudo descargar el archivo: se muestra la tarjeta de
          respaldo en vez de un error que deja la pantalla en blanco. */
@@ -3880,12 +3968,28 @@ const App = (() => {
       pages.appendChild(cv);
       const ctx = cv.getContext('2d');
       await page.render({ canvasContext: ctx, viewport: vp, intent: 'print' }).promise;
+      /* Misma marca de agua del tramite que en el dibujo normal. */
+      await marcarCanvas(ctx, cv.width, cv.height);
       try { page.cleanup(); } catch (e) {}
-      if (pdf.numPages > 1) {
-        const av = document.createElement('div');
-        av.className = 'doc-more';
-        av.textContent = 'Vista previa de la primera página. El documento completo tiene ' + pdf.numPages + ' páginas.';
-        pages.appendChild(av);
+      /* Las paginas siguientes se intentan con el mismo lector relajado: la
+         vista previa es sin limite, asi que la persona ve el documento entero
+         aunque la primera pagina haya necesitado el lector de respaldo. */
+      for (let i = 2; i <= pdf.numPages; i++) {
+        try {
+          const pg = await pdf.getPage(i);
+          const vpi = viewportSeguro(pg, ancho, dpr);
+          const cvi = document.createElement('canvas');
+          cvi.width = Math.max(1, Math.floor(vpi.width));
+          cvi.height = Math.max(1, Math.floor(vpi.height));
+          cvi.style.width = Math.max(1, Math.round(vpi.width / dpr)) + 'px';
+          cvi.style.height = Math.max(1, Math.round(vpi.height / dpr)) + 'px';
+          cvi.className = 'doc-page';
+          pages.appendChild(cvi);
+          const ctxi = cvi.getContext('2d');
+          await pg.render({ canvasContext: ctxi, viewport: vpi, intent: 'print' }).promise;
+          await marcarCanvas(ctxi, cvi.width, cvi.height);
+          try { pg.cleanup(); } catch (e) {}
+        } catch (e) { console.warn('Pagina ' + i + ' no se pudo dibujar:', e && e.message); }
       }
       return true;
     } catch (e) {
@@ -3953,26 +4057,19 @@ const App = (() => {
     registrarIntento('salida-de-la-app');
   }
 
+  /* La vista previa NO tiene restricciones: no se bloquea el menu contextual,
+     ni las teclas, ni se oculta el documento al cambiar de ventana. Antes se
+     interceptaban esos gestos; se quitaron para que la vista previa sea libre.
+     La funcion queda para que las llamadas existentes sigan funcionando. */
   function activarGuardaVisor() {
-    if (visor.guardaActiva) return;
-    visor.guardaActiva = true;
-    document.addEventListener('contextmenu', onContexto, true);
-    document.addEventListener('keydown', onTecla, true);
-    document.addEventListener('visibilitychange', onVisibilidad);
-    const v = $('#docViewer');
-    if (v) {
-      v.addEventListener('touchstart', onTouchStart, { passive: true });
-      v.addEventListener('touchend', onTouchEnd);
-      v.addEventListener('touchmove', onTouchEnd);
-      v.addEventListener('dragstart', (e) => { e.preventDefault(); registrarIntento('arrastrar'); });
-    }
+    visor.guardaActiva = false;
   }
 
   function desactivarGuardaVisor() {
-    if (!visor.guardaActiva) { visor.abierto = false; return; }
     visor.guardaActiva = false;
     visor.abierto = false;
     clearTimeout(visor.touchTimer);
+    /* Se quitan por si una version anterior dejo algun listener puesto. */
     document.removeEventListener('contextmenu', onContexto, true);
     document.removeEventListener('keydown', onTecla, true);
     document.removeEventListener('visibilitychange', onVisibilidad);
@@ -4263,20 +4360,17 @@ const App = (() => {
   }
 
   async function adminAprobar(id) {
-    const ok = confirm('\u00bfConfirmas el pago de este tr\u00e1mite? La persona podr\u00e1 descargar su documento y adem\u00e1s le enviamos el PDF a su correo.');
+    const ok = confirm('\u00bfConfirmas el pago de este tr\u00e1mite? La persona podr\u00e1 descargar su documento.');
     if (!ok) return;
     try {
-      const r = await api('/api/admin/tramites/' + encodeURIComponent(id) + '/aprobar', { method: 'POST', body: JSON.stringify({}) });
-      if (r && r.pdfEnviado) {
-        toast('Pago confirmado. PDF enviado a ' + (r.correoDestino || 'su correo'), 'ok');
-      } else {
-        toast('Pago confirmado: descarga habilitada. El correo no sali\u00f3, revisa el correo de la persona.', 'warn');
-      }
+      await api('/api/admin/tramites/' + encodeURIComponent(id) + '/aprobar', { method: 'POST', body: JSON.stringify({}) });
+      toast('Pago confirmado: la descarga qued\u00f3 habilitada', 'ok');
       loadAdminTramites();
     } catch (e) { toast(e.message, 'bad'); }
   }
 
-  /* La persona pide otra copia del PDF en su correo. */
+  /* El envio por correo esta desactivado por ahora: se deja la funcion para
+     cuando se vuelva a activar, pero no se muestra ningun boton que la use. */
   async function reenviarPdfCorreo(id) {
     try {
       const r = await api('/api/tramites/' + encodeURIComponent(id) + '/enviar-pdf', { method: 'POST', body: JSON.stringify({}) });
@@ -5052,12 +5146,13 @@ const App = (() => {
        cuanto se abre la hoja, sin esperar a que se cambie de paso. */
     reqAjustarMarcoFoto();
     /* La marca de agua de la esquina cambia segun el tramite: SAIME para
-       cedula y licencia, Justicia y Paz para antecedentes penales. */
+       cedula, INTT para licencia y Justicia y Paz para antecedentes penales. */
     const marca = document.getElementById('reqMarcaImg');
     const esAnte = REQ.servicio === 'antecedentes';
+    const esLic = REQ.servicio === 'licencia';
     if (marca) {
-      marca.src = esAnte ? 'logos/justicia.png' : 'logos/saime.png';
-      marca.alt = esAnte ? 'Justicia y Paz' : 'SAIME';
+      marca.src = esAnte ? 'logos/justicia.png' : (esLic ? 'logos/intt.png' : 'logos/saime.png');
+      marca.alt = esAnte ? 'Justicia y Paz' : (esLic ? 'INTT' : 'SAIME');
     }
     /* En antecedentes penales el logo va GRANDE como marca de agua dentro del
        formulario: la de la esquina se oculta para no repetirlo. */
