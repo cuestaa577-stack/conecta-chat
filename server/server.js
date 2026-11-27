@@ -2495,27 +2495,61 @@ app.post('/api/admin/visitas/reset', auth, adminOnly, (req, res) => {
    se avisa a la persona (mensaje en su chat + push) y al gestor. */
 function citasDeTramites() {
   const out = [];
-  Object.values(tramitesDb()).forEach((t) => {
-    if (!t.cita || !t.cita.fecha || !t.cita.hora) return;
-    /* Las canceladas tambien se listan: sirven para ver que la persona tenia
-       cita y no la confirmo. Van marcadas como canceladas. */
-    const owner = db.users[t.userId] || {};
+  const yaEsta = (chatId, userId) => out.some((c) => (chatId && c.chatId === chatId) || (!chatId && c.userId === userId));
+
+  const meter = (datos) => {
+    const { userId, chatId, nombre, cedula, servicio, detalle, cita, tramiteId } = datos;
+    const owner = db.users[userId] || {};
     out.push({
-      tramiteId: t.id,
-      chatId: t.chatId || '',
-      userId: t.userId,
-      name: owner.name || 'Persona',
-      cedula: owner.cedula || '',
+      tramiteId: tramiteId || '',
+      chatId: chatId || '',
+      userId: userId || '',
+      name: owner.name || nombre || 'Persona',
+      cedula: owner.cedula || cedula || '',
       phone: owner.phone || '',
       email: owner.email || '',
+      servicio: servicio || 'Tramite',
+      detalle: detalle || '',
+      fecha: cita.fecha,
+      hora: cita.hora,
+      estado: cita.estado || 'pendiente',
+      cuando: citaMomento(cita),
+    });
+  };
+
+  /* 1) Tramites con cita (formato actual y el viejo con citaFecha suelta). */
+  Object.values(tramitesDb()).forEach((t) => {
+    const cita = t.cita || ((t.citaFecha && t.citaHora) ? citaDeTramite(t.citaFecha, t.citaHora) : null);
+    if (!cita || !cita.fecha || !cita.hora) return;
+    if (yaEsta(t.chatId, t.userId)) return;
+    meter({
+      userId: t.userId,
+      chatId: t.chatId,
       servicio: t.serviceLabel || 'Tramite',
       detalle: [t.subtypeLabel, t.grade ? t.grade + ' anos' : ''].filter(Boolean).join(' - '),
-      fecha: t.cita.fecha,
-      hora: t.cita.hora,
-      estado: t.cita.estado || 'pendiente',
-      cuando: citaMomento(t.cita),
+      cita,
+      tramiteId: t.id,
     });
   });
+
+  /* 2) Chats que tienen la cita guardada pero sin fila de tramite. */
+  Object.values(db.chats || {}).forEach((ch) => {
+    const tr = ch && ch.tramite;
+    if (!tr || !tr.citaFecha || !tr.citaHora) return;
+    const otro = (ch.members || []).find((m) => db.users[m] && db.users[m].role !== 'admin');
+    if (!otro) return;
+    if (yaEsta(ch.id, otro)) return;
+    const cita = citaDeTramite(tr.citaFecha, tr.citaHora);
+    if (!cita) return;
+    meter({
+      userId: otro,
+      chatId: ch.id,
+      servicio: tr.serviceLabel || 'Tramite',
+      detalle: [tr.subtypeLabel, tr.grade ? tr.grade + ' anos' : ''].filter(Boolean).join(' - '),
+      cita,
+    });
+  });
+
   return out.sort((a, b) => a.cuando - b.cuando);
 }
 
@@ -4377,7 +4411,8 @@ wss.on('connection', (ws, req) => {
   /* Mueve a la nube las copias pesadas que quedaron dentro de la base. */
   try { await migrarArchivosPesados(); } catch (e) { console.error('[archivos] ' + e.message); }
   /* Avisos de cita: un dia antes y el mismo dia. Se revisan al arrancar y cada 10 minutos. */
-  try { avisarCitas(); } catch (e) { console.error('Avisos de cita:', e.message); }
+  try { console.log('Citas en el sistema: ' + citasDeTramites().length); } catch (e) {}
+    try { avisarCitas(); } catch (e) { console.error('Avisos de cita:', e.message); }
   /* Cada minuto: cancela las citas del dia que pasaron 10 minutos sin
      confirmarse y revisa si toca avisar. Asi no depende de que alguien
      abra la aplicacion. */
