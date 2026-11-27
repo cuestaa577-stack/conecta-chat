@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v9.4';
+  const APP_VERSION = 'v9.5';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -1483,7 +1483,7 @@ const App = (() => {
     try {
       const data = await api('/api/chats/start', {
         method: 'POST',
-        body: JSON.stringify({ tramite: { service: s.service, serviceLabel: s.serviceLabel, subtype: s.subtype, subtypeLabel: s.subtypeLabel, grade: s.grade } }),
+        body: JSON.stringify({ tramite: { service: s.service, serviceLabel: s.serviceLabel, subtype: s.subtype, subtypeLabel: s.subtypeLabel, grade: s.grade, citaFecha: s.citaFecha || '', citaHora: s.citaHora || '' } }),
       });
       await loadChats();
       state.viewStack = ['homeView'];
@@ -1536,7 +1536,7 @@ const App = (() => {
     if (!persona) return '';
     if (persona.online) return '<span class="presencia on"><i class="punto"></i>En linea</span>';
     const t = haceCuanto(persona.lastSeen);
-    return t ? '<span class="presencia">' + esc(t) + '</span>' : '';
+    return '<span class="presencia off"><i class="punto rojo"></i>' + (t ? esc(t) : 'Desconectado') + '</span>';
   }
 
   /* La linea bajo el nombre en la cabecera del chat. */
@@ -1548,7 +1548,7 @@ const App = (() => {
     if (!other) { el.textContent = 'En linea'; return; }
     if (other.online) { el.innerHTML = '<i class="punto"></i>En linea'; return; }
     const t = haceCuanto(other.lastSeen);
-    el.textContent = t ? 'Desconectado ' + t : 'Desconectado';
+    el.innerHTML = '<i class="punto rojo"></i>' + (t ? 'Desconectado ' + esc(t) : 'Desconectado');
   }
 
   /* Cada medio minuto se recalcula el "hace X" mientras se mira la lista. */
@@ -1576,14 +1576,22 @@ const App = (() => {
       const TIPO_TXT = { requisitos_entrega: 'Requisitos enviados', image: 'Foto', video: 'Video', file: 'Archivo', pdf: 'Documento' };
       const last = lm ? (lm.type === 'text' ? lm.text : (TIPO_TXT[lm.type] || '[' + lm.type + ']')) : 'Sin mensajes';
       const tramite = c.tramite ? `${c.tramite.serviceLabel || ''}${c.tramite.subtypeLabel ? ' \u00b7 ' + c.tramite.subtypeLabel : ''}` : '';
-      return `<button class="chat-row" onclick="App.openChat('${c.id}')">
-        <div class="avatar" data-avatar="${esc(other && other.avatar ? other.avatar : '')}" data-nombre="${esc(name)}" style="width:46px;height:46px;font-size:16px">${other && other.avatar ? '' : initials(name)}</div>
-        <div class="grow">
-          <div class="t">${esc(name)}${chulo}${marcaPresencia(other)}</div>
-          <div class="s">${esc(tramite || last)}</div>
-        </div>
-        <div class="time">${lm ? clock(lm.ts) : ''}</div>
-      </button>`;
+      const cita = c.cita;
+      const citaTxt = cita ? ('Cita: ' + textoCita(cita) + (cita.estado === 'cancelada' ? ' (cancelada)' : '')) : '';
+      return `<div class="chat-row">
+        <button class="chat-open" onclick="App.openChat('${c.id}')">
+          <div class="avatar" data-avatar="${esc(other && other.avatar ? other.avatar : '')}" data-nombre="${esc(name)}" style="width:46px;height:46px;font-size:16px">${other && other.avatar ? '' : initials(name)}</div>
+          <div class="grow">
+            <div class="t">${esc(name)}${chulo}${marcaPresencia(other)}</div>
+            <div class="s">${esc(tramite || last)}</div>
+            ${citaTxt ? `<div class="s cita-linea">${esc(citaTxt)}</div>` : ''}
+          </div>
+          <div class="time">${lm ? clock(lm.ts) : ''}</div>
+        </button>
+        <button class="chat-del" onclick="App.borrarChatDeLista('${c.id}')" title="Eliminar conversacion" aria-label="Eliminar conversacion">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/></svg>
+        </button>
+      </div>`;
     }).join('');
     /* Las fotos se pintan despues de insertar el HTML, con la misma funcion que
        usa el resto de la app: si una imagen no carga se ven las iniciales. */
@@ -1623,6 +1631,19 @@ const App = (() => {
       tEl.classList.remove('hidden');
     } else {
       tEl.classList.add('hidden');
+    }
+
+    /* Marca de cita en la cabecera: quien va por cita se ve al abrir el chat. */
+    const citaEl = $('#chatCita');
+    if (citaEl) {
+      const cita = chat && chat.cita;
+      if (cita) {
+        const est = cita.estado === 'cancelada' ? ' (cancelada)' : (cita.estado === 'confirmada' ? ' (confirmada)' : '');
+        citaEl.textContent = 'Cita: ' + textoCita(cita) + est;
+        citaEl.classList.remove('hidden');
+      } else {
+        citaEl.classList.add('hidden');
+      }
     }
 
     if (remember) showView('chat');
@@ -2339,6 +2360,30 @@ const App = (() => {
     } catch (e) { toast(e.message, 'bad'); }
   }
 
+  /* Borra una conversacion desde la lista, sin tener que abrirla. */
+  async function borrarChatDeLista(chatId) {
+    if (!chatId) return;
+    const ok = confirm('Se eliminara esta conversacion con todos sus mensajes. Continuar?');
+    if (!ok) return;
+    try {
+      await api('/api/chats/' + encodeURIComponent(chatId), { method: 'DELETE' });
+      borrarCache('/api/chats');
+      if (state.currentChatId === chatId) {
+        state.currentChatId = null;
+        try { localStorage.removeItem('tve_chat'); } catch (e) {}
+      }
+      state.messages[chatId] = [];
+      await loadChats();
+      /* Si el borrado se hizo desde el panel del gestor, se repinta la bandeja
+         para que la conversacion desaparezca al instante. */
+      const av = document.getElementById('adminView');
+      if (av && av.classList.contains('active')) {
+        try { adminOverview = await api('/api/admin/overview'); renderAdminTab(); } catch (e) {}
+      }
+      toast('Conversacion eliminada');
+    } catch (e) { toast(e.message, 'bad'); }
+  }
+
   /* ------------------------------ panel ------------------------------ */
   /* Panel: solo las 4 ultimas visitas, y se refresca solo mientras el panel este abierto */
   let adminLiveTimer = null;
@@ -2541,19 +2586,25 @@ const App = (() => {
         <div class="panel">
           <h3>Conversaciones</h3>
           <p class="pnote muted">Primero las que tienen mensajes sin leer.</p>
-          <div class="chat-list">${lista.map((c) => `<button class="chat-card${c.unread ? ' has-unread' : ''}" onclick="App.openChatFromAdmin('${c.chatId}')">
-            <span class="cc-avatar">${esc(initials(c.name))}</span>
-            <span class="cc-body">
-              <span class="cc-top">
-                <b>${esc(c.name)}</b>
-                <span class="cc-time">${c.lastAt ? esc(clock(c.lastAt)) : ''}</span>
+          <div class="chat-list">${lista.map((c) => `<div class="chat-card${c.unread ? ' has-unread' : ''}">
+            <button class="cc-open" onclick="App.openChatFromAdmin('${c.chatId}')">
+              <span class="cc-avatar">${esc(initials(c.name))}</span>
+              <span class="cc-body">
+                <span class="cc-top">
+                  <b>${esc(c.name)}</b>
+                  <span class="cc-time">${c.lastAt ? esc(clock(c.lastAt)) : ''}</span>
+                </span>
+                <span class="cc-pres">${marcaPresencia({ online: c.online, lastSeen: c.lastSeen })}</span>
+                <span class="cc-last">${esc(c.lastText || 'Todavía no hay mensajes')}</span>
+                <span class="cc-sub">${esc(c.country || 'Sin país')}${c.tramite ? ' · ' + esc([c.tramite.serviceLabel, c.tramite.subtypeLabel].filter(Boolean).join(' · ')) : ''}</span>
+              ${citaDe(c) ? `<span class="cc-cita"><b>Cita:</b> ${esc(textoCita(citaDe(c)))}${citaDe(c).estado === 'cancelada' ? ' (cancelada)' : ''}</span>` : ''}
               </span>
-              <span class="cc-last">${esc(c.lastText || 'Todavía no hay mensajes')}</span>
-              <span class="cc-sub">${esc(c.country || 'Sin país')}${c.tramite ? ' · ' + esc([c.tramite.serviceLabel, c.tramite.subtypeLabel].filter(Boolean).join(' · ')) : ''}</span>
-            ${citaDe(c) ? `<span class="cc-cita"><b>Cita:</b> ${esc(textoCita(citaDe(c)))}${citaDe(c).estado === 'cancelada' ? ' (cancelada)' : ''}</span>` : ''}
-            </span>
-            ${c.unread ? `<span class="cc-badge">${c.unread}</span>` : `<span class="cc-count">${c.messages}</span>`}
-          </button>`).join('')}</div>${lista.length ? '' : '<div class="panel-row"><span>Todavía nadie te ha escrito</span></div>'}
+              ${c.unread ? `<span class="cc-badge">${c.unread}</span>` : `<span class="cc-count">${c.messages}</span>`}
+            </button>
+            <button class="cc-del" onclick="App.borrarChatDeLista('${c.chatId}')" title="Eliminar conversacion" aria-label="Eliminar conversacion">
+              <svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/></svg>
+            </button>
+          </div>`).join('')}</div>${lista.length ? '' : '<div class="panel-row"><span>Todavía nadie te ha escrito</span></div>'}
         </div>`;
   }
 
@@ -6096,7 +6147,7 @@ const App = (() => {
     back, pickService, pickConfirm, pickModo, citaMes, pickCita, pickHora, continuarAgenda,
     pickOption, pickGrade, continuarPrecio, pickBlood, guardarDatosFlow, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
-    openProfile, pickAvatar, saveProfileChanges, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat,
+    openProfile, pickAvatar, saveProfileChanges, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat, borrarChatDeLista,
     openAdmin, openChatFromAdmin, openFirstChat,
     adminTab, adminIr, adminFiltrar, adminBuscarPersona, adminBuscarTramite, salirPanel,
     viewImage, closeViewer, logout, notifActivar, ocultarNotifBanner,

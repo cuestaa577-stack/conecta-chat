@@ -1889,6 +1889,9 @@ function chatView(chat, forUserId) {
     other,
     online: other ? estaEnLinea(other.id) : false,
     tramite: chat.tramite || null,
+    /* Cita virtual de esta conversacion, si la tiene: la persona y el gestor
+       la ven marcada en la cabecera del chat. */
+    cita: citaDeChat(chat),
     /* Estado de los requisitos: es lo que hace aparecer el boton flotante
        en la conversacion de la persona. */
     requisitos: chat.requisitos || { habilitado: false },
@@ -1994,10 +1997,10 @@ app.post('/api/chats/start', auth, (req, res) => {
   // El tramite que se abre por el chat aparece tambien en "Mis tramites"
   if (tramite && req.user.role !== 'admin') {
     const igual = (x, y) => String(x || '') === String(y || '');
-    const yaExiste = Object.values(tramitesDb()).some((t) => t.userId === req.user.id
+    const existente = Object.values(tramitesDb()).find((t) => t.userId === req.user.id
       && igual(t.service, tramite.service) && igual(t.subtype, tramite.subtype)
       && igual(t.grade, tramite.grade) && t.status !== 'aprobado');
-    if (!yaExiste) {
+    if (!existente) {
       const nuevo = {
         id: uid('t_'),
         userId: req.user.id,
@@ -2019,6 +2022,11 @@ app.post('/api/chats/start', auth, (req, res) => {
       };
       tramiteHistorial(nuevo, 'recibido', 'La persona abrio el tramite por el chat', req.user.id);
       tramitesDb()[nuevo.id] = nuevo;
+    } else if (tramite.citaFecha && tramite.citaHora && !existente.cita) {
+      /* La persona agendo la cita despues de abrir el tramite: se guarda aqui
+         para que el gestor la vea en "Personas con cita". */
+      existente.cita = citaDeTramite(tramite.citaFecha, tramite.citaHora);
+      existente.updatedAt = now();
     }
   }
 
@@ -2493,6 +2501,86 @@ app.post('/api/admin/visitas/reset', auth, adminOnly, (req, res) => {
 /* ------------------- personas con cita y avisos -------------------
    El gestor ve en su panel quienes tienen cita. Un dia antes y el mismo dia
    se avisa a la persona (mensaje en su chat + push) y al gestor. */
+/* Meses en espanol para leer la fecha que quedo escrita en la ficha del chat. */
+const MESES_ES = { enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, julio: 7, agosto: 8, septiembre: 9, setiembre: 9, octubre: 10, noviembre: 11, diciembre: 12 };
+
+/* Recupera la cita que quedo SOLO escrita en la ficha del chat (formato viejo,
+   cuando el flujo no la guardaba en el tramite). Asi las citas que ya existen
+   aparecen en "Personas con cita" sin que la persona tenga que repetir nada. */
+function citaDeFicha(chatId) {
+  const msgs = db.messages[chatId] || [];
+  const re = /Cita virtual:\s*[a-z\u00e1\u00e9\u00ed\u00f3\u00fa]+\s+(\d{1,2})\s+de\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa]+)\s+de\s+(\d{4})(?:\s+a las\s+(\d{1,2}):(\d{2})\s*([ap])\.?\s*m\.?)?/i;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (!m || m.type !== 'text' || !m.text) continue;
+    const mm = re.exec(m.text);
+    if (!mm) continue;
+    const mes = MESES_ES[String(mm[2] || '').toLowerCase()];
+    if (!mes || !mm[4]) continue;
+    let h = Number(mm[4]);
+    const ap = String(mm[6] || '').toLowerCase();
+    if (ap === 'p' && h < 12) h += 12;
+    if (ap === 'a' && h === 12) h = 0;
+    const fecha = mm[3] + '-' + String(mes).padStart(2, '0') + '-' + String(mm[1]).padStart(2, '0');
+    const hora = String(h).padStart(2, '0') + ':' + mm[5];
+    const c = citaDeTramite(fecha, hora);
+    if (c) return { fecha: c.fecha, hora: c.hora, estado: 'pendiente', cuando: citaMomento(c) };
+  }
+  return null;
+}
+
+/* Cita de una conversacion: del tramite, del chat o de la ficha escrita. */
+function citaDeChat(chat) {
+  if (!chat) return null;
+  const t = Object.values(tramitesDb()).find((x) => x.chatId === chat.id && x.cita && x.cita.fecha && x.cita.hora);
+  if (t) return { fecha: t.cita.fecha, hora: t.cita.hora, estado: t.cita.estado || 'pendiente', cuando: citaMomento(t.cita) };
+  const tr = chat.tramite;
+  if (tr && tr.citaFecha && tr.citaHora) {
+    const c = citaDeTramite(tr.citaFecha, tr.citaHora);
+    if (c) return { fecha: c.fecha, hora: c.hora, estado: c.estado, cuando: citaMomento(c) };
+  }
+  return citaDeFicha(chat.id);
+}
+
+/* Guarda en el tramite las citas que solo estaban escritas en la ficha, para
+   que se vean en el panel y se cancelen solas si no se confirman. */
+function recuperarCitasDeFichas() {
+  let cambio = false;
+  Object.values(db.chats || {}).forEach((ch) => {
+    if (!ch || !Array.isArray(ch.members)) return;
+    const otro = ch.members.find((m) => db.users[m] && db.users[m].role !== 'admin');
+    if (!otro) return;
+    if (Object.values(tramitesDb()).some((t) => t.chatId === ch.id && t.cita)) return;
+    const cita = citaDeFicha(ch.id);
+    if (!cita) return;
+    const tr = ch.tramite || {};
+    const fila = Object.values(tramitesDb()).find((t) => t.chatId === ch.id);
+    if (fila) {
+      fila.cita = { fecha: cita.fecha, hora: cita.hora, estado: 'pendiente', confirmadaEn: 0, canceladaEn: 0 };
+      fila.updatedAt = now();
+    } else {
+      const nuevo = {
+        id: uid('t_'), userId: otro, chatId: ch.id,
+        service: String(tr.service || '').slice(0, 40),
+        serviceLabel: String(tr.serviceLabel || '').slice(0, 80),
+        subtype: String(tr.subtype || '').slice(0, 40),
+        subtypeLabel: String(tr.subtypeLabel || '').slice(0, 80),
+        grade: String(tr.grade || '').slice(0, 20),
+        title: tramiteTitulo(tr.serviceLabel, tr.subtypeLabel, tr.grade),
+        status: 'recibido',
+        cita: { fecha: cita.fecha, hora: cita.hora, estado: 'pendiente', confirmadaEn: 0, canceladaEn: 0 },
+        doc: null, payment: null, note: '',
+        createdAt: now(), updatedAt: now(), history: [],
+      };
+      tramiteHistorial(nuevo, 'recibido', 'Cita recuperada de la conversacion', null);
+      tramitesDb()[nuevo.id] = nuevo;
+    }
+    cambio = true;
+  });
+  if (cambio) save();
+  return cambio;
+}
+
 function citasDeTramites() {
   const out = [];
   const yaEsta = (chatId, userId) => out.some((c) => (chatId && c.chatId === chatId) || (!chatId && c.userId === userId));
@@ -2683,6 +2771,9 @@ app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
             email: other.email || '',
             country: other.country || 'Sin pais',
             tramite: c.tramite || null,
+            online: estaEnLinea(otherId),
+            lastSeen: other.lastSeen || 0,
+            cita: citaDeChat(c),
             messages: list.length,
             unread: unread,
             lastAt: last ? last.ts : c.createdAt,
@@ -4411,12 +4502,14 @@ wss.on('connection', (ws, req) => {
   /* Mueve a la nube las copias pesadas que quedaron dentro de la base. */
   try { await migrarArchivosPesados(); } catch (e) { console.error('[archivos] ' + e.message); }
   /* Avisos de cita: un dia antes y el mismo dia. Se revisan al arrancar y cada 10 minutos. */
+  try { recuperarCitasDeFichas(); } catch (e) { console.error('Recuperar citas:', e.message); }
   try { console.log('Citas en el sistema: ' + citasDeTramites().length); } catch (e) {}
     try { avisarCitas(); } catch (e) { console.error('Avisos de cita:', e.message); }
   /* Cada minuto: cancela las citas del dia que pasaron 10 minutos sin
      confirmarse y revisa si toca avisar. Asi no depende de que alguien
      abra la aplicacion. */
   setInterval(() => {
+    try { recuperarCitasDeFichas(); } catch (e) { console.error('Recuperar citas:', e.message); }
     try { revisarCitas(); } catch (e) { console.error('Cancelar citas:', e.message); }
     try { avisarCitas(); } catch (e) { console.error('Avisos de cita:', e.message); }
   }, 60 * 1000);
