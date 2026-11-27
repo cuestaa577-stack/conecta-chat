@@ -41,7 +41,7 @@
 <body>
 
 <div class="update-bar" id="updateBar" hidden>
-  <span class="ub-txt">Hay una actualización de la app lista</span>
+  <span class="ub-txt">Hay una actualización de la aplicación lista</span>
   <button class="ub-btn" onclick="App.actualizarApp()">Actualizar aplicación</button>
 </div>
 
@@ -369,8 +369,8 @@
             <li><b>Atención con hora, no con suerte.</b> Cada consulta debe responderse el mismo día hábil y con un responsable con nombre. Nadie debería preguntar dos veces lo mismo.</li>
             <li><b>Estado visible sin preguntar.</b> El trámite debe decir solo en qué paso está y qué falta, sin que la persona tenga que escribir para averiguarlo.</li>
             <li><b>Precio y requisitos antes de empezar.</b> Sin sorpresas a mitad de camino: lo que se informa al inicio es lo que se cobra al final.</li>
-            <li><b>La app, en el teléfono de verdad.</b> Pantallas que cargan con datos lentos, letras legibles, avisos claros y ningún paso que dependa de la memoria de quien atiende.</li>
-            <li><b>Errores explicados en humano.</b> Si algo falla, la app dice qué pasó y qué hacer; nunca deja a la persona adivinando.</li>
+            <li><b>La aplicación, en el teléfono de verdad.</b> Pantallas que cargan con datos lentos, letras legibles, avisos claros y ningún paso que dependa de la memoria de quien atiende.</li>
+            <li><b>Errores explicados en humano.</b> Si algo falla, la aplicación dice qué pasó y qué hacer; nunca deja a la persona adivinando.</li>
             <li><b>Respeto siempre.</b> Una queja se responde con una solución, no con silencio. La crítica nos sirve cuando llega; el insulto no ayuda a nadie.</li>
           </ul>
         </div>
@@ -515,8 +515,8 @@
         <button class="btn ghost" onclick="App.openEditData()">Editar datos personales</button>
         <button class="btn ghost" onclick="App.openTramites()">Mis trámites y documentos</button>
         <button class="btn ghost" onclick="App.openAdmin()" id="adminBtn" style="display:none">Panel del gestor de trámites</button>
-        <button class="btn ghost" onclick="App.shareApp()">Compartir la app</button>
-        <button class="btn ghost" onclick="App.installApp()">Instalar la app en mi celular</button>
+        <button class="btn ghost" onclick="App.shareApp()">Compartir la aplicación</button>
+        <button class="btn ghost" onclick="App.installApp()">Instalar la aplicación en mi celular</button>
         <button class="btn ghost" onclick="App.logout()">Cerrar sesion</button>
         <p class="muted center" style="font-size:12px;margin-top:6px">Eliminar mi cuenta borra todo: tus datos, tus conversaciones y tus archivos.</p>
         <p class="version-line muted" id="appVersion"></p>
@@ -608,13 +608,13 @@
 </div>
 
 <!-- Sin conexion -->
-<div class="offline-bar hidden" id="offlineBar">Sin conexión. La app sigue abierta y lo que escribas se envía al volver internet.</div>
+<div class="offline-bar hidden" id="offlineBar">Sin conexión. La aplicación sigue abierta y lo que escribas se envía al volver internet.</div>
 
 <div class="install hidden" id="installBanner">
   <img class="install-logo" src="icon-192.png?v=70" srcset="icon-192.png?v=70 1x, icon-512.png?v=70 2x" alt="" />
   <div class="install-txt">
-    <div class="install-title">Instala la app</div>
-    <div class="install-sub">Queda en tu celular, como una app</div>
+    <div class="install-title">Instala la aplicación</div>
+    <div class="install-sub">Queda en tu celular, como una aplicación</div>
   </div>
   <button class="btn primary install-go" onclick="App.installApp()">Instalar</button>
   <button class="iconbtn install-x" onclick="App.dismissInstall()" title="Ahora no">

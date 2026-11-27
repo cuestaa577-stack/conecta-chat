@@ -135,7 +135,7 @@ const App = (() => {
     if (s.citaModo === 'cita' && s.citaFecha) {
       filas.push('Cita virtual: ' + fechaLegible(s.citaFecha) +
         (s.citaHora ? ' a las ' + horaLegible(s.citaHora) : '') +
-        ' (cita virtual: se atiende por la app; si no confirma, la cita se libera)');
+        ' (cita virtual: se atiende por la aplicación; si no confirma, la cita se libera)');
     }
     else if (s.citaModo === 'inmediato') filas.push('Atencion: tramite de inmediato');
     const valor = precioDelTramite(s.service, s.subtype, s.grade);
@@ -2384,6 +2384,7 @@ const App = (() => {
     { key: 'resumen', txt: 'Resumen' },
     { key: 'tramites', txt: 'Tramites' },
     { key: 'chats', txt: 'Chats' },
+    { key: 'citas', txt: 'Citas' },
     { key: 'personas', txt: 'Personas' },
     { key: 'referencias', txt: 'Referencias' },
     { key: 'ajustes', txt: 'Ajustes' },
@@ -2455,6 +2456,7 @@ const App = (() => {
             <button class="quick" onclick="App.adminIr('tramites','pago_en_revision')"><b>Confirmar pago</b><small>Comprobantes por revisar</small></button>
             <button class="quick" onclick="App.adminIr('tramites')"><b>Subir documento</b><small>Enviar el PDF a una persona</small></button>
             <button class="quick" onclick="App.adminIr('ajustes')"><b>Crear tramite</b><small>Para una persona registrada</small></button>
+            <button class="quick" onclick="App.adminIr('citas')"><b>Personas con cita</b><small>Quienes tienen cita y cuando</small></button>
             <button class="quick" onclick="App.adminIr('chats')"><b>Conversaciones</b><small>Responder mensajes</small></button>
             <button class="quick" onclick="App.adminIr('personas')"><b>Personas</b><small>Buscar por cedula</small></button>
             <button class="quick" onclick="App.adminIr('ajustes')"><b>Datos para el pago</b><small>Lo que ve la persona</small></button>
@@ -2484,8 +2486,52 @@ const App = (() => {
     }
   }
 
+  /* Personas con cita: de la cita mas proxima a la mas lejana. */
+  function adminCitasHtml(d) {
+    const lista = (d.citas || []).slice();
+    if (!lista.length) {
+      return '<div class="panel"><h3>Personas con cita</h3><p class="pnote muted">Todavia nadie tiene cita agendada.</p></div>';
+    }
+    const filas = lista.map((c) => {
+      const color = c.estado === 'confirmada' ? 'ok' : 'hot';
+      const etiqueta = c.estado === 'confirmada' ? 'Confirmada' : 'Sin confirmar';
+      return '<div class="panel-row">'
+        + '<div class="who"><b>' + esc(c.name) + '</b>'
+        + '<small>' + esc(c.cedula || 'Sin cedula') + ' - ' + esc(c.servicio || 'Tramite') + (c.detalle ? ' - ' + esc(c.detalle) : '') + '</small>'
+        + '<small>' + esc(textoCita(c)) + '</small></div>'
+        + '<span class="pill ' + color + '">' + etiqueta + '</span>'
+        + '</div>';
+    }).join('');
+    return '<div class="panel"><h3>Personas con cita (' + lista.length + ')</h3>'
+      + '<p class="pnote muted">De la cita mas proxima a la mas lejana. Se avisa a la persona y a ti un dia antes y el mismo dia.</p>'
+      + filas + '</div>';
+  }
+
+  function textoCita(c) {
+    if (!c || !c.cuando) return '';
+    const d = new Date(c.cuando);
+    let dia = '';
+    try { dia = d.toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' }); }
+    catch (e) { dia = d.getDate() + '/' + (d.getMonth() + 1); }
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return dia + ' a las ' + hh + ':' + mm;
+  }
+
   function adminChatsHtml(d) {
-    const lista = (d.conversations || []).slice().sort((a, b) => (Number(b.unread) || 0) - (Number(a.unread) || 0));
+    /* Las citas se muestran en la bandeja: quien tiene cita sale marcado y
+       ordenado por la cita mas proxima, despues de los mensajes sin leer. */
+    const citasPorChat = {};
+    (d.citas || []).forEach((c) => { if (c.chatId) citasPorChat[c.chatId] = c; });
+    const lista = (d.conversations || []).slice().sort((a, b) => {
+      const na = Number(a.unread) || 0, nb = Number(b.unread) || 0;
+      if (na !== nb) return nb - na;
+      const ca = citasPorChat[a.chatId], cb = citasPorChat[b.chatId];
+      if (ca && cb) return ca.cuando - cb.cuando;
+      if (ca) return -1;
+      if (cb) return 1;
+      return 0;
+    });
     return `
         <div class="panel">
           <h3>Conversaciones</h3>
@@ -2499,6 +2545,7 @@ const App = (() => {
               </span>
               <span class="cc-last">${esc(c.lastText || 'Todavía no hay mensajes')}</span>
               <span class="cc-sub">${esc(c.country || 'Sin país')}${c.tramite ? ' · ' + esc([c.tramite.serviceLabel, c.tramite.subtypeLabel].filter(Boolean).join(' · ')) : ''}</span>
+            ${citasPorChat[c.chatId] ? `<span class="cc-cita"><b>Cita:</b> ${esc(textoCita(citasPorChat[c.chatId]))}</span>` : ''}
             </span>
             ${c.unread ? `<span class="cc-badge">${c.unread}</span>` : `<span class="cc-count">${c.messages}</span>`}
           </button>`).join('')}</div>${lista.length ? '' : '<div class="panel-row"><span>Todavía nadie te ha escrito</span></div>'}
@@ -2769,6 +2816,7 @@ const App = (() => {
     let cuerpo = '';
     if (tab === 'tramites') cuerpo = adminTramitesShellHtml();
     else if (tab === 'chats') cuerpo = adminChatsHtml(d);
+    else if (tab === 'citas') cuerpo = adminCitasHtml(d);
     else if (tab === 'personas') cuerpo = adminPersonasHtml(d);
     else if (tab === 'referencias') cuerpo = adminReferenciasShellHtml();
     else if (tab === 'ajustes') cuerpo = adminAjustesHtml(d);

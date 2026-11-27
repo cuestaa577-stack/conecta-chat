@@ -2490,6 +2490,103 @@ app.post('/api/admin/visitas/reset', auth, adminOnly, (req, res) => {
   res.json({ ok: true, borradas: antes, desde: db.settings.visitasDesde });
 });
 
+/* ------------------- personas con cita y avisos -------------------
+   El gestor ve en su panel quienes tienen cita. Un dia antes y el mismo dia
+   se avisa a la persona (mensaje en su chat + push) y al gestor. */
+function citasDeTramites() {
+  const out = [];
+  Object.values(tramitesDb()).forEach((t) => {
+    if (!t.cita || !t.cita.fecha || !t.cita.hora) return;
+    if (t.cita.estado === 'cancelada') return;
+    const owner = db.users[t.userId] || {};
+    out.push({
+      tramiteId: t.id,
+      chatId: t.chatId || '',
+      userId: t.userId,
+      name: owner.name || 'Persona',
+      cedula: owner.cedula || '',
+      phone: owner.phone || '',
+      email: owner.email || '',
+      servicio: t.serviceLabel || 'Tramite',
+      detalle: [t.subtypeLabel, t.grade ? t.grade + ' anos' : ''].filter(Boolean).join(' - '),
+      fecha: t.cita.fecha,
+      hora: t.cita.hora,
+      estado: t.cita.estado || 'pendiente',
+      cuando: citaMomento(t.cita),
+    });
+  });
+  return out.sort((a, b) => a.cuando - b.cuando);
+}
+
+function textoCuando(ms) {
+  const d = new Date(ms);
+  let dia = '';
+  try {
+    dia = d.toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' });
+  } catch (e) { dia = d.getDate() + '/' + (d.getMonth() + 1); }
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return dia + ' a las ' + hh + ':' + mm;
+}
+
+/* Mete un mensaje en el chat entre el gestor y la persona. */
+function mensajeDeAviso(chatId, autorId, texto) {
+  const chat = db.chats[chatId];
+  if (!chat) return false;
+  if (!db.messages[chat.id]) db.messages[chat.id] = [];
+  const m = { id: uid('m_'), chatId: chat.id, senderId: autorId, type: 'text', text: texto, ts: now(), readBy: [autorId] };
+  db.messages[chat.id].push(m);
+  chat.updatedAt = now();
+  chat.members.forEach((mem) => sendToUser(mem, { type: 'message:new', message: m, chatId: chat.id }));
+  chat.members.filter((mem) => mem !== autorId).forEach((mem) => {
+    enviarPush(mem, { title: 'Recordatorio de cita', body: texto, url: './?chat=' + chat.id, tag: 'cita:' + chat.id });
+  });
+  return true;
+}
+
+/* Revisa las citas y avisa: un dia antes (entre 26 y 12 horas) y el mismo
+   dia (de 12 horas antes hasta 1 hora despues). Cada aviso se manda una vez. */
+function avisarCitas() {
+  const admin = Object.values(db.users).find((u) => u.role === 'admin');
+  const autorId = admin ? admin.id : null;
+  let cambios = false;
+  Object.values(tramitesDb()).forEach((t) => {
+    const c = t.cita;
+    if (!c || !c.fecha || !c.hora) return;
+    if (c.estado === 'cancelada') return;
+    const falta = citaMomento(c) - Date.now();
+    const owner = db.users[t.userId] || {};
+    const nombre = owner.name || 'la persona';
+    const cuando = textoCuando(citaMomento(c));
+
+    const esVispera = falta <= 26 * 3600000 && falta > 12 * 3600000;
+    const esDia = falta <= 12 * 3600000 && falta > -1 * 3600000;
+
+    if (esVispera && !c.aviso24) {
+      c.aviso24 = now();
+      cambios = true;
+      if (autorId && t.chatId) {
+        mensajeDeAviso(t.chatId, autorId, 'Hola ' + nombre + ': te recuerdo que tu cita de ' + (t.serviceLabel || 'tu tramite') + ' es manana, ' + cuando + '. Es virtual, por esta misma aplicacion: entra a tu hora y confirma. Si no confirmas en los 10 minutos siguientes, la cita se libera.');
+      }
+      if (admin) {
+        enviarPush(admin.id, { title: 'Cita manana', body: nombre + ' - ' + cuando, url: './?panel=1', tag: 'cita-admin:' + t.id });
+      }
+    }
+
+    if (esDia && !c.avisoDia) {
+      c.avisoDia = now();
+      cambios = true;
+      if (autorId && t.chatId) {
+        mensajeDeAviso(t.chatId, autorId, 'Hola ' + nombre + ': hoy es tu cita de ' + (t.serviceLabel || 'tu tramite') + ', ' + cuando + '. Entra a la aplicacion a tu hora y confirma.');
+      }
+      if (admin) {
+        enviarPush(admin.id, { title: 'Cita hoy', body: nombre + ' - ' + cuando, url: './?panel=1', tag: 'cita-admin-dia:' + t.id });
+      }
+    }
+  });
+  if (cambios) save();
+}
+
 app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
   const users = Object.values(db.users)
     .filter((u) => u.role !== 'admin')
@@ -2560,6 +2657,7 @@ app.get('/api/admin/overview', auth, adminOnly, (req, res) => {
         .sort((a, b) => b.lastAt - a.lastAt);
 
   res.json({
+    citas: citasDeTramites(),
     conversations: conversations,
     totals: {
       people: users.length,
@@ -4277,6 +4375,9 @@ wss.on('connection', (ws, req) => {
   } catch (e) { console.error('[referencias foto] ' + e.message); }
   /* Mueve a la nube las copias pesadas que quedaron dentro de la base. */
   try { await migrarArchivosPesados(); } catch (e) { console.error('[archivos] ' + e.message); }
+  /* Avisos de cita: un dia antes y el mismo dia. Se revisan al arrancar y cada 10 minutos. */
+  try { avisarCitas(); } catch (e) { console.error('Avisos de cita:', e.message); }
+  setInterval(() => { try { avisarCitas(); } catch (e) { console.error('Avisos de cita:', e.message); } }, 10 * 60 * 1000);
   server.listen(PORT, () => {
     console.log('Tramites Venezolanos en Linea escuchando en el puerto ' + PORT);
     console.log('Persistencia: ' + (supabase ? 'Supabase (permanente)' : 'archivo local (se borra al reiniciar)'));
