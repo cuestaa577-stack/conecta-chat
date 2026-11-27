@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v9.5';
+  const APP_VERSION = 'v9.6';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -2552,14 +2552,28 @@ const App = (() => {
       + filas + '</div>';
   }
 
+  /* La cita se muestra SIEMPRE en hora de Venezuela, que es la hora que la
+     persona eligio. Antes se usaba la hora local del navegador: como el
+     servidor guarda el momento en UTC, una cita de 9:30 a.m. se veia como
+     5:30 a.m. en el panel. Venezuela es UTC-4 todo el ano. */
+  const TZ_CITA = 'America/Caracas';
+
   function textoCita(c) {
     if (!c || !c.cuando) return '';
     const d = new Date(c.cuando);
     let dia = '';
-    try { dia = d.toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' }); }
+    try { dia = d.toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ_CITA }); }
     catch (e) { dia = d.getDate() + '/' + (d.getMonth() + 1); }
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
+    let hh = '';
+    let mm = '';
+    try {
+      const p = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: TZ_CITA }).format(d).split(':');
+      hh = p[0];
+      mm = p[1];
+    } catch (e) {
+      hh = String(d.getHours()).padStart(2, '0');
+      mm = String(d.getMinutes()).padStart(2, '0');
+    }
     return dia + ' a las ' + hh + ':' + mm;
   }
 

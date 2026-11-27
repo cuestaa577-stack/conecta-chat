@@ -2581,6 +2581,36 @@ function recuperarCitasDeFichas() {
   return cambio;
 }
 
+/* Corrige las citas que quedaron con una hora distinta a la que la persona
+   escribio en su mensaje. El mensaje es la fuente de verdad: es lo que la
+   persona eligio y lo que el gestor lee en el chat. Si la cita guardada no
+   coincide con la del mensaje, se reemplaza por la del mensaje.
+   Esto arregla las citas viejas que quedaron corridas por el desfase de zona
+   horaria (se guardaban en UTC y se mostraban 4 horas antes). */
+function corregirCitasDeMensajes() {
+  let cambio = false;
+  Object.values(db.chats || {}).forEach((ch) => {
+    if (!ch || !Array.isArray(ch.members)) return;
+    const delMensaje = citaDeFicha(ch.id);
+    if (!delMensaje) return;
+    const fila = Object.values(tramitesDb()).find((t) => t.chatId === ch.id);
+    if (!fila) return;
+    const c = fila.cita;
+    if (!c || !c.fecha || !c.hora) return;
+    if (c.fecha === delMensaje.fecha && c.hora === delMensaje.hora) return;
+    /* Se conserva el estado (confirmada / cancelada) y solo se corrige el
+       dia y la hora, que es lo que estaba mal. */
+    const antes = c.fecha + ' ' + c.hora;
+    c.fecha = delMensaje.fecha;
+    c.hora = delMensaje.hora;
+    fila.updatedAt = now();
+    tramiteHistorial(fila, fila.status, 'Cita corregida con la hora del mensaje: ' + antes + ' -> ' + c.fecha + ' ' + c.hora, null);
+    cambio = true;
+  });
+  if (cambio) save();
+  return cambio;
+}
+
 function citasDeTramites() {
   const out = [];
   const yaEsta = (chatId, userId) => out.some((c) => (chatId && c.chatId === chatId) || (!chatId && c.userId === userId));
@@ -2641,14 +2671,39 @@ function citasDeTramites() {
   return out.sort((a, b) => a.cuando - b.cuando);
 }
 
+/* La cita se escribe SIEMPRE en hora de Venezuela, que es la hora que la
+   persona ve en su telefono al elegirla. El servidor de Render corre en UTC,
+   asi que no se puede usar la hora local del proceso: si se usaba, una cita
+   de 9:30 a.m. se guardaba como 9:30 UTC y en pantalla salia 5:30 a.m.
+   Venezuela no cambia de hora (UTC-4 todo el ano), asi que el desfase es fijo. */
+const TZ_CITA = 'America/Caracas';
+const OFFSET_CITA_MIN = -240;
+
+/* Momento exacto (ms) de una cita escrita en hora de Venezuela. */
+function citaMomento(cita) {
+  const q = String(cita.fecha).split('-');
+  const p = String(cita.hora).split(':');
+  const utc = Date.UTC(Number(q[0]), Number(q[1]) - 1, Number(q[2]), Number(p[0]), Number(p[1]));
+  return utc - OFFSET_CITA_MIN * 60000;
+}
+
+/* Fecha y hora de un momento, escritas en hora de Venezuela. */
 function textoCuando(ms) {
   const d = new Date(ms);
   let dia = '';
   try {
-    dia = d.toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' });
+    dia = d.toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ_CITA });
   } catch (e) { dia = d.getDate() + '/' + (d.getMonth() + 1); }
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
+  let hh = '';
+  let mm = '';
+  try {
+    const partes = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: TZ_CITA }).format(d).split(':');
+    hh = partes[0];
+    mm = partes[1];
+  } catch (e) {
+    hh = String(d.getUTCHours() + 20).slice(-2);
+    mm = String(d.getUTCMinutes()).padStart(2, '0');
+  }
   return dia + ' a las ' + hh + ':' + mm;
 }
 
@@ -2932,12 +2987,6 @@ function citaDeTramite(fecha, hora) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(f)) return null;
   if (!/^\d{2}:\d{2}$/.test(h)) return null;
   return { fecha: f, hora: h, estado: 'pendiente', confirmadaEn: 0, canceladaEn: 0 };
-}
-
-function citaMomento(cita) {
-  const q = String(cita.fecha).split('-');
-  const p = String(cita.hora).split(':');
-  return new Date(Number(q[0]), Number(q[1]) - 1, Number(q[2]), Number(p[0]), Number(p[1])).getTime();
 }
 
 /* Cancela las citas que vencieron sin confirmar. Si se pasa usuarioId se
@@ -4503,6 +4552,11 @@ wss.on('connection', (ws, req) => {
   try { await migrarArchivosPesados(); } catch (e) { console.error('[archivos] ' + e.message); }
   /* Avisos de cita: un dia antes y el mismo dia. Se revisan al arrancar y cada 10 minutos. */
   try { recuperarCitasDeFichas(); } catch (e) { console.error('Recuperar citas:', e.message); }
+  /* Las citas viejas quedaron con la hora corrida (se guardaban en UTC). Se
+     reescriben con la hora real escrita en el mensaje de cada persona. */
+  try {
+    if (corregirCitasDeMensajes()) console.log('Citas corregidas con la hora del mensaje');
+  } catch (e) { console.error('Corregir citas:', e.message); }
   try { console.log('Citas en el sistema: ' + citasDeTramites().length); } catch (e) {}
     try { avisarCitas(); } catch (e) { console.error('Avisos de cita:', e.message); }
   /* Cada minuto: cancela las citas del dia que pasaron 10 minutos sin
