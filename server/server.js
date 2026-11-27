@@ -2333,7 +2333,7 @@ const TARIFAS_POR_PAIS = {
 
 /* Antecedentes penales: precio fijo en dolares, igual en todos los paises.
    Sin apostillar 17 USD, apostillado 35 USD. */
-const TARIFAS_ANTECEDENTES = { sin_apostillar: 17, apostillado: 35 };
+const TARIFAS_ANTECEDENTES = { sin_apostillar: 20, apostillado: 35 };
 const PAISES_CON_TARIFA = Object.keys(TARIFAS_POR_PAIS);
 
 function paisConTarifa(country) {
@@ -3842,13 +3842,17 @@ function sembrarReferencias() {
    que tambien aparezcan en las instalaciones que ya tenian las de texto. */
 function sembrarReferenciasConFoto() {
   if (!db.reviews || typeof db.reviews !== 'object') db.reviews = {};
-  if (db.settings && db.settings.referenciasFotoSembradas) return 0;
+  if (db.settings && Number(db.settings.referenciasFotoSembradas) >= 8) return 0;
   const base = [
     ['Jose Gregorio', 'Chile', 'Cedula de identidad', 5, 'Llegue a Santiago hace tres anos y tenia la cedula vencida. Me la renovaron sin viajar a Venezuela y me llego en PDF al correo. Todo claro desde el principio.', 'referencias/ref_chile.jpg', 3],
     ['Yorbelis', 'Ecuador', 'Antecedentes penales', 5, 'En Quito me pidieron antecedentes para un trabajo y no sabia como hacerlo. Me explicaron paso a paso y en dos dias tenia el documento apostillado.', 'referencias/ref_ecuador.jpg', 2],
     ['Jhon Alexander', 'Colombia', 'Licencia de conducir', 5, 'Estoy en Bogota y necesitaba la licencia para trabajar. Me acompanaron en todo, hasta en la foto. El precio fue el mismo que me dijeron al inicio.', 'referencias/ref_colombia.jpg', 2],
     ['Carmen Rosa', 'Venezuela', 'Cedula de identidad', 5, 'Aqui en Caracas no consegui cita en el SAIME por meses. Por la app me atendieron el mismo dia y mi cedula llego lista para imprimir.', 'referencias/ref_venezuela.jpg', 1],
     ['Wilmer', 'Peru', 'Antecedentes penales', 4, 'Desde Lima pedi mis antecedentes para un tramite migratorio. Salio bien y rapido; solo le pondria mas detalle a los tiempos de espera.', 'referencias/ref_peru.jpg', 1],
+    /* Referencias de personas en Venezuela, con su foto. */
+    ['Marisela', 'Venezuela', 'Cedula de identidad', 5, 'Soy de Caracas y tenia la cedula vencida desde hace un ano. Por el chat me pidieron mis datos, me guiaron con la foto y en el mismo dia tenia mi documento listo. Muy amables y claros.', 'referencias/ref_venezuela_1.jpg', 4],
+    ['Rafael', 'Venezuela', 'Licencia de conducir', 5, 'Trabajo en Maracaibo manejando y necesitaba la licencia ya. Me explicaron el grado que me tocaba, el costo y cada paso. Nunca me senti solo en el tramite.', 'referencias/ref_venezuela_2.jpg', 4],
+    ['Andres', 'Venezuela', 'Antecedentes penales', 5, 'Pedi mis antecedentes para un trabajo en Valencia. Me atendieron rapido, me avisaron por el chat cuando estaba listo y el precio fue el que me dijeron al principio.', 'referencias/ref_venezuela_3.jpg', 4],
   ];
   let n = 0;
   const ahora = now();
@@ -3871,7 +3875,7 @@ function sembrarReferenciasConFoto() {
     n++;
   });
   if (!db.settings || typeof db.settings !== 'object') db.settings = {};
-  db.settings.referenciasFotoSembradas = true;
+  db.settings.referenciasFotoSembradas = 8;
   return n;
 }
 

@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v7.6';
+  const APP_VERSION = 'v8.0';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -50,7 +50,12 @@ const App = (() => {
 
   /* Antecedentes penales: precio fijo en dolares, igual en todos los paises.
      Sin apostillar 17 USD, apostillado 35 USD. */
-  const TARIFAS_ANTECEDENTES = { sin_apostillar: 17, apostillado: 35 };
+  const TARIFAS_ANTECEDENTES = { sin_apostillar: 20, apostillado: 35 };
+
+  /* Cuanto vale 1 dolar en el pais de la persona, para acompanar el precio en
+     dolares con su equivalente. Es una tasa aproximada: si cambia, se ajusta
+     el numero aqui y la app muestra el valor nuevo. 0 = no se convierte. */
+  const CAMBIO_USD = { Colombia: 4000, Chile: 950, Peru: 3.7, Ecuador: 1, Venezuela: 0 };
 
   /* Paises con tabla de precios propia. Peru y el resto quedan en
      "Consultar precio" por el chat del gestor: no se inventa una cifra. */
@@ -93,7 +98,16 @@ const App = (() => {
     if (!monto) return '';
     /* Los antecedentes penales se cobran en dolares: el valor no cambia con el
        pais de la persona, asi que la etiqueta lleva USD. */
-    if (String(service || '').toLowerCase() === 'antecedentes') return 'USD ' + numeroConPuntos(monto);
+    if (String(service || '').toLowerCase() === 'antecedentes') {
+      const pais = String(country === undefined ? (state.me && state.me.country) : country || '').trim();
+      const cambio = CAMBIO_USD[pais] || 0;
+      const base = 'USD ' + numeroConPuntos(monto);
+      if (!cambio || cambio === 1) return base;
+      const m = monedaDe(pais);
+      if (!m) return base;
+      const aprox = Math.round((monto * cambio) / 10) * 10;
+      return base + ' (aprox. ' + m + ' ' + numeroConPuntos(aprox) + ')';
+    }
     const m = monedaDe(country);
     return (m ? m + ' ' : '') + numeroConPuntos(monto);
   }
@@ -614,6 +628,7 @@ const App = (() => {
     await enterApp();
     // La persona entra a la portada; la conversaci\u00f3n la inicia ella al elegir un tr\u00e1mite.
     if (isNew) { state.viewStack = []; }
+    saludoVozAlEntrar();
   }
 
   /* Entrar: cedula + contrasena */
@@ -757,6 +772,7 @@ const App = (() => {
       // Si el servidor ya entrego sesion (correo opcional), se entra de una.
       if (data && data.token) {
         await finishAuth(data, true);
+        mostrarBienvenida(name);
         toast('Tu cuenta esta creada. Bienvenido');
         return;
       }
@@ -1279,7 +1295,8 @@ const App = (() => {
               <span class="option-ic">
                 <svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg>
               </span>
-              <span class="option-title">${esc(o.label)}</span>
+              <span class="option-title">${esc(o.label)}${
+                precioDelTramite(svc, o.key, '') ? `<small class="option-price">${esc(precioDelTramite(svc, o.key, ''))}</small>` : ''}</span>
               <span class="chev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
             </button>`).join('')}
         </div>`;
@@ -1313,7 +1330,8 @@ const App = (() => {
           ${GRADES.map((g) => `
             <button class="option" onclick="App.pickGrade('${g}')">
               <span class="grade-badge">${esc(g.replace('Grado ', '').replace('\u00b0', ''))}\u00b0</span>
-              <span class="option-title">${esc(g)}</span>
+              <span class="option-title">${esc(g)}${
+                precioDelTramite('licencia', '', g) ? `<small class="option-price">${esc(precioDelTramite('licencia', '', g))}</small>` : ''}</span>
               <span class="chev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
             </button>`).join('')}
         </div>`;
@@ -1836,6 +1854,102 @@ const App = (() => {
   async function actualizarApp() {
     toast('Actualizando la app...');
     await aplicarActualizacion();
+  }
+
+  /* ------------------- aviso de bienvenida (solo cuentas nuevas) -------------------
+     Se muestra una sola vez, cuando la persona acaba de crear su cuenta. Se ve
+     como un aviso de la app, con su X arriba a la derecha; al cerrarlo queda
+     guardado en el telefono y no vuelve a salir. */
+  function mostrarBienvenida(nombre) {
+    try { if (localStorage.getItem('bienvenida_vista') === '1') return; } catch (e) {}
+    if (document.querySelector('.bienvenida-capa')) return;
+    const capa = document.createElement('div');
+    capa.className = 'bienvenida-capa';
+    capa.innerHTML = `
+      <div class="bienvenida" role="dialog" aria-label="Bienvenida">
+        <button class="bv-x" type="button" aria-label="Cerrar" onclick="App.cerrarBienvenida()">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+        <div class="bv-ic">
+          <svg viewBox="0 0 24 24"><path d="M12 3l7.5 3v6.2c0 4.3-3 7.4-7.5 8.8-4.5-1.4-7.5-4.5-7.5-8.8V6L12 3z"/><path d="M8.6 12.2l2.4 2.4 4.4-4.6"/></svg>
+        </div>
+        <h2>¡Bienvenido, ${esc(String(nombre || '').split(/\s+/)[0] || 'amigo')}!</h2>
+        <p class="bv-txt">Tu cuenta quedó creada. Aquí te acompañamos paso a paso con tu cédula, tu licencia o tus antecedentes penales, con un gestor real por el chat.</p>
+        <ul class="bv-lista">
+          <li><b>Te guiamos</b> en cada paso del trámite</li>
+          <li><b>Ves tu documento</b> aquí mismo antes de pagar</li>
+          <li><b>Descargas</b> cuando confirmamos tu pago</li>
+        </ul>
+        <button class="btn primary" type="button" onclick="App.cerrarBienvenida()">Empezar</button>
+      </div>`;
+    document.body.appendChild(capa);
+  }
+
+  function cerrarBienvenida() {
+    try { localStorage.setItem('bienvenida_vista', '1'); } catch (e) {}
+    const c = document.querySelector('.bienvenida-capa');
+    if (c) c.remove();
+  }
+
+  /* ------------------- saludo con voz al entrar -------------------
+     Dice "Buenos dias, Maria" con una voz en espanol del telefono. Suena una
+     vez por sesion; si el navegador lo bloquea porque hace falta un toque,
+     queda pendiente y suena al primer toque en la app. */
+  let vozPendiente = false;
+
+  function textoSaludo() {
+    const nombre = String((state.me && state.me.name) || '').trim();
+    if (!nombre) return '';
+    const hora = new Date().getHours();
+    const saludo = hora < 12 ? 'Buenos días' : hora < 19 ? 'Buenas tardes' : 'Buenas noches';
+    return saludo + ', ' + nombre.split(/\s+/)[0];
+  }
+
+  function vozEspanol() {
+    const voces = (window.speechSynthesis && window.speechSynthesis.getVoices()) || [];
+    const es = voces.filter((v) => /^es/i.test(v.lang || ''));
+    return es.find((v) => /ve|venezuela|mx|us|lat/i.test(v.lang)) ||
+      es.find((v) => /mujer|female|monica|mónica|paulina|sabina|helena/i.test(v.name || '')) ||
+      es[0] || null;
+  }
+
+  function saludarConVoz() {
+    const txt = textoSaludo();
+    if (!txt || !window.speechSynthesis) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(txt);
+      const v = vozEspanol();
+      if (v) u.voice = v;
+      u.lang = (v && v.lang) || 'es-ES';
+      u.rate = 0.98;
+      u.pitch = 1.05;
+      window.speechSynthesis.speak(u);
+      vozPendiente = false;
+    } catch (e) { vozPendiente = true; }
+  }
+
+  function saludoVozAlEntrar() {
+    if (!state.me) return;
+    try { if (sessionStorage.getItem('saludo_dicho') === '1') return; sessionStorage.setItem('saludo_dicho', '1'); } catch (e) {}
+    vozPendiente = true;
+    saludarConVoz();
+  }
+
+  function repetirSaludo() { saludarConVoz(); }
+
+  function engancharSaludoVoz() {
+    const desbloquear = () => { if (vozPendiente) saludarConVoz(); };
+    document.addEventListener('touchstart', desbloquear, { once: true, passive: true });
+    document.addEventListener('click', desbloquear, { once: true });
+    if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = () => { if (vozPendiente) saludarConVoz(); };
+    /* La ayuda de la contrasena solo aparece cuando la persona toca el campo,
+       y solo en el registro. */
+    document.addEventListener('focusin', (e) => {
+      if (e.target && e.target.id === 'regPassword') {
+        document.querySelectorAll('#registerPanel .field-hint, #registerPanel .pass-warning').forEach((el) => { el.hidden = false; });
+      }
+    });
   }
 
   function readFile(file) {
@@ -5685,6 +5799,8 @@ const App = (() => {
     comprobarVersionPublicada();
     setTimeout(comprobarVersionPublicada, 6000);
 
+    engancharSaludoVoz();
+
     // Instalacion en un toque
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
@@ -5723,6 +5839,7 @@ const App = (() => {
     openAdmin, openChatFromAdmin, openFirstChat,
     adminTab, adminIr, adminFiltrar, adminBuscarPersona, adminBuscarTramite, salirPanel,
     viewImage, closeViewer, logout, notifActivar, ocultarNotifBanner,
+    cerrarBienvenida, repetirSaludo, mostrarBienvenida,
     installApp, dismissInstall, closeIosSheet, testMail, shareApp, consultarPrecio, countryChanged, cargarPaisDetectado, editCountryChanged,
     openTramites, loadTramites, openTramite, openTramiteChat, subirComprobante, avisoDescarga,
     adminFillSubtypes, crearTramite, adminSubirDocumento, adminAprobar, adminRechazar,

@@ -87,8 +87,8 @@
           <input id="regPassword" type="password" autocomplete="new-password" minlength="8" placeholder="Mínimo 8 caracteres" />
           <button type="button" class="pass-toggle" data-target="regPassword" aria-label="Mostrar contraseña" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.2 12S5.8 5.6 12 5.6 21.8 12 21.8 12 18.2 18.4 12 18.4 2.2 12 2.2 12z"/><circle cx="12" cy="12" r="3.1"/></svg><svg class="eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.2 3.2l17.6 17.6"/><path d="M10.6 6.2A9.9 9.9 0 0112 6.1c6.2 0 9.8 5.9 9.8 5.9a17.4 17.4 0 01-3.2 3.8"/><path d="M6.5 7.7A17.2 17.2 0 002.2 12s3.6 5.9 9.8 5.9a10 10 0 004-.8"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/></svg></button>
         </div>
-        <small class="field-hint">Mínimo 8 caracteres. Puedes usar letras, números y símbolos.</small>
-        <p class="pass-warning">Guarda bien tu contraseña: será la única con la que puedes iniciar sesión en esta plataforma. No la compartas y tenla en un lugar seguro.</p>
+        <small class="field-hint" hidden>Mínimo 8 caracteres. Puedes usar letras, números y símbolos.</small>
+        <p class="pass-warning" hidden>Guarda bien tu contraseña: será la única con la que puedes iniciar sesión en esta plataforma. No la compartas y tenla en un lugar seguro.</p>
       </label>
       <label class="field"><span>País donde vives actualmente</span>
         <select id="authCountry" onchange="App.countryChanged()">
@@ -181,7 +181,7 @@
     </header>
 
     <div class="scroll">
-      <h2 id="homeGreeting" class="home-greeting" style="display: none;"></h2>
+      <h2 id="homeGreeting" class="home-greeting" style="display: none;"><button class="greet-voice" type="button" aria-label="Escuchar el saludo" onclick="App.repetirSaludo()"><svg viewBox="0 0 24 24"><path d="M4 9.5v5h3.2L12 18.5V5.5L7.2 9.5H4z"/><path d="M15.5 8.6a4.6 4.6 0 010 6.8M18 6a8 8 0 010 12"/></svg></button></h2>
 
       <div class="hero">
         <h2>INFÓRMATE DE TU TRÁMITE</h2>

@@ -1585,3 +1585,55 @@ body.con-actualizacion .view.active { padding-top: 54px; }
   background: #fdf6e6; color: #6b4a08;
   font-size: 12.5px; line-height: 1.4;
 }
+
+/* ---------------- aviso de bienvenida ---------------- */
+.bienvenida-capa {
+  position: fixed; inset: 0; z-index: 120; background: rgba(9, 20, 38, .55);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  animation: bvFade .18s ease-out;
+}
+.bienvenida {
+  position: relative; width: 100%; max-width: 360px; background: #fff;
+  border-radius: 20px; padding: 22px 20px 18px; text-align: center;
+  box-shadow: 0 24px 60px rgba(9, 20, 38, .35); animation: bvUp .22s ease-out;
+}
+.bv-x {
+  position: absolute; top: 10px; right: 10px; width: 32px; height: 32px;
+  border: 0; border-radius: 50%; background: #eef3fa; color: #5b6b80;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.bv-x svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.bv-ic {
+  width: 54px; height: 54px; margin: 2px auto 12px; border-radius: 16px;
+  background: linear-gradient(135deg, #1f5f9e, #2b6fae); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 10px 22px rgba(31, 95, 158, .3);
+}
+.bv-ic svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.bienvenida h2 { margin: 0 0 8px; font-size: 19px; color: var(--text); }
+.bv-txt { margin: 0 0 12px; font-size: 13.5px; line-height: 1.5; color: #4a5a70; }
+.bv-lista { list-style: none; margin: 0 0 16px; padding: 0; text-align: left; display: flex; flex-direction: column; gap: 7px; }
+.bv-lista li { font-size: 13px; color: #33455c; padding-left: 22px; position: relative; line-height: 1.4; }
+.bv-lista li:before {
+  content: ''; position: absolute; left: 0; top: 3px; width: 14px; height: 14px;
+  border-radius: 50%; background: #e7f6f0;
+}
+.bv-lista li:after {
+  content: ''; position: absolute; left: 4px; top: 7px; width: 6px; height: 3px;
+  border-left: 2px solid #12805c; border-bottom: 2px solid #12805c; transform: rotate(-45deg);
+}
+.bienvenida .btn { width: 100%; }
+@keyframes bvFade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes bvUp { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
+
+/* precio dentro de cada opcion del tramite */
+.option-price { display: block; margin-top: 2px; font-size: 12px; font-weight: 700; color: #1f5f9e; }
+
+/* boton para escuchar el saludo */
+.greet-voice {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; margin-left: 8px; border: 0; border-radius: 50%;
+  background: rgba(31, 95, 158, .1); color: var(--navy); cursor: pointer; vertical-align: middle;
+}
+.greet-voice svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.greet-voice:active { background: rgba(31, 95, 158, .2); }

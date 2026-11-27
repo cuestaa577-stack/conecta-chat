@@ -1,1 +1,5 @@
-{"version":"v7.6","cache":"tramites-ve-v66","nota":"Cita virtual con calendario y tramite de inmediato antes del precio, confirmacion si/no, referencias con foto real de Chile, Ecuador, Colombia, Venezuela y Peru, y corte de 20 s en las peticiones para que la app no se quede pegada"}
+{
+  "version": "v8.0",
+  "cache": "tramites-ve-v67",
+  "nota": "Bienvenida para cuentas nuevas, saludo con voz, precio en cada opcion y referencias nuevas."
+}
