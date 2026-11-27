@@ -160,3 +160,28 @@
   color: transparent;
   box-shadow: 0 2px 8px rgba(11, 27, 58, .18);
 }
+
+/* --- Horas de la cita virtual ---
+   Cada media hora, de 8:00 a.m. a 5:30 p.m. La hora elegida se marca igual que
+   el dia en el calendario, para que se vea de un golpe lo que ya escogio. */
+.horas-box { margin: 0 0 12px; }
+.horas-titulo {
+  margin: 0 0 8px; font-size: 14.5px; font-weight: 800; color: var(--navy);
+}
+.horas-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px;
+}
+.hora-chip {
+  padding: 9px 4px; border: 1px solid var(--border); border-radius: 10px;
+  background: #fff; color: var(--navy); font: inherit; font-size: 13px;
+  font-weight: 700; cursor: pointer; text-align: center;
+  transition: background .15s ease, color .15s ease;
+}
+.hora-chip:hover { background: var(--blue-soft); }
+.hora-chip.on {
+  background: var(--navy); color: #fff; border-color: var(--navy);
+  box-shadow: 0 3px 10px rgba(31, 95, 158, .3);
+}
+.horas-nota {
+  margin: 8px 0 0; font-size: 12.5px; line-height: 1.45; color: #3d5068;
+}

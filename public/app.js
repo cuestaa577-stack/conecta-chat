@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v8.4';
+  const APP_VERSION = 'v8.5';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -130,7 +130,11 @@ const App = (() => {
     /* El tipo de sangre solo lo pide la licencia de conducir. */
     if (s.bloodType && String(s.service || '').toLowerCase() === 'licencia') filas.push('Tipo de sangre: ' + s.bloodType);
     /* Cita virtual o tramite inmediato: el gestor necesita saberlo. */
-    if (s.citaModo === 'cita' && s.citaFecha) filas.push('Cita virtual: ' + fechaLegible(s.citaFecha));
+    if (s.citaModo === 'cita' && s.citaFecha) {
+      filas.push('Cita virtual: ' + fechaLegible(s.citaFecha) +
+        (s.citaHora ? ' a las ' + horaLegible(s.citaHora) : '') +
+        ' (tolerancia de 10 minutos; si no llega, la cita se cancela)');
+    }
     else if (s.citaModo === 'inmediato') filas.push('Atencion: tramite de inmediato');
     const valor = precioDelTramite(s.service, s.subtype, s.grade);
     if (valor) filas.push('Valor: ' + valor);
@@ -1018,7 +1022,7 @@ const App = (() => {
 
   function pickService(key) {
     state.flowSteps = [{ k: 'service', service: key }, { k: 'confirm' }];
-    state.flowCita = { modo: '', fecha: '', mes: '' };
+    state.flowCita = { modo: '', fecha: '', mes: '', hora: '' };
     renderFlow();
     showView('flow');
   }
@@ -1036,9 +1040,9 @@ const App = (() => {
   }
 
   function pickModo(modo) {
-    if (!state.flowCita) state.flowCita = { modo: '', fecha: '', mes: '' };
+    if (!state.flowCita) state.flowCita = { modo: '', fecha: '', mes: '', hora: '' };
     state.flowCita.modo = modo;
-    if (modo === 'inmediato') state.flowCita.fecha = '';
+    if (modo === 'inmediato') { state.flowCita.fecha = ''; state.flowCita.hora = ''; }
     renderFlow();
   }
 
@@ -1059,17 +1063,76 @@ const App = (() => {
   }
 
   function pickCita(iso) {
-    if (!state.flowCita) state.flowCita = { modo: 'cita', fecha: '', mes: '' };
+    if (!state.flowCita) state.flowCita = { modo: 'cita', fecha: '', mes: '', hora: '' };
+    /* Si cambia el dia, la hora elegida ya no sirve: se borra. */
+    if (state.flowCita.fecha !== iso) state.flowCita.hora = '';
     state.flowCita.modo = 'cita';
     state.flowCita.fecha = iso;
     renderFlow();
   }
 
+  /* Horas de atencion: de 8:00 a.m. a 5:30 p.m., cada media hora.
+     Para hoy solo se ofrecen las que faltan al menos 10 minutos, porque la
+     cita se pide con 10 minutos de anticipacion. */
+  const HORAS_CITA = (() => {
+    const out = [];
+    for (let h = 8; h < 18; h++) { out.push(dosDigitos(h) + ':00'); out.push(dosDigitos(h) + ':30'); }
+    return out;
+  })();
+
+  function horaLegible(hhmm) {
+    const p = String(hhmm || '').split(':');
+    if (p.length !== 2) return '';
+    let h = Number(p[0]);
+    const ampm = h >= 12 ? 'p.m.' : 'a.m.';
+    h = h % 12;
+    if (h === 0) h = 12;
+    return h + ':' + p[1] + ' ' + ampm;
+  }
+
+  function horasDisponibles(iso) {
+    const hoyIso = isoDeFecha(new Date());
+    if (iso !== hoyIso) return HORAS_CITA.slice();
+    const ahora = new Date();
+    const minimo = ahora.getTime() + 10 * 60000;
+    return HORAS_CITA.filter((h) => {
+      const p = h.split(':');
+      const t = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate(), Number(p[0]), Number(p[1])).getTime();
+      return t >= minimo;
+    });
+  }
+
+  function pickHora(hora) {
+    if (!state.flowCita) state.flowCita = { modo: 'cita', fecha: '', mes: '', hora: '' };
+    state.flowCita.hora = hora;
+    renderFlow();
+  }
+
+  /* Rejilla de horas del dia elegido, con la regla de los 10 minutos. */
+  function horasHtml() {
+    const cita = state.flowCita || {};
+    if (!cita.fecha) return '';
+    const horas = horasDisponibles(cita.fecha);
+    if (!horas.length) {
+      return '<div class="horas-box"><p class="horas-titulo">Elige la hora</p>' +
+        '<p class="horas-nota">Ya no quedan horas para hoy. Elige otro dia en el calendario.</p></div>';
+    }
+    return '<div class="horas-box">' +
+      '<p class="horas-titulo">Elige la hora</p>' +
+      '<div class="horas-grid">' +
+      horas.map((h) => '<button type="button" class="hora-chip' + (cita.hora === h ? ' on' : '') +
+        '" onclick="App.pickHora(\'' + h + '\')">' + horaLegible(h) + '</button>').join('') +
+      '</div>' +
+      '<p class="horas-nota">Llega 10 minutos antes. Si no llegas en los 10 minutos siguientes a tu hora, la cita se cancela.</p>' +
+      '</div>';
+  }
+
   /* Con la cita elegida (o el modo inmediato) se pasa a elegir el tipo. */
   function continuarAgenda() {
     const cita = state.flowCita || {};
-    if (cita.modo === 'cita' && !cita.fecha) return toast('Elige el dia de tu cita');
     if (!cita.modo) return toast('Elige cita virtual o tramite de inmediato');
+    if (cita.modo === 'cita' && !cita.fecha) return toast('Elige el dia de tu cita');
+    if (cita.modo === 'cita' && !cita.hora) return toast('Elige la hora de tu cita');
     state.flowSteps.push({ k: 'tipo' });
     renderFlow();
   }
@@ -1238,6 +1301,7 @@ const App = (() => {
       bloodType: d.bloodType || '',
       citaModo: (state.flowCita && state.flowCita.modo) || '',
       citaFecha: (state.flowCita && state.flowCita.fecha) || '',
+      citaHora: (state.flowCita && state.flowCita.hora) || '',
     };
   }
 
@@ -1287,7 +1351,8 @@ const App = (() => {
           </button>
         </div>
         ${cita.modo === 'cita' ? calendarioHtml() : ''}
-        ${cita.modo === 'cita' && cita.fecha ? `<p class="cita-elegida">Tu cita: <b>${esc(fechaLegible(cita.fecha))}</b></p>` : ''}
+        ${cita.modo === 'cita' ? horasHtml() : ''}
+        ${cita.modo === 'cita' && cita.fecha ? `<p class="cita-elegida">Tu cita: <b>${esc(fechaLegible(cita.fecha))}${cita.hora ? ' a las ' + esc(horaLegible(cita.hora)) : ''}</b></p>` : ''}
         ${cita.modo ? `<button class="btn primary" onclick="App.continuarAgenda()">Continuar</button>` : ''}`;
       return;
     }
@@ -1385,7 +1450,7 @@ const App = (() => {
         ${s.cedula ? `<div class="summary-row"><span>Cedula</span><span>${esc(s.cedula)}</span></div>` : ''}
         ${s.birthDate ? `<div class="summary-row"><span>Fecha de nacimiento</span><span>${esc(s.birthDate)}</span></div>` : ''}
         ${s.bloodType && s.service === 'licencia' ? `<div class="summary-row"><span>Tipo de sangre</span><span>${esc(s.bloodType)}</span></div>` : ''}
-        ${s.citaModo === 'cita' && s.citaFecha ? `<div class="summary-row"><span>Cita virtual</span><span>${esc(fechaLegible(s.citaFecha))}</span></div>` : ''}
+        ${s.citaModo === 'cita' && s.citaFecha ? `<div class="summary-row"><span>Cita virtual</span><span>${esc(fechaLegible(s.citaFecha))}${s.citaHora ? '<br>a las ' + esc(horaLegible(s.citaHora)) : ''}</span></div>` : ''}
         ${s.citaModo === 'inmediato' ? `<div class="summary-row"><span>Atencion</span><span>Tramite de inmediato</span></div>` : ''}
         ${precioDelTramite(s.service, s.subtype, s.grade) ? `<div class="summary-row"><span>Valor</span><span class="valor-tramite">${esc(precioDelTramite(s.service, s.subtype, s.grade))}</span></div>` : ''}
         ${!precioDelTramite(s.service, s.subtype, s.grade) ? `<div class="consulta-precio">
@@ -2136,7 +2201,7 @@ const App = (() => {
             if (!blob) return resolve(file);
             const nombre = String(file.name || 'foto').replace(/\.[^.]+$/, '') + '.jpg';
             resolve(new File([blob], nombre, { type: 'image/jpeg' }));
-          }, 'image/jpeg', 0.86);
+          }, 'image/jpeg', 0.92);
         } catch (e) {
           URL.revokeObjectURL(url);
           resolve(file);
@@ -2157,7 +2222,7 @@ const App = (() => {
       if (f.size > 25 * 1024 * 1024) return toast('La foto supera 25 MB');
       try {
         toast('Preparando la foto...');
-        const reducida = await reducirFoto(f, 512);
+        const reducida = await reducirFoto(f, 720);
         toast('Subiendo foto...');
         const up = await subirArchivo(reducida, (pct) => toast('Subiendo ' + pct + '%'));
         const data = await api('/api/profile', { method: 'POST', body: JSON.stringify({ avatar: up.url }) });
