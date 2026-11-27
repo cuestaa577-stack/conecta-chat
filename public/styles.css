@@ -202,10 +202,10 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 body { background: #ffffff; }
 body::before {
   content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background-image: url('marca-agua-saime.png');
+  background-image: url('marca-agua-saime-color.png');
   background-repeat: repeat;
-  background-size: 300px 300px;
-  opacity: .16;
+  background-size: 320px 320px;
+  opacity: .18;
 }
 .view {
   position: absolute; inset: 0; display: none; flex-direction: column;
