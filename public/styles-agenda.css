@@ -1,0 +1,162 @@
+/* =====================================================================
+   Cita virtual, confirmacion y precio (v7.6)
+   ---------------------------------------------------------------------
+   Se carga despues de styles.css. Solo agrega clases nuevas: no toca
+   ninguna regla existente, asi el resto de la app queda igual.
+   ===================================================================== */
+
+/* --- Confirmacion si/no antes de empezar --- */
+.confirm-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 16px;
+  box-shadow: 0 6px 18px rgba(11, 27, 58, .07);
+}
+.confirm-q {
+  margin: 0 0 14px;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text);
+  text-align: center;
+}
+.confirm-q b { color: var(--navy); }
+.confirm-btns { display: flex; flex-direction: column; gap: 9px; }
+.confirm-btns .btn { width: 100%; }
+
+/* --- Opciones de agenda --- */
+.agenda-opts { margin-bottom: 14px; }
+.option.on {
+  border-color: var(--navy);
+  box-shadow: 0 0 0 2px rgba(31, 95, 158, .18), 0 6px 18px rgba(11, 27, 58, .08);
+}
+.option.on .option-title { color: var(--navy); }
+
+/* --- Calendario pequeno --- */
+.calendario {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px 12px 14px;
+  margin: 0 0 14px;
+  box-shadow: 0 6px 18px rgba(11, 27, 58, .07);
+}
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.cal-head b {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--navy);
+  letter-spacing: -.01em;
+}
+.cal-nav {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--blue-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.cal-nav svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--navy);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.cal-nav:disabled { opacity: .35; cursor: default; }
+
+.cal-semana,
+.cal-dias {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+.cal-semana {
+  margin-bottom: 4px;
+}
+.cal-semana span {
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.cal-vacio { display: block; }
+.cal-dia {
+  aspect-ratio: 1 / 1;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s ease, color .15s ease;
+}
+.cal-dia:hover:not(.off) { background: var(--blue-soft); }
+.cal-dia.on {
+  background: var(--navy);
+  color: #fff;
+  font-weight: 800;
+  box-shadow: 0 3px 10px rgba(31, 95, 158, .3);
+}
+.cal-dia.off { color: #c3ccd8; cursor: default; }
+
+.cita-elegida {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: var(--blue-soft);
+  color: var(--navy);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+}
+.cita-elegida b { font-weight: 800; }
+
+/* --- Precio final --- */
+.precio-final {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  margin: 0 0 14px;
+  box-shadow: 0 6px 18px rgba(11, 27, 58, .07);
+}
+.precio-final span { font-size: 13px; color: var(--muted); font-weight: 600; }
+.precio-final b {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--navy);
+  letter-spacing: -.02em;
+}
+
+/* --- Foto real en las referencias --- */
+.ref-ava.foto {
+  background-size: cover;
+  background-position: center 22%;
+  background-repeat: no-repeat;
+  color: transparent;
+  box-shadow: 0 2px 8px rgba(11, 27, 58, .18);
+}

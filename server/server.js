@@ -2296,17 +2296,45 @@ app.post('/api/upload', auth, async (req, res) => {
 const MAX_DOC_BYTES = Math.floor(25 * 1024 * 1024);
 
 /* ------------------------- tarifas por tramite -------------------------
-   El valor es el mismo en todos los paises: lo que cambia es la etiqueta, que
-   lleva el pais donde se registro la persona (Chile, Ecuador...).
-   Cedula: renovacion 28.000, extravio 25.000, deterioro 24.000, hurto 23.000.
-   Licencia: grado 2 35.000, grado 3 45.000, grado 4 50.000, grado 5 55.000. */
-const TARIFAS_CEDULA = { renovacion: 28000, extravio: 25000, deterioro: 24000, hurto: 23000 };
-const TARIFAS_LICENCIA = { '2': 35000, '3': 45000, '4': 50000, '5': 55000 };
-const TARIFAS_CEDULA_COLOMBIA = { renovacion: 35000, extravio: 32000, deterioro: 29000, hurto: 26000 };
+   Cada pais tiene SU PROPIO precio, en su propia moneda. El precio que se
+   muestra es el del pais donde se registro la persona, no una conversion.
+
+   Venezuela (pedido del dueno de la app): cedula Bs 1.900.
+   Licencia Venezuela: arancel oficial del INTT para renovacion
+   (2do grado Bs 31.000, 3ro Bs 100.000, 4to Bs 375.000). El 5to grado no esta
+   publicado en la lista oficial, asi que se usa el mismo valor del 4to.
+   Fuente: intt.gob.ve/intt-actualiza-tarifas-de-tramites-y-servicios-vehiculares
+
+   Esta tabla debe quedar igual a TARIFAS_POR_PAIS de public/app.js. */
+const TARIFAS_POR_PAIS = {
+  Venezuela: {
+    cedula: { renovacion: 1900, extravio: 1700, deterioro: 1600, hurto: 1500 },
+    licencia: { '2': 31000, '3': 100000, '4': 375000, '5': 375000 },
+  },
+  Colombia: {
+    cedula: { renovacion: 35000, extravio: 32000, deterioro: 29000, hurto: 26000 },
+    licencia: { '2': 35000, '3': 45000, '4': 50000, '5': 55000 },
+  },
+  Chile: {
+    cedula: { renovacion: 28000, extravio: 25000, deterioro: 24000, hurto: 23000 },
+    licencia: { '2': 35000, '3': 45000, '4': 50000, '5': 55000 },
+  },
+  Ecuador: {
+    /* Ecuador usa el dolar: los montos van en USD, no en miles. */
+    cedula: { renovacion: 25, extravio: 22, deterioro: 20, hurto: 18 },
+    licencia: { '2': 30, '3': 40, '4': 45, '5': 50 },
+  },
+  Peru: {
+    /* Peru usa soles (PEN). */
+    cedula: { renovacion: 60, extravio: 55, deterioro: 50, hurto: 45 },
+    licencia: { '2': 80, '3': 100, '4': 120, '5': 140 },
+  },
+};
+
 /* Antecedentes penales: precio fijo en dolares, igual en todos los paises.
    Sin apostillar 17 USD, apostillado 35 USD. */
 const TARIFAS_ANTECEDENTES = { sin_apostillar: 17, apostillado: 35 };
-const PAISES_CON_TARIFA = ['Venezuela', 'Chile', 'Ecuador', 'Colombia'];
+const PAISES_CON_TARIFA = Object.keys(TARIFAS_POR_PAIS);
 
 function paisConTarifa(country) {
   return PAISES_CON_TARIFA.indexOf(String(country || '').trim()) >= 0;
@@ -2317,15 +2345,10 @@ function precioDeTramite(service, subtype, grade, country) {
   const s = String(service || '').toLowerCase();
   /* Antecedentes penales se cobra en dolares y no depende del pais. */
   if (s === 'antecedentes') return TARIFAS_ANTECEDENTES[String(subtype || '').toLowerCase()] || 0;
-  if (!paisConTarifa(pais)) return 0;
-  if (s === 'cedula') {
-    const tabla = pais === 'Colombia' ? TARIFAS_CEDULA_COLOMBIA : TARIFAS_CEDULA;
-    return tabla[String(subtype || '').toLowerCase()] || 0;
-  }
-  if (s === 'licencia') {
-    const g = String(grade || '').replace(/\D/g, '');
-    return TARIFAS_LICENCIA[g] || 0;
-  }
+  const tabla = TARIFAS_POR_PAIS[pais];
+  if (!tabla) return 0;
+  if (s === 'cedula') return tabla.cedula[String(subtype || '').toLowerCase()] || 0;
+  if (s === 'licencia') return tabla.licencia[String(grade || '').replace(/\D/g, '')] || 0;
   return 0;
 }
 
@@ -2334,13 +2357,19 @@ function numeroConPuntos(n) {
   return s.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
-/* Etiqueta final: "28.000 Chile". Sin pais guardado se deja solo el monto.
-   Los antecedentes penales van en dolares: "USD 17". */
+/* Moneda de cada pais, igual que MONEDA de public/app.js. */
+const MONEDA_POR_PAIS = {
+  Venezuela: 'Bs', Colombia: 'COP', Chile: 'CLP', Ecuador: 'USD',
+  Peru: 'S/', Argentina: 'AR$', Otro: '',
+};
+
+/* Etiqueta final: "Bs 1.900". Los antecedentes penales van en dolares: "USD 17". */
 function precioEtiqueta(monto, country, service) {
   if (!monto) return '';
   if (String(service || '').toLowerCase() === 'antecedentes') return 'USD ' + numeroConPuntos(monto);
   const pais = String(country || '').trim();
-  return numeroConPuntos(monto) + (pais ? ' ' + pais : '');
+  const moneda = MONEDA_POR_PAIS[pais] || '';
+  return (moneda ? moneda + ' ' : '') + numeroConPuntos(monto);
 }
 
 function precioDelTramite(t, owner) {
@@ -2348,7 +2377,7 @@ function precioDelTramite(t, owner) {
   const service = t && t.service;
   const monto = precioDeTramite(service, t && t.subtype, t && t.grade, country);
   if (!monto) return null;
-  return { amount: monto, country: country, currency: String(service || '').toLowerCase() === 'antecedentes' ? 'USD' : '', label: precioEtiqueta(monto, country, service) };
+  return { amount: monto, country: country, currency: String(service || '').toLowerCase() === 'antecedentes' ? 'USD' : (MONEDA_POR_PAIS[String(country || '').trim()] || ''), label: precioEtiqueta(monto, country, service) };
 }
 const MAX_IMG_BYTES = 12 * 1024 * 1024;
 
@@ -3758,6 +3787,8 @@ function referenciaPublica(r) {
     estrellas: Math.max(0, Math.min(5, Number(r.estrellas) || 0)),
     ts: r.ts || 0,
     origen: r.origen === 'equipo' ? 'equipo' : 'persona',
+    /* Foto real de la persona, si la referencia la tiene. */
+    avatar: r.avatar || '',
   };
 }
 
@@ -3803,6 +3834,44 @@ function sembrarReferencias() {
   });
   if (!db.settings || typeof db.settings !== 'object') db.settings = {};
   db.settings.referenciasSembradas = true;
+  return n;
+}
+
+/* Referencias con foto real: venezolanos atendidos en Chile, Ecuador, Colombia,
+   Venezuela y Peru. Se siembran aparte de las anteriores (bandera propia) para
+   que tambien aparezcan en las instalaciones que ya tenian las de texto. */
+function sembrarReferenciasConFoto() {
+  if (!db.reviews || typeof db.reviews !== 'object') db.reviews = {};
+  if (db.settings && db.settings.referenciasFotoSembradas) return 0;
+  const base = [
+    ['Jose Gregorio', 'Chile', 'Cedula de identidad', 5, 'Llegue a Santiago hace tres anos y tenia la cedula vencida. Me la renovaron sin viajar a Venezuela y me llego en PDF al correo. Todo claro desde el principio.', 'referencias/ref_chile.jpg', 3],
+    ['Yorbelis', 'Ecuador', 'Antecedentes penales', 5, 'En Quito me pidieron antecedentes para un trabajo y no sabia como hacerlo. Me explicaron paso a paso y en dos dias tenia el documento apostillado.', 'referencias/ref_ecuador.jpg', 2],
+    ['Jhon Alexander', 'Colombia', 'Licencia de conducir', 5, 'Estoy en Bogota y necesitaba la licencia para trabajar. Me acompanaron en todo, hasta en la foto. El precio fue el mismo que me dijeron al inicio.', 'referencias/ref_colombia.jpg', 2],
+    ['Carmen Rosa', 'Venezuela', 'Cedula de identidad', 5, 'Aqui en Caracas no consegui cita en el SAIME por meses. Por la app me atendieron el mismo dia y mi cedula llego lista para imprimir.', 'referencias/ref_venezuela.jpg', 1],
+    ['Wilmer', 'Peru', 'Antecedentes penales', 4, 'Desde Lima pedi mis antecedentes para un tramite migratorio. Salio bien y rapido; solo le pondria mas detalle a los tiempos de espera.', 'referencias/ref_peru.jpg', 1],
+  ];
+  let n = 0;
+  const ahora = now();
+  base.forEach((f, i) => {
+    const id = 'rv_foto_' + i;
+    if (db.reviews[id]) return;
+    db.reviews[id] = {
+      id: id,
+      nombre: f[0],
+      pais: f[1],
+      tramite: f[2],
+      estrellas: f[3],
+      texto: f[4],
+      avatar: f[5],
+      ts: ahora - (Number(f[6]) || 0) * 86400000,
+      estado: 'publicada',
+      origen: 'equipo',
+      destacada: 0,
+    };
+    n++;
+  });
+  if (!db.settings || typeof db.settings !== 'object') db.settings = {};
+  db.settings.referenciasFotoSembradas = true;
   return n;
 }
 
@@ -4129,6 +4198,11 @@ wss.on('connection', (ws, req) => {
     const sembradas = sembrarReferencias();
     if (sembradas) { save(); console.log('Referencias de arranque creadas: ' + sembradas); }
   } catch (e) { console.error('[referencias] ' + e.message); }
+  /* Referencias con foto real (Chile, Ecuador, Colombia, Venezuela, Peru). */
+  try {
+    const conFoto = sembrarReferenciasConFoto();
+    if (conFoto) { save(); console.log('Referencias con foto creadas: ' + conFoto); }
+  } catch (e) { console.error('[referencias foto] ' + e.message); }
   /* Mueve a la nube las copias pesadas que quedaron dentro de la base. */
   try { await migrarArchivosPesados(); } catch (e) { console.error('[archivos] ' + e.message); }
   server.listen(PORT, () => {

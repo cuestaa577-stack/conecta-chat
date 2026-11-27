@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v7.5';
+  const APP_VERSION = 'v7.6';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -12,21 +12,49 @@ const App = (() => {
   const MAX_DOC_TEXTO = '25 MB';
 
   /* ------------------------- tarifas por tramite -------------------------
-     Los precios son los MISMOS en todos los paises; lo unico que cambia es la
-     moneda con la que se muestran, segun el pais donde se registro la persona.
-     Cedula: renovacion 28.000, extravio 25.000, deterioro 24.000, hurto 23.000.
-     Licencia: grado 2 35.000, grado 3 45.000, grado 4 50.000, grado 5 55.000. */
-  const TARIFAS_CEDULA = { renovacion: 28000, extravio: 25000, deterioro: 24000, hurto: 23000 };
-  const TARIFAS_LICENCIA = { '2': 35000, '3': 45000, '4': 50000, '5': 55000 };
+     Cada pais tiene SU PROPIO precio, en su propia moneda. El precio que ve la
+     persona es el del pais donde se registro, no una conversion.
+
+     Venezuela (pedido del dueno de la app): cedula Bs 1.900.
+     Licencia Venezuela: arancel oficial del INTT para renovacion
+     (2do grado Bs 31.000, 3ro Bs 100.000, 4to Bs 375.000). El 5to grado no
+     esta publicado en la lista oficial, asi que se usa el mismo valor del 4to.
+     Fuente: intt.gob.ve/intt-actualiza-tarifas-de-tramites-y-servicios-vehiculares
+
+     Para cambiar un precio basta con editar el numero en esta tabla: la app y
+     el servidor usan la misma estructura. */
+  const TARIFAS_POR_PAIS = {
+    Venezuela: {
+      cedula: { renovacion: 1900, extravio: 1700, deterioro: 1600, hurto: 1500 },
+      licencia: { '2': 31000, '3': 100000, '4': 375000, '5': 375000 },
+    },
+    Colombia: {
+      cedula: { renovacion: 35000, extravio: 32000, deterioro: 29000, hurto: 26000 },
+      licencia: { '2': 35000, '3': 45000, '4': 50000, '5': 55000 },
+    },
+    Chile: {
+      cedula: { renovacion: 28000, extravio: 25000, deterioro: 24000, hurto: 23000 },
+      licencia: { '2': 35000, '3': 45000, '4': 50000, '5': 55000 },
+    },
+    Ecuador: {
+      /* Ecuador usa el dolar: los montos van en USD, no en miles. */
+      cedula: { renovacion: 25, extravio: 22, deterioro: 20, hurto: 18 },
+      licencia: { '2': 30, '3': 40, '4': 45, '5': 50 },
+    },
+    Peru: {
+      /* Peru usa soles (PEN). */
+      cedula: { renovacion: 60, extravio: 55, deterioro: 50, hurto: 45 },
+      licencia: { '2': 80, '3': 100, '4': 120, '5': 140 },
+    },
+  };
+
   /* Antecedentes penales: precio fijo en dolares, igual en todos los paises.
      Sin apostillar 17 USD, apostillado 35 USD. */
   const TARIFAS_ANTECEDENTES = { sin_apostillar: 17, apostillado: 35 };
 
-  /* Colombia tiene su propia lista de cedula. El resto de los paises mantiene
-     los valores de arriba. En un pais sin tarifa (opcion "Otro") no se inventa
-     un precio: se ofrece "Consultar precio" por el chat del gestor de trámites. */
-  const TARIFAS_CEDULA_COLOMBIA = { renovacion: 35000, extravio: 32000, deterioro: 29000, hurto: 26000 };
-  const PAISES_CON_TARIFA = ['Venezuela', 'Chile', 'Ecuador', 'Colombia'];
+  /* Paises con tabla de precios propia. Peru y el resto quedan en
+     "Consultar precio" por el chat del gestor: no se inventa una cifra. */
+  const PAISES_CON_TARIFA = Object.keys(TARIFAS_POR_PAIS);
 
   /* Simbolo de la moneda del pais donde se registro la persona. */
   const MONEDA = {
@@ -50,12 +78,10 @@ const App = (() => {
     /* Antecedentes penales tiene precio propio en dolares y no depende del
        pais donde vive la persona: siempre se muestra el valor real. */
     if (s === 'antecedentes') return TARIFAS_ANTECEDENTES[String(subtype || '').toLowerCase()] || 0;
-    if (!paisConTarifa(pais)) return 0;
-    if (s === 'cedula') {
-      const tabla = pais === 'Colombia' ? TARIFAS_CEDULA_COLOMBIA : TARIFAS_CEDULA;
-      return tabla[String(subtype || '').toLowerCase()] || 0;
-    }
-    if (s === 'licencia') return TARIFAS_LICENCIA[String(grade || '').replace(/\D/g, '')] || 0;
+    const tabla = TARIFAS_POR_PAIS[pais];
+    if (!tabla) return 0;
+    if (s === 'cedula') return tabla.cedula[String(subtype || '').toLowerCase()] || 0;
+    if (s === 'licencia') return tabla.licencia[String(grade || '').replace(/\D/g, '')] || 0;
     return 0;
   }
 
@@ -89,6 +115,9 @@ const App = (() => {
     if (s.birthDate) filas.push('Fecha de nacimiento: ' + s.birthDate);
     /* El tipo de sangre solo lo pide la licencia de conducir. */
     if (s.bloodType && String(s.service || '').toLowerCase() === 'licencia') filas.push('Tipo de sangre: ' + s.bloodType);
+    /* Cita virtual o tramite inmediato: el gestor necesita saberlo. */
+    if (s.citaModo === 'cita' && s.citaFecha) filas.push('Cita virtual: ' + fechaLegible(s.citaFecha));
+    else if (s.citaModo === 'inmediato') filas.push('Atencion: tramite de inmediato');
     const valor = precioDelTramite(s.service, s.subtype, s.grade);
     if (valor) filas.push('Valor: ' + valor);
     /* Se manda como ficha: titulo, linea en blanco y un dato por linea, en orden. */
@@ -212,6 +241,7 @@ const App = (() => {
     ws: null,
     viewStack: [],
     flowSteps: [],
+    flowCita: null,
     uploading: false,
     installEvent: null,
     installShown: false,
@@ -371,16 +401,29 @@ const App = (() => {
     const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
     if (state.token) headers.Authorization = 'Bearer ' + state.token;
     let res;
+    /* Tiempo maximo por peticion. Antes, si el servidor o la red se quedaban
+       colgados, el fetch no terminaba nunca y la app se veia "pegada": el
+       boton quedaba girando y no se podia hacer nada mas. Con el corte, la
+       peticion falla a los 20 s y la persona puede reintentar. */
+    const MS_LIMITE = 20000;
+    const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    let temporizador = null;
+    if (ctrl) {
+      temporizador = setTimeout(() => { try { ctrl.abort(); } catch (e) {} }, MS_LIMITE);
+    }
     try {
-      res = await fetch(path, Object.assign({}, opts, { headers }));
+      res = await fetch(path, Object.assign({}, opts, { headers }, ctrl ? { signal: ctrl.signal } : {}));
     } catch (e) {
+      if (temporizador) clearTimeout(temporizador);
+      const cortado = e && (e.name === 'AbortError' || e.code === 20);
       avisarSinConexion(true);
       const guardado = esCacheable(path, opts.method) ? datosCache(path) : null;
       if (guardado) return guardado;
-      const err = new Error('Sin conexión a internet');
-      err.code = 'offline';
+      const err = new Error(cortado ? 'La conexion tardo demasiado. Intenta de nuevo.' : 'Sin conexión a internet');
+      err.code = cortado ? 'timeout' : 'offline';
       throw err;
     }
+    if (temporizador) clearTimeout(temporizador);
     let data = null;
     try { data = await res.json(); } catch (e) { data = null; }
     if (!res.ok) {
@@ -812,15 +855,15 @@ const App = (() => {
      del grado o de si el documento va apostillado. */
   function avisoPrecio(svc) {
     const pais = state.me && state.me.country;
+    const tabla = TARIFAS_POR_PAIS[String(pais || '').trim()];
     let monto = 0;
-    if (svc === 'cedula') {
-      const vals = Object.keys(TARIFAS_CEDULA).map((k) => precioDeTramite('cedula', k, '', pais)).filter(Boolean);
-      monto = vals.length ? Math.min.apply(null, vals) : 0;
-    } else if (svc === 'licencia') {
-      const vals = Object.keys(TARIFAS_LICENCIA).map((k) => precioDeTramite('licencia', '', k, pais)).filter(Boolean);
-      monto = vals.length ? Math.min.apply(null, vals) : 0;
-    } else if (svc === 'antecedentes') {
+    if (svc === 'antecedentes') {
       const vals = Object.keys(TARIFAS_ANTECEDENTES).map((k) => precioDeTramite('antecedentes', k, '', pais)).filter(Boolean);
+      monto = vals.length ? Math.min.apply(null, vals) : 0;
+    } else if (tabla) {
+      const vals = Object.keys(tabla[svc] || {}).map((k) => (svc === 'cedula'
+        ? precioDeTramite('cedula', k, '', pais)
+        : precioDeTramite('licencia', '', k, pais))).filter(Boolean);
       monto = vals.length ? Math.min.apply(null, vals) : 0;
     }
     const precio = monto
@@ -943,26 +986,144 @@ const App = (() => {
   }
 
   /* ------------------------------ flujo del tramite ------------------------------ */
+  /* Cita virtual: dia elegido y modo (cita agendada o tramite inmediato).
+     Se guarda en state.flowCita y viaja en la ficha que recibe el gestor. */
+  function dosDigitos(n) { return String(n).padStart(2, '0'); }
+  function isoDeFecha(d) { return d.getFullYear() + '-' + dosDigitos(d.getMonth() + 1) + '-' + dosDigitos(d.getDate()); }
+
   function pickService(key) {
-    state.flowSteps = [{ k: 'service', service: key }];
+    state.flowSteps = [{ k: 'service', service: key }, { k: 'confirm' }];
+    state.flowCita = { modo: '', fecha: '', mes: '' };
     renderFlow();
     showView('flow');
+  }
+
+  /* Confirmacion de la persona antes de ver opciones y precio. */
+  function pickConfirm(si) {
+    if (!si) {
+      state.flowSteps = [];
+      state.flowCita = null;
+      showView('home', false);
+      return;
+    }
+    state.flowSteps.push({ k: 'agenda' });
+    renderFlow();
+  }
+
+  function pickModo(modo) {
+    if (!state.flowCita) state.flowCita = { modo: '', fecha: '', mes: '' };
+    state.flowCita.modo = modo;
+    if (modo === 'inmediato') state.flowCita.fecha = '';
+    renderFlow();
+  }
+
+  function citaMes(delta) {
+    const hoy = new Date();
+    const cita = state.flowCita || {};
+    let y = hoy.getFullYear();
+    let m = hoy.getMonth();
+    if (cita.mes && /^\d{4}-\d{2}$/.test(cita.mes)) {
+      y = Number(cita.mes.slice(0, 4));
+      m = Number(cita.mes.slice(5, 7)) - 1;
+    }
+    const d = new Date(y, m + delta, 1);
+    /* No se puede ir antes del mes actual. */
+    if (d < new Date(hoy.getFullYear(), hoy.getMonth(), 1)) return;
+    state.flowCita.mes = d.getFullYear() + '-' + dosDigitos(d.getMonth() + 1);
+    renderFlow();
+  }
+
+  function pickCita(iso) {
+    if (!state.flowCita) state.flowCita = { modo: 'cita', fecha: '', mes: '' };
+    state.flowCita.modo = 'cita';
+    state.flowCita.fecha = iso;
+    renderFlow();
+  }
+
+  /* Con la cita elegida (o el modo inmediato) se pasa a elegir el tipo. */
+  function continuarAgenda() {
+    const cita = state.flowCita || {};
+    if (cita.modo === 'cita' && !cita.fecha) return toast('Elige el dia de tu cita');
+    if (!cita.modo) return toast('Elige cita virtual o tramite de inmediato');
+    state.flowSteps.push({ k: 'tipo' });
+    renderFlow();
   }
 
   function pickOption(key) {
     const svc = state.flowSteps[0].service;
     const opt = SERVICES[svc].options.find((o) => o.key === key);
     state.flowSteps.push({ k: 'option', service: svc, subtype: key, label: opt ? opt.label : key, grades: !!(opt && opt.grades) });
-    /* Si el tramite tiene grados, primero se elige el grado y luego los datos. */
-    if (!(opt && opt.grades)) { state.flowSteps.push({ k: 'datos' }); cargarDatosDelPerfil(); }
+    /* Si el tramite tiene grados, primero se elige el grado y luego el precio. */
+    if (opt && opt.grades) state.flowSteps.push({ k: 'grade' });
+    else state.flowSteps.push({ k: 'precio' });
     renderFlow();
   }
 
   function pickGrade(grade) {
-    state.flowSteps.push({ k: 'grade', grade });
+    /* pickOption ya dejo un paso 'grade' vacio para mostrar la pantalla de
+       grados. Aqui se le pone el valor a ESE paso en vez de agregar otro: si
+       se agregaba otro, flowSummary encontraba primero el vacio y el precio
+       salia en cero ("Consultar precio"). */
+    const i = state.flowSteps.map((s) => s.k).lastIndexOf('grade');
+    if (i >= 0) state.flowSteps[i] = { k: 'grade', grade: grade };
+    else state.flowSteps.push({ k: 'grade', grade: grade });
+    state.flowSteps.push({ k: 'precio' });
+    renderFlow();
+  }
+
+  /* El precio se muestra despues de elegir el tipo y antes de los datos. */
+  function continuarPrecio() {
     state.flowSteps.push({ k: 'datos' });
     cargarDatosDelPerfil();
     renderFlow();
+  }
+
+  /* Calendario pequeno del mes: solo dias de hoy en adelante. */
+  function fechaLegible(iso) {
+    const p = String(iso || '').split('-');
+    if (p.length !== 3) return '';
+    const d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    const dias = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+    const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    return dias[d.getDay()] + ' ' + d.getDate() + ' de ' + meses[d.getMonth()] + ' de ' + d.getFullYear();
+  }
+
+  function calendarioHtml() {
+    const hoy = new Date();
+    const hoyIso = isoDeFecha(hoy);
+    const cita = state.flowCita || {};
+    let y = hoy.getFullYear();
+    let m = hoy.getMonth();
+    if (cita.mes && /^\d{4}-\d{2}$/.test(cita.mes)) {
+      y = Number(cita.mes.slice(0, 4));
+      m = Number(cita.mes.slice(5, 7)) - 1;
+    }
+    const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const primerDia = new Date(y, m, 1).getDay();
+    const diasMes = new Date(y, m + 1, 0).getDate();
+    const esMesActual = (y === hoy.getFullYear() && m === hoy.getMonth());
+    let celdas = '';
+    for (let i = 0; i < primerDia; i++) celdas += '<span class="cal-vacio"></span>';
+    for (let d = 1; d <= diasMes; d++) {
+      const iso = y + '-' + dosDigitos(m + 1) + '-' + dosDigitos(d);
+      const pasado = iso < hoyIso;
+      const on = cita.fecha === iso;
+      celdas += `<button type="button" class="cal-dia${on ? ' on' : ''}${pasado ? ' off' : ''}"${pasado ? ' disabled' : ''} onclick="App.pickCita('${iso}')">${d}</button>`;
+    }
+    return `
+      <div class="calendario">
+        <div class="cal-head">
+          <button type="button" class="cal-nav"${esMesActual ? ' disabled' : ''} onclick="App.citaMes(-1)" aria-label="Mes anterior">
+            <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <b>${meses[m]} ${y}</b>
+          <button type="button" class="cal-nav" onclick="App.citaMes(1)" aria-label="Mes siguiente">
+            <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+        <div class="cal-semana">${['D', 'L', 'M', 'M', 'J', 'V', 'S'].map((x) => '<span>' + x + '</span>').join('')}</div>
+        <div class="cal-dias">${celdas}</div>
+      </div>`;
   }
 
   /* Los datos del formulario arrancan con lo que ya tiene la cuenta. */
@@ -1035,7 +1196,9 @@ const App = (() => {
   function flowSummary() {
     const svc = state.flowSteps[0].service;
     const opt = state.flowSteps.find((s) => s.k === 'option');
-    const grade = state.flowSteps.find((s) => s.k === 'grade');
+    /* Se toma el ULTIMO paso de grado que tenga valor: el primero puede ser el
+       marcador vacio que solo sirve para pintar la pantalla de grados. */
+    const grade = state.flowSteps.filter((s) => s.k === 'grade' && s.grade).pop();
     const d = state.flowDatos || {};
     return {
       service: svc,
@@ -1048,6 +1211,8 @@ const App = (() => {
       cedula: d.cedula || '',
       birthDate: d.birthDate || '',
       bloodType: d.bloodType || '',
+      citaModo: (state.flowCita && state.flowCita.modo) || '',
+      citaFecha: (state.flowCita && state.flowCita.fecha) || '',
     };
   }
 
@@ -1061,12 +1226,53 @@ const App = (() => {
     const svc = state.flowSteps[0].service;
     const svcDef = SERVICES[svc];
 
-    if (step.k === 'service') {
+    /* 1) Confirmacion de la persona: si/no, antes de todo lo demas. */
+    if (step.k === 'service' || step.k === 'confirm') {
+      title.textContent = svcDef.title;
+      sub.textContent = 'Confirma tu tramite';
+      wrap.innerHTML = `
+        <div class="flow-head"><h2>${esc(svcDef.title)}</h2><p>Antes de seguir, confirma que quieres hacer este tramite.</p></div>
+        <div class="confirm-box">
+          <p class="confirm-q">\u00bfQuieres continuar con <b>${esc(svcDef.title)}</b>?</p>
+          <div class="confirm-btns">
+            <button class="btn primary" onclick="App.pickConfirm(true)">Si, continuar</button>
+            <button class="btn ghost" onclick="App.pickConfirm(false)">No, volver</button>
+          </div>
+        </div>`;
+      return;
+    }
+
+    /* 2) Cita virtual o tramite de inmediato, antes de la opcion y el precio. */
+    if (step.k === 'agenda') {
+      const cita = state.flowCita || {};
+      title.textContent = svcDef.title;
+      sub.textContent = 'Agenda o inmediato';
+      wrap.innerHTML = `
+        <div class="flow-head"><h2>Agenda tu cita virtual</h2><p>Elige el dia en que quieres que te atendamos, o hazlo de inmediato.</p></div>
+        <div class="options agenda-opts">
+          <button class="option${cita.modo === 'cita' ? ' on' : ''}" onclick="App.pickModo('cita')">
+            <span class="option-ic"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg></span>
+            <span class="option-title">Agenda tu cita virtual</span>
+            <span class="chev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
+          </button>
+          <button class="option${cita.modo === 'inmediato' ? ' on' : ''}" onclick="App.pickModo('inmediato')">
+            <span class="option-ic"><svg viewBox="0 0 24 24"><path d="M13 2.5L4.5 13.5H11l-1 8 8.5-11H12z"/></svg></span>
+            <span class="option-title">Tramite de inmediato</span>
+            <span class="chev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
+          </button>
+        </div>
+        ${cita.modo === 'cita' ? calendarioHtml() : ''}
+        ${cita.modo === 'cita' && cita.fecha ? `<p class="cita-elegida">Tu cita: <b>${esc(fechaLegible(cita.fecha))}</b></p>` : ''}
+        ${cita.modo ? `<button class="btn primary" onclick="App.continuarAgenda()">Continuar</button>` : ''}`;
+      return;
+    }
+
+    /* 3) Tipo de tramite. */
+    if (step.k === 'tipo') {
       title.textContent = svcDef.title;
       sub.textContent = svcDef.sub;
       wrap.innerHTML = `
         <div class="flow-head"><h2>${esc(svcDef.title)}</h2><p>${esc(svcDef.sub)}</p></div>
-        ${avisoPrecio(svc)}
         <div class="options">
           ${svcDef.options.map((o) => `
             <button class="option" onclick="App.pickOption('${o.key}')">
@@ -1080,11 +1286,29 @@ const App = (() => {
       return;
     }
 
-    if (step.k === 'option' && step.grades) {
+    /* 4) Precio, ya con el tipo elegido y antes de los datos del gestor. */
+    if (step.k === 'precio') {
+      const s = flowSummary();
+      const valor = precioDelTramite(s.service, s.subtype, s.grade);
+      title.textContent = svcDef.title;
+      sub.textContent = 'Precio del tramite';
+      wrap.innerHTML = `
+        <div class="flow-head"><h2>Precio de tu tramite</h2><p>${esc([s.subtypeLabel, s.grade].filter(Boolean).join(' \u00b7 '))}</p></div>
+        ${avisoPrecio(svc)}
+        ${valor ? `<div class="precio-final"><span>Valor a pagar</span><b>${esc(valor)}</b></div>` : `<div class="consulta-precio">
+          <p class="consulta-txt">El valor de este tramite depende del pais donde vives. Consultalo con un gestor de tr\u00e1mites y te responde al momento.</p>
+        </div>`}
+        <button class="btn primary" onclick="App.continuarPrecio()">Continuar</button>`;
+      return;
+    }
+
+    /* Grado de la licencia: se elige despues del tipo y antes del precio. */
+    if (step.k === 'grade') {
+      const opt = state.flowSteps.find((s) => s.k === 'option');
       title.textContent = svcDef.title;
       sub.textContent = 'Elige tu grado';
       wrap.innerHTML = `
-        <div class="flow-head"><h2>Que grado tienes?</h2><p>${esc(step.label)}</p></div>
+        <div class="flow-head"><h2>Que grado tienes?</h2><p>${esc((opt && opt.label) || '')}</p></div>
         <div class="options">
           ${GRADES.map((g) => `
             <button class="option" onclick="App.pickGrade('${g}')">
@@ -1134,6 +1358,8 @@ const App = (() => {
         ${s.cedula ? `<div class="summary-row"><span>Cedula</span><span>${esc(s.cedula)}</span></div>` : ''}
         ${s.birthDate ? `<div class="summary-row"><span>Fecha de nacimiento</span><span>${esc(s.birthDate)}</span></div>` : ''}
         ${s.bloodType && s.service === 'licencia' ? `<div class="summary-row"><span>Tipo de sangre</span><span>${esc(s.bloodType)}</span></div>` : ''}
+        ${s.citaModo === 'cita' && s.citaFecha ? `<div class="summary-row"><span>Cita virtual</span><span>${esc(fechaLegible(s.citaFecha))}</span></div>` : ''}
+        ${s.citaModo === 'inmediato' ? `<div class="summary-row"><span>Atencion</span><span>Tramite de inmediato</span></div>` : ''}
         ${precioDelTramite(s.service, s.subtype, s.grade) ? `<div class="summary-row"><span>Valor</span><span class="valor-tramite">${esc(precioDelTramite(s.service, s.subtype, s.grade))}</span></div>` : ''}
         ${!precioDelTramite(s.service, s.subtype, s.grade) ? `<div class="consulta-precio">
           <p class="consulta-txt">El valor de este tramite depende del pais donde vives. Consultalo con un gestor de trámites y te responde al momento.</p>
@@ -1568,6 +1794,20 @@ const App = (() => {
        paso algo. Al volver, la version ya es la nueva y no reaparece. */
     ocultarBarraActualizacion();
     versionRevisada = 0;
+    /* Guardia contra el bucle de recargas. Si version.json dice una version
+       nueva pero el app.js servido sigue siendo el viejo (cache del CDN o del
+       proxy), antes la app se recargaba una y otra vez sin parar: la pantalla
+       quedaba en blanco y parecia "pegada". Ahora se intenta como maximo dos
+       veces por sesion; a la tercera se deja la app funcionando y se avisa. */
+    let intentos = 0;
+    try { intentos = Number(sessionStorage.getItem('tve_recargas') || 0); } catch (e) {}
+    if (intentos >= 2) {
+      try { sessionStorage.removeItem('tve_recargas'); } catch (e) {}
+      versionNueva = '';
+      toast('No se pudo actualizar sola. Cierra y abre la app para ver la version nueva.', 'info');
+      return;
+    }
+    try { sessionStorage.setItem('tve_recargas', String(intentos + 1)); } catch (e) {}
     try {
       if ('caches' in window) {
         const llaves = await caches.keys();
@@ -2920,35 +3160,17 @@ const App = (() => {
     if (!w || !h) return;
     ctx.save();
 
-    /* 1) Texto repetido en diagonal, como en los documentos oficiales. Es la
-       marca que se ve de verdad: clara, creible y sin tapar ningun dato. */
-    const tam = Math.max(15, Math.round(w / 17));
-    const pasoX = Math.max(150, Math.round(w / 2.1));
-    const pasoY = Math.max(120, Math.round(w / 5.5));
+    /* Marca de agua pedida por el dueno de la app: SOLO el texto "VISTA PREVIA",
+       en azul, una sola vez y centrado en la hoja. Antes se repetia en diagonal
+       por toda la pagina y llevaba el logo del organismo; eso se quito. */
+    const tam = Math.max(22, Math.round(w / 11));
     try { ctx.font = 'bold ' + tam + 'px "DejaVu Sans", Arial, sans-serif'; } catch (e) {}
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#2b4c7e';
-    ctx.globalAlpha = 0.085;
-    ctx.rotate(-Math.PI / 6);
-    const diag = Math.ceil(Math.sqrt(w * w + h * h));
-    for (let y = -diag; y <= diag; y += pasoY) {
-      for (let x = -diag; x <= diag; x += pasoX) {
-        ctx.fillText(marca.texto, x, y);
-      }
-    }
-    ctx.rotate(Math.PI / 6);
+    ctx.fillStyle = '#1f5f9e';
+    ctx.globalAlpha = 0.30;
+    ctx.fillText('VISTA PREVIA', w / 2, h / 2);
 
-    /* 2) Sello pequeno del organismo en la esquina inferior derecha. Se ve como
-       el sello de la institucion, pero ocupa poco y no molesta la lectura. */
-    if (logo && logo.width && logo.height) {
-      const alto = Math.max(26, Math.round(h * 0.14));
-      const ancho = Math.min(w * 0.26, alto * (logo.width / logo.height));
-      const x = w - ancho - Math.round(w * 0.035);
-      const y = h - alto - Math.round(h * 0.045);
-      ctx.globalAlpha = 0.55;
-      ctx.drawImage(logo, x, y, ancho, alto);
-    }
     ctx.restore();
   }
 
@@ -3702,6 +3924,10 @@ const App = (() => {
   /* El panel se refresca al instante cuando llega algo por el WebSocket, sin
      esperar al sondeo de cada 5 segundos. */
   let panelRefreshTimer = null;
+  /* Temporizadores del socket: agrupan la recarga de chats y evitan que se
+     acumulen reconexiones. */
+  let recargaChatsTimer = null;
+  let reconexionTimer = null;
   function refrescarPanelSiAdmin() {
     if (!state.me || state.me.role !== 'admin') return;
     const vista = document.getElementById('adminView');
@@ -3712,6 +3938,10 @@ const App = (() => {
 
   function connectWS() {
     if (!state.token) return;
+    /* Si ya hay un socket abierto o conectandose, no se abre otro: antes cada
+       reconexion dejaba el anterior vivo y se acumulaban sockets que repetian
+       los mismos mensajes y trababan la app. */
+    if (state.ws && (state.ws.readyState === 0 || state.ws.readyState === 1)) return;
     try {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
       const ws = new WebSocket(proto + '://' + location.host + '/ws?token=' + encodeURIComponent(state.token));
@@ -3755,7 +3985,12 @@ const App = (() => {
             const c = (state.chats || []).find((x) => x && x.id === msg.chatId);
             if (c) { c.unread = (Number(c.unread) || 0) + 1; pintarBadges(); }
           }
-          loadChats();
+          /* Antes se llamaba a loadChats() por CADA mensaje que llegaba: con
+             una conversacion activa eso son dos peticiones por mensaje y la
+             app se sentia pegada. Ahora se agrupa: una sola recarga 400 ms
+             despues del ultimo mensaje. */
+          clearTimeout(recargaChatsTimer);
+          recargaChatsTimer = setTimeout(() => { loadChats(); }, 400);
         } else if (m.type === 'presence') {
           /* Se conecto o se desconecto: se actualiza la conversacion y la
              cabecera sin recargar nada. */
@@ -3786,7 +4021,10 @@ const App = (() => {
       };
       ws.onclose = () => {
         state.ws = null;
-        if (state.token) setTimeout(() => { if (state.token) connectWS(); }, 3000);
+        if (state.token) {
+          clearTimeout(reconexionTimer);
+          reconexionTimer = setTimeout(() => { if (state.token) connectWS(); }, 3000);
+        }
       };
     } catch (e) {}
   }
@@ -3914,9 +4152,11 @@ const App = (() => {
     const esEquipo = r.origen === 'equipo';
     const iniciales = String(r.nombre || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase();
     const quien = [r.pais, r.tramite].filter(Boolean).join(' \u00b7 ');
+    /* Si la referencia trae foto real, se muestra la foto; si no, las iniciales. */
+    const foto = r.avatar ? `<span class="ref-ava foto" style="background-image:url('${esc(r.avatar)}')" role="img" aria-label="${esc(r.nombre || 'Persona')}"></span>` : `<span class="ref-ava${esEquipo ? ' equipo' : ''}">${esc(iniciales || '?')}</span>`;
     return `<article class="ref-card">
       <div class="ref-top">
-        <span class="ref-ava${esEquipo ? ' equipo' : ''}">${esc(iniciales || '?')}</span>
+        ${foto}
         <span class="ref-who">
           <b>${esc(r.nombre || 'Persona')}</b>
           <small>${esc(quien || 'Tr\u00e1mite realizado')}</small>
@@ -5421,6 +5661,12 @@ const App = (() => {
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (recargado) return;
         recargado = true;
+        /* Misma guardia: si ya se recargo dos veces en esta sesion, no se
+           vuelve a recargar para no entrar en un bucle. */
+        let intentos = 0;
+        try { intentos = Number(sessionStorage.getItem('tve_recargas') || 0); } catch (e) {}
+        if (intentos >= 2) return;
+        try { sessionStorage.setItem('tve_recargas', String(intentos + 1)); } catch (e) {}
         location.reload();
       });
       /* Busca version nueva al volver a la app, al recuperar internet y cada
@@ -5470,7 +5716,8 @@ const App = (() => {
 
   return {
     authTab, submitLogin, submitRegister, showAdminAuth, submitAdminLogin, submitRecover,
-    back, pickService, pickOption, pickGrade, pickBlood, guardarDatosFlow, startChat,
+    back, pickService, pickConfirm, pickModo, citaMes, pickCita, continuarAgenda,
+    pickOption, pickGrade, continuarPrecio, pickBlood, guardarDatosFlow, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
     openProfile, pickAvatar, saveProfileChanges, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat,
     openAdmin, openChatFromAdmin, openFirstChat,
