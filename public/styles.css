@@ -200,7 +200,10 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .app {
   height: 100%; position: relative;
   background:
-    linear-gradient(rgba(244, 246, 251, .78), rgba(244, 246, 251, .86)),
+    /* El velo blanco baja de .78/.86 a .58/.70: antes tapaba tanto la foto que
+       se veia lavada. Las tarjetas siguen siendo blancas, asi que el texto se
+       lee igual. */
+    linear-gradient(rgba(244, 246, 251, .58), rgba(244, 246, 251, .70)),
     url('bg.jpg') center/cover no-repeat fixed,
     var(--bg);
 }
