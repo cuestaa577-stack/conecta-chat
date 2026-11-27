@@ -1,5 +1,5 @@
 {
-  "version": "v8.0",
-  "cache": "tramites-ve-v67",
-  "nota": "Bienvenida para cuentas nuevas, saludo con voz, precio en cada opcion y referencias nuevas."
+  "version": "v8.1",
+  "cache": "tramites-ve-v68",
+  "nota": "Letras mas visibles, Bienvenida o Bienvenido segun la persona, logo del SAIME en el aviso y saludo con voz al abrir la app."
 }

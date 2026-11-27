@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v8.0';
+  const APP_VERSION = 'v8.1';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -928,6 +928,9 @@ const App = (() => {
     $('#appScreen').classList.remove('hidden');
     pintarSaludo();
     pintarMetaPortada();
+    /* El saludo con voz suena apenas la persona abre la app, antes de elegir
+       ningun tramite. */
+    saludoVozAlEntrar();
     if (!saludoTimer) saludoTimer = setInterval(pintarSaludo, 60000);
     if (!presenciaTimer) presenciaTimer = setInterval(refrescarPresencia, 30000);
     pintarAvatar($('#myAvatarBtn'), state.me.avatar, state.me.name);
@@ -1860,6 +1863,35 @@ const App = (() => {
      Se muestra una sola vez, cuando la persona acaba de crear su cuenta. Se ve
      como un aviso de la app, con su X arriba a la derecha; al cerrarlo queda
      guardado en el telefono y no vuelve a salir. */
+  /* El aviso dice "Bienvenida" cuando es mujer y "Bienvenido" cuando es
+     hombre. Se mira el primer nombre: los que terminan en "a" son de mujer y
+     los que terminan en "o" de hombre, con una lista corta para los nombres
+     que no siguen esa regla (Carmen, Isabel, Jose, Andres...). */
+  const NOMBRES_MUJER = ['carmen', 'isabel', 'ines', 'raquel', 'miriam', 'esther', 'luz', 'marisol',
+    'mercedes', 'rosario', 'soledad', 'pilar', 'beatriz', 'cruz', 'nieves', 'dolores', 'angeles',
+    'amparo', 'consuelo', 'nubia', 'yoselin', 'yorbelis', 'marisela', 'yosely', 'yesenia', 'gloria',
+    'nohemi', 'abigail', 'ruth', 'judith', 'edith', 'iris', 'mabel', 'naomi', 'yulimar', 'milagros',
+    'yajaira', 'yaneth', 'zaida', 'zuleima', 'belkis', 'nayrobis', 'yuleisi', 'danielys'];
+  const NOMBRES_HOMBRE = ['jose', 'jhon', 'juan', 'andres', 'rafael', 'wilmer', 'luis', 'carlos',
+    'jhonatan', 'jesus', 'angel', 'adan', 'ivan', 'elias', 'tobias', 'nicolas', 'matias', 'lucas',
+    'isaias', 'isaac', 'josue', 'moises', 'noe', 'eneas', 'urias', 'zacarias', 'bautista', 'yorman',
+    'yeison', 'jhonny', 'mauricio', 'richard', 'freddy', 'gustavo', 'jorge', 'miguel', 'pedro'];
+
+  function primerNombre(nombre) {
+    return String(nombre || '').trim().split(/\s+/)[0] || '';
+  }
+
+  function esMujer(nombre) {
+    const n = primerNombre(nombre).toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!n) return false;
+    if (NOMBRES_MUJER.indexOf(n) >= 0) return true;
+    if (NOMBRES_HOMBRE.indexOf(n) >= 0) return false;
+    if (/a$/.test(n)) return true;
+    if (/o$/.test(n)) return false;
+    return false;
+  }
+
   function mostrarBienvenida(nombre) {
     try { if (localStorage.getItem('bienvenida_vista') === '1') return; } catch (e) {}
     if (document.querySelector('.bienvenida-capa')) return;
@@ -1870,10 +1902,8 @@ const App = (() => {
         <button class="bv-x" type="button" aria-label="Cerrar" onclick="App.cerrarBienvenida()">
           <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
-        <div class="bv-ic">
-          <svg viewBox="0 0 24 24"><path d="M12 3l7.5 3v6.2c0 4.3-3 7.4-7.5 8.8-4.5-1.4-7.5-4.5-7.5-8.8V6L12 3z"/><path d="M8.6 12.2l2.4 2.4 4.4-4.6"/></svg>
-        </div>
-        <h2>¡Bienvenido, ${esc(String(nombre || '').split(/\s+/)[0] || 'amigo')}!</h2>
+        <div class="bv-ic"><img src="logos/saime.png" alt="SAIME"></div>
+        <h2>¡${esMujer(nombre) ? 'Bienvenida' : 'Bienvenido'}, ${esc(primerNombre(nombre) || 'amigo')}!</h2>
         <p class="bv-txt">Tu cuenta quedó creada. Aquí te acompañamos paso a paso con tu cédula, tu licencia o tus antecedentes penales, con un gestor real por el chat.</p>
         <ul class="bv-lista">
           <li><b>Te guiamos</b> en cada paso del trámite</li>
@@ -1933,7 +1963,12 @@ const App = (() => {
     if (!state.me) return;
     try { if (sessionStorage.getItem('saludo_dicho') === '1') return; sessionStorage.setItem('saludo_dicho', '1'); } catch (e) {}
     vozPendiente = true;
+    /* Las voces del telefono tardan un instante en cargar: se intenta ya, y si
+       todavia no estan, se reintenta a los 600 ms y otra vez cuando el sistema
+       avisa que ya cargaron. */
     saludarConVoz();
+    setTimeout(() => { if (vozPendiente) saludarConVoz(); }, 600);
+    setTimeout(() => { if (vozPendiente) saludarConVoz(); }, 1600);
   }
 
   function repetirSaludo() { saludarConVoz(); }
