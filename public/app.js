@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v8.2';
+  const APP_VERSION = 'v8.3';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -1961,18 +1961,32 @@ const App = (() => {
   /* El telefono trae varias voces en espanol. Se elige una de mujer cuando la
      persona es mujer y una de hombre cuando es hombre; si el telefono solo
      tiene una, se cambia el tono para que suene acorde. */
-  const VOCES_MUJER = /mujer|female|monica|mónica|paulina|sabina|helena|lucia|lucía|marisol|esperanza|sofia|sofía|elena|dalia|isabela|camila|salome|salomé/i;
-  const VOCES_HOMBRE = /hombre|male|diego|jorge|carlos|juan|pablo|miguel|enrique|raul|raúl|javier|andres|andrés|alvaro|álvaro|gonzalo|ricardo|esteban/i;
+  /* La bienvenida la dice una voz de hombre. No se toma la primera que
+     aparezca: se puntuan todas las voces en espanol y gana la que suena mas
+     nitida (las "Google" del telefono son mas claras que las del sistema) y
+     mas latina (es-419, es-US, es-MX...). Si el telefono no trae ninguna voz
+     de hombre, se usa la mejor en espanol con el tono bajado. */
+  const VOCES_MUJER = /mujer|female|monica|mónica|paulina|sabina|helena|lucia|lucía|marisol|esperanza|sofia|sofía|elena|dalia|isabela|camila|salome|salomé|^google español$/i;
+  const VOCES_HOMBRE = /hombre|male|diego|jorge|carlos|juan|pablo|miguel|enrique|raul|raúl|javier|andres|andrés|alvaro|álvaro|gonzalo|ricardo|esteban|estados unidos|us spanish/i;
 
-  function vozEspanol(mujer) {
+  function puntajeVoz(v) {
+    const nombre = v.name || '';
+    const idioma = v.lang || '';
+    let p = 0;
+    if (VOCES_HOMBRE.test(nombre)) p += 6;
+    if (VOCES_MUJER.test(nombre)) p -= 6;
+    if (/google/i.test(nombre)) p += 4;
+    if (v.localService === false || /network|online|en línea|en linea/i.test(nombre)) p += 2;
+    if (/^es-(419|us|mx|co|ve|ar|cl|pe)/i.test(idioma)) p += 3;
+    else if (/^es-es$/i.test(idioma)) p += 1;
+    return p;
+  }
+
+  function vozEspanol() {
     const voces = (window.speechSynthesis && window.speechSynthesis.getVoices()) || [];
     const es = voces.filter((v) => /^es/i.test(v.lang || ''));
     if (!es.length) return null;
-    const busca = mujer ? VOCES_MUJER : VOCES_HOMBRE;
-    const evita = mujer ? VOCES_HOMBRE : VOCES_MUJER;
-    return es.find((v) => busca.test(v.name || '')) ||
-      es.find((v) => !evita.test(v.name || '')) ||
-      es[0] || null;
+    return es.slice().sort((a, b) => puntajeVoz(b) - puntajeVoz(a))[0] || null;
   }
 
   function saludarConVoz() {
@@ -1981,12 +1995,14 @@ const App = (() => {
     try {
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(txt);
-      const mujer = esMujer((state.me && state.me.name) || '');
-      const v = vozEspanol(mujer);
+      const v = vozEspanol();
       if (v) u.voice = v;
-      u.lang = (v && v.lang) || 'es-ES';
-      u.rate = 0.97;
-      u.pitch = mujer ? 1.14 : 0.88;
+      u.lang = (v && v.lang) || 'es-419';
+      /* Un poco mas lento y con tono de hombre: se entiende mejor y no suena
+         a la voz robotica que trae el telefono por defecto. */
+      u.rate = 0.92;
+      u.pitch = 0.9;
+      u.volume = 1;
       window.speechSynthesis.speak(u);
       vozPendiente = false;
     } catch (e) { vozPendiente = true; }
@@ -2851,7 +2867,12 @@ const App = (() => {
     if (!list) return;
     const items = state.tramites || [];
     if (!items.length) {
-      list.innerHTML = '<div class="empty">Todavía no tienes trámites.<br>Elige uno en la portada y se abre el chat con el gestor de trámites.<br><br>Cuando tu documento esté listo lo verás aquí en vista previa, y podrás descargarlo en cuanto se confirme tu pago.</div>';
+      list.innerHTML = '<div class="empty-card">' +
+        '<div class="ec-ic"><svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1 1 0 01-1 1H6a1 1 0 01-1-1V4.5a1 1 0 011-1z"/><path d="M14 3.6V8h4"/><path d="M8.4 13.6l1.6 1.6 3.2-3.4"/></svg></div>' +
+        '<h3>Todavía no tienes trámites</h3>' +
+        '<p>Elige una opción en la portada y se abre el chat con el gestor de trámites.</p>' +
+        '<p>Cuando tu documento esté listo lo verás aquí en vista previa, y podrás descargarlo en cuanto se confirme tu pago.</p>' +
+        '</div>';
       return;
     }
     list.innerHTML = items.map((t) => {

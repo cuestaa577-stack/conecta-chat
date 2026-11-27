@@ -1691,3 +1691,29 @@ body.con-actualizacion .view.active { padding-top: 54px; }
 .stat .l, .ref-counter, .req-mini i {
   font-size: 13.5px;
 }
+
+/* ================= v8.3: aviso de "todavia no tienes tramites" legible ================= */
+
+/* Antes el aviso iba suelto encima de la foto de fondo, en gris claro y letra
+   pequena. Ahora va en una tarjeta blanca, con titulo azul y el texto mas
+   grande y oscuro, para que se lea sin esfuerzo. */
+.empty-card {
+  margin: 16px 14px; padding: 24px 20px; text-align: center;
+  background: #fff; border: 1px solid var(--border); border-radius: 18px;
+  box-shadow: 0 8px 22px rgba(11, 27, 58, .1);
+}
+.empty-card .ec-ic {
+  width: 52px; height: 52px; margin: 0 auto 12px; border-radius: 15px;
+  background: var(--blue-soft); color: var(--navy);
+  display: flex; align-items: center; justify-content: center;
+}
+.empty-card .ec-ic svg { width: 26px; height: 26px; }
+.empty-card h3 {
+  margin: 0 0 8px; font-size: 18px; color: var(--navy);
+  letter-spacing: -.01em; line-height: 1.25;
+}
+.empty-card p { margin: 0 0 10px; font-size: 15px; line-height: 1.55; color: #2f4258; }
+.empty-card p:last-child { margin-bottom: 0; }
+
+/* Los avisos vacios del resto de la app tambien un poco mas oscuros. */
+.empty { color: #3d5068; }
