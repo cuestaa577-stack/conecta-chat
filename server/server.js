@@ -4378,7 +4378,13 @@ wss.on('connection', (ws, req) => {
   try { await migrarArchivosPesados(); } catch (e) { console.error('[archivos] ' + e.message); }
   /* Avisos de cita: un dia antes y el mismo dia. Se revisan al arrancar y cada 10 minutos. */
   try { avisarCitas(); } catch (e) { console.error('Avisos de cita:', e.message); }
-  setInterval(() => { try { avisarCitas(); } catch (e) { console.error('Avisos de cita:', e.message); } }, 10 * 60 * 1000);
+  /* Cada minuto: cancela las citas del dia que pasaron 10 minutos sin
+     confirmarse y revisa si toca avisar. Asi no depende de que alguien
+     abra la aplicacion. */
+  setInterval(() => {
+    try { revisarCitas(); } catch (e) { console.error('Cancelar citas:', e.message); }
+    try { avisarCitas(); } catch (e) { console.error('Avisos de cita:', e.message); }
+  }, 60 * 1000);
   server.listen(PORT, () => {
     console.log('Tramites Venezolanos en Linea escuchando en el puerto ' + PORT);
     console.log('Persistencia: ' + (supabase ? 'Supabase (permanente)' : 'archivo local (se borra al reiniciar)'));
