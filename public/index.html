@@ -595,6 +595,21 @@
   <img id="viewerImg" alt="" />
 </div>
 
+<!-- Borrar un mensaje: solo el gestor de tramites. Dos alcances. -->
+<div class="sheet hidden" id="borrarMsgSheet">
+  <div class="sheet-card">
+    <div class="sheet-head">
+      <span>Borrar mensaje</span>
+      <button class="iconbtn" onclick="App.cerrarBorrarMensaje()">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <button class="btn danger" onclick="App.borrarMensaje('mi')">Borrar para mi</button>
+    <button class="btn danger" onclick="App.borrarMensaje('todos')">Borrar para todos</button>
+    <button class="btn ghost" onclick="App.cerrarBorrarMensaje()">Cancelar</button>
+  </div>
+</div>
+
 <!-- Instalar la app -->
 <!-- Aviso para activar las notificaciones -->
 <div class="notif-banner hidden" id="notifBanner">

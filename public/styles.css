@@ -524,6 +524,21 @@ body::before {
 }
 .bubble.mine .meta { color: rgba(255, 255, 255, .82); }
 .bubble .meta .tick { font-size: 13px; line-height: 1; }
+/* Estado real del mensaje: enviado, recibido o leido. */
+.bubble .meta .estado-msg {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; font-weight: 600; letter-spacing: .1px;
+}
+.bubble.mine .meta .estado-msg.enviado { color: rgba(255, 255, 255, .72); }
+.bubble.mine .meta .estado-msg.recibido { color: rgba(255, 255, 255, .88); }
+.bubble.mine .meta .estado-msg.leido { color: #bfe3ff; }
+.bubble.mine .meta .estado-msg.leido .tick { color: #7fd0ff; }
+.bubble .meta .tick.enviando { opacity: .7; }
+/* El gestor puede tocar una burbuja para borrarla. */
+.bubble.borrable { cursor: pointer; }
+.bubble.borrable:active { filter: brightness(.96); }
+#borrarMsgSheet .btn { width: 100%; margin-top: 8px; }
+#borrarMsgSheet .btn.danger { background: #b42318; color: #fff; }
 .bubble img.media, .bubble video.media { max-width: 100%; border-radius: 12px; display: block; margin-bottom: 4px; }
 .bubble .gone { opacity: .6; font-style: italic; }
 .bubble .file-link { display: flex; align-items: center; gap: 8px; color: inherit; text-decoration: none; font-weight: 700; }

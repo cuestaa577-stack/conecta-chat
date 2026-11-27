@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v9.6';
+  const APP_VERSION = 'v9.7';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -1702,6 +1702,8 @@ const App = (() => {
        la cara de quien estaba escribiendo. */
     const fotoMia = (state.me && state.me.avatar) || '';
     const nombreMio = (state.me && state.me.name) || 'Yo';
+    const otroId = other ? other.id : null;
+    const soyAdmin = !!(state.me && state.me.role === 'admin');
 
     let html = '';
     let dia = '';
@@ -1742,9 +1744,26 @@ const App = (() => {
         </div>`;
       } else inner = esc(m.text || '');
 
-      const marca = mine
-        ? (m.pending ? '<span class="tick">&#8226;</span>' : '<span class="tick">&#10003;</span>')
-        : '';
+      /* Estado real del mensaje propio, junto a la hora:
+         reloj = enviandose, un chulo = enviado, dos chulos grises = recibido,
+         dos chulos azules = leido. Ademas se escribe el texto para que no
+         dependa de interpretar el icono. */
+      let marca = '';
+      if (mine) {
+        if (m.pending) {
+          marca = '<span class="tick enviando" title="Enviando">&#8226;</span>';
+        } else {
+          const leido = !!(otroId && (m.readBy || []).includes(otroId));
+          const recibido = leido || !!(otroId && (m.deliveredBy || []).includes(otroId));
+          if (leido) {
+            marca = '<span class="estado-msg leido" title="Mensaje leido"><span class="tick">&#10003;&#10003;</span>Mensaje leido</span>';
+          } else if (recibido) {
+            marca = '<span class="estado-msg recibido" title="Mensaje recibido"><span class="tick">&#10003;&#10003;</span>Mensaje recibido</span>';
+          } else {
+            marca = '<span class="estado-msg enviado" title="Enviado"><span class="tick">&#10003;</span>Enviado</span>';
+          }
+        }
+      }
       const hora = `<span class="meta">${clock(m.ts)}${marca}</span>`;
       const avatar = mine
         ? (pegadoArriba
@@ -1754,12 +1773,23 @@ const App = (() => {
             ? '<div class="b-avatar hueco"></div>'
             : `<div class="b-avatar" data-avatar="${esc(fotoOtro)}" data-nombre="${esc(nombreOtro)}">${fotoOtro ? '' : initials(nombreOtro)}</div>`);
 
-      html += `<div class="msg-row ${mine ? 'mine' : 'theirs'}${pegadoArriba ? ' pegado' : ''}">${mine ? '' : avatar}<div class="${clases.join(' ')}">${inner}${hora}</div>${mine ? avatar : ''}</div>`;
+      html += `<div class="msg-row ${mine ? 'mine' : 'theirs'}${pegadoArriba ? ' pegado' : ''}">${mine ? '' : avatar}<div class="${clases.join(' ')}" data-msg="${esc(m.id)}" data-mine="${mine ? '1' : '0'}">${inner}${hora}</div>${mine ? avatar : ''}</div>`;
     });
     body.innerHTML = html;
     body.querySelectorAll('.b-avatar[data-avatar]').forEach((el) => {
       pintarAvatar(el, el.getAttribute('data-avatar'), el.getAttribute('data-nombre'));
     });
+    /* El gestor de tramites puede borrar un mensaje: se toca la burbuja y sale
+       la hoja con "Borrar para mi" y "Borrar para todos". La persona no la ve. */
+    if (soyAdmin) {
+      body.querySelectorAll('.bubble[data-msg]').forEach((el) => {
+        el.classList.add('borrable');
+        el.addEventListener('click', (ev) => {
+          if (ev.target.closest('a, img, video')) return;
+          abrirBorrarMensaje(el.getAttribute('data-msg'));
+        });
+      });
+    }
     body.scrollTop = body.scrollHeight;
   }
 
@@ -1768,6 +1798,40 @@ const App = (() => {
     $('#viewer').classList.remove('hidden');
   }
   function closeViewer() { $('#viewer').classList.add('hidden'); }
+
+  /* ------------------- borrar un mensaje (solo el gestor) ------------------- */
+  let msgABorrar = null;
+
+  function abrirBorrarMensaje(msgId) {
+    if (!msgId) return;
+    msgABorrar = msgId;
+    const hoja = $('#borrarMsgSheet');
+    if (hoja) hoja.classList.remove('hidden');
+  }
+
+  function cerrarBorrarMensaje() {
+    msgABorrar = null;
+    const hoja = $('#borrarMsgSheet');
+    if (hoja) hoja.classList.add('hidden');
+  }
+
+  async function borrarMensaje(modo) {
+    const msgId = msgABorrar;
+    const chatId = state.currentChatId;
+    cerrarBorrarMensaje();
+    if (!msgId || !chatId) return;
+    try {
+      await api('/api/chats/' + encodeURIComponent(chatId) + '/mensajes/' + encodeURIComponent(msgId) + '/borrar', {
+        method: 'POST',
+        body: JSON.stringify({ modo: modo === 'todos' ? 'todos' : 'mi' }),
+      });
+      const lista = state.messages[chatId] || [];
+      const i = lista.findIndex((m) => m.id === msgId);
+      if (i >= 0) lista.splice(i, 1);
+      renderMessages();
+      toast(modo === 'todos' ? 'Mensaje borrado para todos' : 'Mensaje borrado para ti');
+    } catch (e) { toast(e.message, 'bad'); }
+  }
 
   function sendText() {
     const box = $('#chatText');
@@ -4421,6 +4485,35 @@ const App = (() => {
              despues del ultimo mensaje. */
           clearTimeout(recargaChatsTimer);
           recargaChatsTimer = setTimeout(() => { loadChats(); }, 400);
+        } else if (m.type === 'message:delivered') {
+          /* El otro lado recibio los mensajes: se marca en la burbuja. */
+          const lista = state.messages[m.chatId] || [];
+          (m.messageIds || []).forEach((id) => {
+            const x = lista.find((y) => y && y.id === id);
+            if (x) {
+              if (!x.deliveredBy) x.deliveredBy = [];
+              if (!x.deliveredBy.includes(m.userId)) x.deliveredBy.push(m.userId);
+            }
+          });
+          if (m.chatId === state.currentChatId) renderMessages();
+        } else if (m.type === 'message:read') {
+          /* Leidos: dos chulos azules y "Mensaje leido". */
+          const lista = state.messages[m.chatId] || [];
+          (m.messageIds || []).forEach((id) => {
+            const x = lista.find((y) => y && y.id === id);
+            if (x) {
+              if (!x.deliveredBy) x.deliveredBy = [];
+              if (!x.deliveredBy.includes(m.userId)) x.deliveredBy.push(m.userId);
+              if (!x.readBy) x.readBy = [];
+              if (!x.readBy.includes(m.userId)) x.readBy.push(m.userId);
+            }
+          });
+          if (m.chatId === state.currentChatId) renderMessages();
+        } else if (m.type === 'message:deleted') {
+          const lista = state.messages[m.chatId] || [];
+          const i = lista.findIndex((x) => x && x.id === m.messageId);
+          if (i >= 0) lista.splice(i, 1);
+          if (m.chatId === state.currentChatId) renderMessages();
         } else if (m.type === 'presence') {
           /* Se conecto o se desconecto: se actualiza la conversacion y la
              cabecera sin recargar nada. */
@@ -6162,6 +6255,7 @@ const App = (() => {
     pickOption, pickGrade, continuarPrecio, pickBlood, guardarDatosFlow, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
     openProfile, pickAvatar, saveProfileChanges, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat, borrarChatDeLista,
+    abrirBorrarMensaje, cerrarBorrarMensaje, borrarMensaje,
     openAdmin, openChatFromAdmin, openFirstChat,
     adminTab, adminIr, adminFiltrar, adminBuscarPersona, adminBuscarTramite, salirPanel,
     viewImage, closeViewer, logout, notifActivar, ocultarNotifBanner,

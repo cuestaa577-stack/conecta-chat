@@ -1877,7 +1877,8 @@ app.delete('/api/account-borrado-anterior', auth, (req, res) => {
 /* --- chats --- */
 function chatView(chat, forUserId) {
   const members = chat.members.map((id) => db.users[id]).filter(Boolean).map(publicUser);
-  const msgs = db.messages[chat.id] || [];
+  /* Los mensajes que esta persona borro "para mi" no cuentan ni se muestran. */
+  const msgs = (db.messages[chat.id] || []).filter((m) => !(m.deletedFor || []).includes(forUserId));
   const last = msgs.length ? msgs[msgs.length - 1] : null;
   const other = chat.type === 'direct' ? members.find((m) => m.id !== forUserId) || null : null;
   const unread = msgs.filter((m) => m.senderId !== forUserId && !(m.readBy || []).includes(forUserId)).length;
@@ -1940,6 +1941,7 @@ app.post('/api/chats/:id/mensaje', auth, (req, res) => {
     name: '',
     duration: 0,
     ts: now(),
+    deliveredBy: [req.user.id],
     readBy: [req.user.id],
   };
   if (!db.messages[chat.id]) db.messages[chat.id] = [];
@@ -2046,6 +2048,35 @@ app.delete('/api/chats/:id', auth, (req, res) => {
   res.json({ ok: true });
 });
 
+/* Borrar un mensaje. Solo el gestor de tramites (administrador) puede hacerlo,
+   y con dos alcances: "mi" (solo desaparece de su vista) o "todos" (se borra
+   de la conversacion para las dos partes). */
+app.post('/api/chats/:id/mensajes/:msgId/borrar', auth, (req, res) => {
+  const chat = db.chats[req.params.id];
+  if (!chat || !Array.isArray(chat.members) || !chat.members.includes(req.user.id)) {
+    return res.status(404).json({ error: 'Conversacion no encontrada' });
+  }
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Solo el gestor de tramites puede borrar mensajes' });
+  }
+  const modo = (req.body && req.body.modo) === 'todos' ? 'todos' : 'mi';
+  const lista = db.messages[chat.id] || [];
+  const i = lista.findIndex((m) => m.id === req.params.msgId);
+  if (i < 0) return res.status(404).json({ error: 'Mensaje no encontrado' });
+  if (modo === 'todos') {
+    lista.splice(i, 1);
+    save();
+    chat.members.forEach((mem) => sendToUser(mem, { type: 'message:deleted', chatId: chat.id, messageId: req.params.msgId, modo: 'todos' }));
+  } else {
+    const m = lista[i];
+    if (!m.deletedFor) m.deletedFor = [];
+    if (!m.deletedFor.includes(req.user.id)) m.deletedFor.push(req.user.id);
+    save();
+    sendToUser(req.user.id, { type: 'message:deleted', chatId: chat.id, messageId: m.id, modo: 'mi' });
+  }
+  res.json({ ok: true, modo });
+});
+
 /* --- mensajes --- */
 /* Solo el gestor de trámites (administrador) puede mandar o quitar el menu de
    requisitos de un chat. */
@@ -2142,12 +2173,25 @@ app.get('/api/chats/:id/messages', auth, (req, res) => {
       return res.status(404).json({ error: 'Chat no encontrado' });
     }
   }
-  const messages = db.messages[chat.id] || [];
-  messages.forEach((m) => {
+  /* Abrir la conversacion equivale a recibir y leer: se marcan las dos cosas
+     para que el otro lado vea "Mensaje recibido" y "Mensaje leido". */
+  const todos = db.messages[chat.id] || [];
+  const entregados = [];
+  const leidos = [];
+  todos.forEach((m) => {
+    if (!m.deliveredBy) m.deliveredBy = [m.senderId];
+    if (!m.deliveredBy.includes(req.user.id)) { m.deliveredBy.push(req.user.id); entregados.push(m.id); }
     if (!m.readBy) m.readBy = [];
-    if (!m.readBy.includes(req.user.id)) m.readBy.push(req.user.id);
+    if (!m.readBy.includes(req.user.id)) { m.readBy.push(req.user.id); leidos.push(m.id); }
   });
   save();
+  if (entregados.length) {
+    chat.members.filter((x) => x !== req.user.id).forEach((x) => sendToUser(x, { type: 'message:delivered', chatId: chat.id, messageIds: entregados, userId: req.user.id, ts: now() }));
+  }
+  if (leidos.length) {
+    chat.members.filter((x) => x !== req.user.id).forEach((x) => sendToUser(x, { type: 'message:read', chatId: chat.id, messageIds: leidos, userId: req.user.id, ts: now() }));
+  }
+  const messages = todos.filter((m) => !(m.deletedFor || []).includes(req.user.id));
   res.json({ messages, chat: chatView(chat, req.user.id), requisitos: chat.requisitos || { habilitado: false } });
 });
 
@@ -2712,7 +2756,7 @@ function mensajeDeAviso(chatId, autorId, texto) {
   const chat = db.chats[chatId];
   if (!chat) return false;
   if (!db.messages[chat.id]) db.messages[chat.id] = [];
-  const m = { id: uid('m_'), chatId: chat.id, senderId: autorId, type: 'text', text: texto, ts: now(), readBy: [autorId] };
+  const m = { id: uid('m_'), chatId: chat.id, senderId: autorId, type: 'text', text: texto, ts: now(), deliveredBy: [autorId], readBy: [autorId] };
   db.messages[chat.id].push(m);
   chat.updatedAt = now();
   chat.members.forEach((mem) => sendToUser(mem, { type: 'message:new', message: m, chatId: chat.id }));
@@ -4371,6 +4415,30 @@ app.post('/api/push/unsubscribe', auth, (req, res) => {
   res.json({ ok: true });
 });
 
+/* Marca como recibidos todos los mensajes que le escribieron a esta persona y
+   avisa a quien los mando, para que vea "Mensaje recibido" sin recargar. */
+function marcarEntregados(userId) {
+  const cambios = [];
+  Object.keys(db.chats).forEach((chatId) => {
+    const chat = db.chats[chatId];
+    if (!chat || !Array.isArray(chat.members) || !chat.members.includes(userId)) return;
+    const ids = [];
+    (db.messages[chatId] || []).forEach((m) => {
+      if (m.senderId === userId) return;
+      if (!m.deliveredBy) m.deliveredBy = [m.senderId];
+      if (!m.deliveredBy.includes(userId)) { m.deliveredBy.push(userId); ids.push(m.id); }
+    });
+    if (ids.length) cambios.push({ chatId, ids });
+  });
+  if (!cambios.length) return;
+  save();
+  cambios.forEach((c) => {
+    const chat = db.chats[c.chatId];
+    if (!chat) return;
+    chat.members.forEach((mem) => sendToUser(mem, { type: 'message:delivered', chatId: c.chatId, messageIds: c.ids, userId, ts: now() }));
+  });
+}
+
 function sendToUser(userId, payload) {
   const set = sockets.get(userId);
   if (!set) return;
@@ -4392,6 +4460,8 @@ wss.on('connection', (ws, req) => {
   sockets.get(userId).add(ws);
   db.users[userId].lastSeen = now();
   save();
+  /* Al conectarse, todo lo que le habian escrito queda como recibido. */
+  try { marcarEntregados(userId); } catch (e) { console.error('Entregados:', e.message); }
 
   const announce = () => {
     Object.keys(db.chats).forEach((chatId) => {
@@ -4424,6 +4494,7 @@ wss.on('connection', (ws, req) => {
         name: String(msg.name || ''),
         duration: Number(msg.duration || 0),
         ts: now(),
+        deliveredBy: [userId],
         readBy: [userId]
       };
       if (!db.messages[chat.id]) db.messages[chat.id] = [];
@@ -4470,6 +4541,7 @@ wss.on('connection', (ws, req) => {
         text: nota || ('Requisitos para ' + (servicio || 'tu tramite')),
         servicio: servicio,
         ts: now(),
+        deliveredBy: [userId],
         readBy: [userId],
       });
       chat.updatedAt = now();
@@ -4500,15 +4572,23 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    if (msg.type === 'read') {
+    /* El cliente manda "chat:read" y antes el servidor solo escuchaba "read":
+       por eso el acuse de lectura nunca llegaba. Ahora se aceptan los dos. */
+    if (msg.type === 'read' || msg.type === 'chat:read') {
       const chat = db.chats[msg.chatId];
       if (!chat || !chat.members.includes(userId)) return;
+      const ids = [];
       (db.messages[chat.id] || []).forEach((m) => {
+        if (!m.deliveredBy) m.deliveredBy = [m.senderId];
+        if (!m.deliveredBy.includes(userId)) m.deliveredBy.push(userId);
         if (!m.readBy) m.readBy = [];
-        if (!m.readBy.includes(userId)) m.readBy.push(userId);
+        if (!m.readBy.includes(userId)) { m.readBy.push(userId); ids.push(m.id); }
       });
       save();
-      chat.members.filter((m) => m !== userId).forEach((m) => sendToUser(m, { type: 'read', chatId: chat.id, userId }));
+      if (ids.length) {
+        chat.members.filter((m) => m !== userId).forEach((m) => sendToUser(m, { type: 'message:read', chatId: chat.id, messageIds: ids, userId, ts: now() }));
+      }
+      return;
     }
   });
 
