@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v9.1';
+  const APP_VERSION = 'v9.2';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -866,12 +866,11 @@ const App = (() => {
        el mismo no se toca nada, para no recargar el logo ni el boton. */
     if (el.dataset.firma === texto && el.style.display === 'flex') return;
     el.dataset.firma = texto;
+    /* Sin boton de altavoz: la voz del saludo se reproduce sola al entrar y en
+       el primer toque de la persona (el telefono exige ese toque para sonar). */
     el.innerHTML =
       '<img class="greet-logo" src="logos/saime.png" alt="SAIME" />' +
-      '<span class="greet-txt">' + esc(texto) + '</span>' +
-      '<button class="greet-voice" type="button" aria-label="Escuchar el saludo" onclick="App.repetirSaludo()">' +
-      '<svg viewBox="0 0 24 24"><path d="M4 9.5v5h3.2L12 18.5V5.5L7.2 9.5H4z"/>' +
-      '<path d="M15.5 8.6a4.6 4.6 0 010 6.8M18 6a8 8 0 010 12"/></svg></button>';
+      '<span class="greet-txt">' + esc(texto) + '</span>';
     el.style.display = 'flex';
   }
   let saludoTimer = null;
