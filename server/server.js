@@ -2497,7 +2497,8 @@ function citasDeTramites() {
   const out = [];
   Object.values(tramitesDb()).forEach((t) => {
     if (!t.cita || !t.cita.fecha || !t.cita.hora) return;
-    if (t.cita.estado === 'cancelada') return;
+    /* Las canceladas tambien se listan: sirven para ver que la persona tenia
+       cita y no la confirmo. Van marcadas como canceladas. */
     const owner = db.users[t.userId] || {};
     out.push({
       tramiteId: t.id,

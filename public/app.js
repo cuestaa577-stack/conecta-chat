@@ -2494,7 +2494,7 @@ const App = (() => {
     }
     const filas = lista.map((c) => {
       const color = c.estado === 'confirmada' ? 'ok' : 'hot';
-      const etiqueta = c.estado === 'confirmada' ? 'Confirmada' : 'Sin confirmar';
+      const etiqueta = c.estado === 'confirmada' ? 'Confirmada' : (c.estado === 'cancelada' ? 'Cancelada' : 'Sin confirmar');
       return '<div class="panel-row">'
         + '<div class="who"><b>' + esc(c.name) + '</b>'
         + '<small>' + esc(c.cedula || 'Sin cedula') + ' - ' + esc(c.servicio || 'Tramite') + (c.detalle ? ' - ' + esc(c.detalle) : '') + '</small>'
@@ -2522,11 +2522,16 @@ const App = (() => {
     /* Las citas se muestran en la bandeja: quien tiene cita sale marcado y
        ordenado por la cita mas proxima, despues de los mensajes sin leer. */
     const citasPorChat = {};
+    const citaDe = (conv) => {
+      if (!conv) return null;
+      if (conv.chatId && citasPorChat[conv.chatId]) return citasPorChat[conv.chatId];
+      return (d.citas || []).find((c) => c.userId && c.userId === conv.userId) || null;
+    };
     (d.citas || []).forEach((c) => { if (c.chatId) citasPorChat[c.chatId] = c; });
     const lista = (d.conversations || []).slice().sort((a, b) => {
       const na = Number(a.unread) || 0, nb = Number(b.unread) || 0;
       if (na !== nb) return nb - na;
-      const ca = citasPorChat[a.chatId], cb = citasPorChat[b.chatId];
+      const ca = citaDe(a), cb = citaDe(b);
       if (ca && cb) return ca.cuando - cb.cuando;
       if (ca) return -1;
       if (cb) return 1;
@@ -2545,7 +2550,7 @@ const App = (() => {
               </span>
               <span class="cc-last">${esc(c.lastText || 'Todavía no hay mensajes')}</span>
               <span class="cc-sub">${esc(c.country || 'Sin país')}${c.tramite ? ' · ' + esc([c.tramite.serviceLabel, c.tramite.subtypeLabel].filter(Boolean).join(' · ')) : ''}</span>
-            ${citasPorChat[c.chatId] ? `<span class="cc-cita"><b>Cita:</b> ${esc(textoCita(citasPorChat[c.chatId]))}</span>` : ''}
+            ${citaDe(c) ? `<span class="cc-cita"><b>Cita:</b> ${esc(textoCita(citaDe(c)))}${citaDe(c).estado === 'cancelada' ? ' (cancelada)' : ''}</span>` : ''}
             </span>
             ${c.unread ? `<span class="cc-badge">${c.unread}</span>` : `<span class="cc-count">${c.messages}</span>`}
           </button>`).join('')}</div>${lista.length ? '' : '<div class="panel-row"><span>Todavía nadie te ha escrito</span></div>'}
