@@ -824,11 +824,11 @@ body.has-install #chatMessages { padding-bottom: 96px; }
    El boton solo existe cuando el gestor de trámites habilito los requisitos en
    esta conversacion. Queda por encima de la caja de escribir, a la derecha. */
 .req-fab {
-  position: absolute; right: 14px; bottom: 86px; z-index: 60;
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 11px 15px; border: 0; border-radius: 999px;
-  background: linear-gradient(135deg, #12805c, #0d6650); color: #fff;
-  font: inherit; font-size: 13.5px; font-weight: 700;
+  position: absolute; left: 12px; right: 12px; bottom: 82px; z-index: 60;
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  padding: 12px 16px; border: 0; border-radius: 14px;
+  background: linear-gradient(135deg, #16a34a, #128043); color: #fff;
+  font: inherit; font-size: 13.5px; font-weight: 800; line-height: 1.25;
   box-shadow: 0 10px 24px rgba(13, 102, 80, .34), 0 2px 6px rgba(11, 27, 58, .16);
   cursor: pointer;
 }
@@ -837,7 +837,8 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 /* Cuando el aviso de notificaciones esta en pantalla, el boton sube para no
    quedar debajo: el aviso es fijo y ocupa el mismo alto. Antes el boton se
    veia pero no se podia pulsar porque el aviso lo tapaba. */
-.req-fab.subir { bottom: 152px; }
+.req-fab.subir { bottom: 148px; }
+.req-fab span { flex: 1; }
 
 .req-card { max-height: 92vh; overflow-y: auto; position: relative; }
 /* Marca de agua del tramite en la esquina del apartado de requisitos. Va

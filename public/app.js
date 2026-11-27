@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v8.7';
+  const APP_VERSION = 'v8.8';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -101,7 +101,7 @@ const App = (() => {
     if (String(service || '').toLowerCase() === 'antecedentes') {
       const pais = String(country === undefined ? (state.me && state.me.country) : country || '').trim();
       const cambio = CAMBIO_USD[pais] || 0;
-      const base = 'USD ' + numeroConPuntos(monto);
+      const base = 'USD $' + numeroConPuntos(monto) + '.00';
       if (!cambio || cambio === 1) return base;
       const m = monedaDe(pais);
       if (!m) return base;
@@ -109,6 +109,8 @@ const App = (() => {
       return base + ' (aprox. ' + m + ' ' + numeroConPuntos(aprox) + ')';
     }
     const m = monedaDe(country);
+    /* Ecuador cobra en dolares: signo $ y centavos, por ejemplo USD $25.00. */
+    if (m === 'USD') return 'USD $' + numeroConPuntos(monto) + '.00';
     return (m ? m + ' ' : '') + numeroConPuntos(monto);
   }
 
@@ -4695,10 +4697,20 @@ const App = (() => {
     return ['foto', 'firma', 'huella'];
   }
 
+  /* Texto del boton verde segun lo que pida el tramite. */
+  function reqTextoBoton(servicio) {
+    const pasos = reqPasosDe(servicio);
+    if (pasos.length === 1 && pasos[0] === 'datos') return 'Presione aquí para continuar con tus datos personales';
+    if (pasos.indexOf('firma') < 0 && pasos.indexOf('huella') < 0) return 'Presione aquí para continuar con la toma de tu foto';
+    return 'Presione aquí para continuar con la toma de foto, firma y huella';
+  }
+
   function reqVisible(si) {
     const b = document.getElementById('reqFab');
     if (!b) return;
     REQ.habilitado = !!si;
+    const etiqueta = b.querySelector('span');
+    if (etiqueta) etiqueta.textContent = reqTextoBoton(REQ.servicio);
     b.classList.toggle('hidden', !si);
     /* Si el aviso de notificaciones esta en pantalla, el boton sube para no
        quedar debajo de el. */
@@ -6029,7 +6041,7 @@ const App = (() => {
 
   return {
     authTab, submitLogin, submitRegister, showAdminAuth, submitAdminLogin, submitRecover,
-    back, pickService, pickConfirm, pickModo, citaMes, pickCita, continuarAgenda,
+    back, pickService, pickConfirm, pickModo, citaMes, pickCita, pickHora, continuarAgenda,
     pickOption, pickGrade, continuarPrecio, pickBlood, guardarDatosFlow, startChat,
     openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
     openProfile, pickAvatar, saveProfileChanges, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat,
