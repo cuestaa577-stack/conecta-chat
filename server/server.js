@@ -1261,6 +1261,57 @@ function adminOnly(req, res, next) {
 const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '25mb' }));
+
+/* =====================================================================
+   AVISO EN VIVO
+   ---------------------------------------------------------------------
+   Cada vez que alguien cambia algo (manda un mensaje, guarda un dato, crea
+   un tramite, toca un ajuste) el servidor empuja el aviso por el WebSocket a
+   TODAS las pestanas abiertas. La app que lo recibe vuelve a pedir solo lo
+   que cambio y repinta esa parte: la pantalla se actualiza sola, en el acto,
+   sin recargar y sin que la persona cierre y abra nada.
+
+   Se agrupan los avisos de 250 ms para que una rafaga de cambios (subir tres
+   fotos, por ejemplo) no dispare tres refrescos seguidos.
+   ===================================================================== */
+/* Lo que NO se avisa: cosas privadas de cada persona (entrar, registrarse,
+   recuperar la clave, suscribirse a los avisos) y las que no cambian nada que
+   otra pestana tenga que repintar. Avisarlas solo gastaria datos y bateria. */
+const VIVO_IGNORAR = ['/api/visit', '/api/health', '/api/geo', '/api/me',
+  '/api/push/subscribe', '/api/push/unsubscribe',
+  '/api/register', '/api/login', '/api/admin/login', '/api/verify-email',
+  '/api/resend-code', '/api/forgot', '/api/recover', '/api/reset-password'];
+let vivoTimer = null;
+const vivoPendiente = new Set();
+
+function avisarEnVivo(ruta) {
+  if (!ruta) return;
+  if (VIVO_IGNORAR.some((p) => ruta === p || ruta.indexOf(p + '/') === 0)) return;
+  vivoPendiente.add(ruta);
+  if (vivoTimer) return;
+  vivoTimer = setTimeout(() => {
+    vivoTimer = null;
+    const rutas = Array.from(vivoPendiente);
+    vivoPendiente.clear();
+    try {
+      if (typeof sockets === 'undefined' || !sockets) return;
+      const raw = JSON.stringify({ type: 'live:changed', paths: rutas, ts: Date.now() });
+      sockets.forEach((set) => set.forEach((ws) => {
+        if (ws.readyState === 1) { try { ws.send(raw); } catch (e) {} }
+      }));
+    } catch (e) { /* si el WebSocket aun no arranco, no pasa nada */ }
+  }, 250);
+}
+
+/* Un solo punto de enganche: cualquier peticion que CAMBIA algo y termina bien
+   avisa a los demas. Asi no hay que acordarse de avisar en cada endpoint. */
+app.use((req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  res.on('finish', () => {
+    if (res.statusCode >= 200 && res.statusCode < 400) avisarEnVivo(req.path);
+  });
+  next();
+});
 /* Version publicada: se calcula del propio codigo (APP_VERSION y CACHE), de modo
    que el aviso de "hay una actualizacion" nunca queda pegado por un archivo viejo. */
 app.get('/version.json', (req, res) => {

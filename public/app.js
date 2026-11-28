@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v9.17';
+  const APP_VERSION = 'v9.18';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -4753,6 +4753,74 @@ const App = (() => {
     panelRefreshTimer = setTimeout(() => { refreshAdminLive(); loadAdminTramites(); }, 350);
   }
 
+  /* --------------------- cambios en vivo (sin recargar) ---------------------
+     El servidor avisa por el WebSocket cada vez que alguien cambia algo. Aqui
+     se vuelve a pedir SOLO lo que cambio y se repinta esa parte: la pantalla
+     se pone al dia sola, en el acto, sin recargar ni cerrar la aplicacion. */
+  let vivoTimer = null;
+  const vivoRutas = new Set();
+
+  function aplicarCambioEnVivo(rutas) {
+    (rutas || []).forEach((r) => vivoRutas.add(String(r || '')));
+    if (vivoTimer) return;
+    vivoTimer = setTimeout(() => {
+      vivoTimer = null;
+      const lista = Array.from(vivoRutas);
+      vivoRutas.clear();
+      refrescarLoCambiado(lista);
+    }, 220);
+  }
+
+  function refrescarLoCambiado(rutas) {
+    if (!state.token) return;
+    const toca = (prefijo) => rutas.some((r) => r === prefijo || r.indexOf(prefijo + '/') === 0);
+    const vistaActiva = (id) => {
+      const v = document.getElementById(id);
+      return !!(v && v.classList.contains('active'));
+    };
+    /* Una hoja abierta (editar datos, adjuntar, borrar) no se toca: repintar
+       por debajo le borraria a la persona lo que esta escribiendo. */
+    const hojaAbierta = !!document.querySelector('.sheet:not(.hidden)');
+
+    if (toca('/api/chats') || toca('/api/admin') || toca('/api/tramites')) {
+      try { loadChats(); } catch (e) {}
+    }
+
+    /* Conversacion abierta: se recargan los mensajes conservando el scroll, para
+       que no salte al final si la persona esta leyendo mas arriba. */
+    if (state.currentChatId && (toca('/api/chats') || toca('/api/tramites'))) {
+      const body = $('#chatBody');
+      const abajo = body ? (body.scrollHeight - body.scrollTop - body.clientHeight < 80) : true;
+      const pos = body ? body.scrollTop : 0;
+      loadMessages(state.currentChatId).then(() => {
+        const b = $('#chatBody');
+        if (!b) return;
+        b.scrollTop = abajo ? b.scrollHeight : pos;
+      }).catch(() => {});
+    }
+
+    if (toca('/api/tramites') || toca('/api/admin')) {
+      try { loadTramites(); } catch (e) {}
+    }
+
+    if (toca('/api/profile') || toca('/api/me')) {
+      try {
+        api('/api/me').then((d) => {
+          if (d && d.user) { state.me = d.user; renderMyData(); refrescarAvatares(); }
+        }).catch(() => {});
+      } catch (e) {}
+    }
+
+    if (toca('/api/referencias')) { try { cargarReferencias(); } catch (e) {} }
+
+    if (toca('/api/admin')) refrescarPanelSiAdmin();
+
+    if (!hojaAbierta) {
+      if (vistaActiva('tramitesView')) { try { renderTramites(); } catch (e) {} }
+      if (vistaActiva('profileView')) { try { cargarDatosDelPerfil(); } catch (e) {} }
+    }
+  }
+
   function connectWS() {
     if (!state.token) return;
     /* Si ya hay un socket abierto o conectandose, no se abre otro: antes cada
@@ -4772,6 +4840,8 @@ const App = (() => {
         if (m.type === 'message:new' || m.type === 'chat:new' || m.type === 'chat:updated'
           || m.type === 'tramite:new' || m.type === 'tramite:updated') refrescarPanelSiAdmin();
         if (m.type === 'admin:changed') { refrescarPanelSiAdmin(); return; }
+        /* Alguien cambio algo: la pantalla se pone al dia sola, sin recargar. */
+        if (m.type === 'live:changed') { aplicarCambioEnVivo(m.paths); return; }
         if (m.type === 'requisitos:on' || m.type === 'requisitos:off' || m.type === 'requisitos:entrega') {
           if (m.chatId) {
             const c = (state.chats || []).find((x) => x && x.id === m.chatId);
