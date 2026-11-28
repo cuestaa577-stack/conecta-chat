@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v9.12';
+  const APP_VERSION = 'v9.13';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -257,12 +257,16 @@ const App = (() => {
       { k: 'Numero Nequi', v: '3161154996' },
     ],
     'Pago Movil': [
-      { k: 'Metodo', v: 'Pago Movil' },
+      { k: 'Banco', v: 'Banesco' },
+      { k: 'Telefono', v: '0412 555 0134' },
+      { k: 'Cedula / RIF', v: 'V-12.345.678' },
+      { k: 'Titular', v: 'Enel Extranjero Venezolanos' },
     ],
     'Banco Estado': [
       { k: 'Banco', v: 'Banco Estado' },
       { k: 'Titular', v: 'Jesus Vives' },
       { k: 'RUT', v: '264610354' },
+      { k: 'Tipo de cuenta', v: 'Cuenta RUT' },
     ],
     'Banco Pichincha': [
       { k: 'Banco', v: 'Banco Pichincha' },
@@ -281,6 +285,15 @@ const App = (() => {
      datos fijos (los generales, que se explican por el chat). */
   function datosDePago(metodo) {
     return PAY_DETAILS[String(metodo || '')] || [];
+  }
+
+  /* Ejemplo que aparece en la nota opcional, con el nombre del metodo que la
+     persona tiene delante: "Ej: pagué por Nequi", "Ej: pagué por Pago Movil"...
+     Asi el ejemplo siempre tiene sentido para su pais. */
+  function ejemploNotaPago(metodo) {
+    const m = String(metodo || '').trim();
+    if (!m) return 'Ej: pagu\u00e9 por Nequi';
+    return 'Ej: pagu\u00e9 por ' + m;
   }
 
   /* Bloque con los datos de la cuenta. Se pinta al elegir el metodo y se
@@ -2958,11 +2971,12 @@ const App = (() => {
     return `
         <div class="panel">
           <h3>Datos para el pago</h3>
-          <p class="pnote muted">Los ve la persona en su tramite, justo antes de enviar el comprobante.</p>
-          <label class="field"><span>Banco, cuenta, Pago Movil, monto...</span>
-            <textarea id="pagoInfoInput" rows="3" placeholder="Banco, cuenta, Pago Movil, monto...">${esc(info.pagoInfo || '')}</textarea>
+          <p class="pnote muted">Los ve la persona en su tramite, justo antes de enviar el comprobante. Cada pais tiene su cuenta ya configurada:</p>
+          ${adminDatosPagoPaisesHtml()}
+          <label class="field"><span>Nota adicional (opcional)</span>
+            <textarea id="pagoInfoInput" rows="3" placeholder="Ej: envia el comprobante antes de las 6 pm">${esc(info.pagoInfo || '')}</textarea>
           </label>
-          <button class="btn ghost" onclick="App.guardarPagoInfo()">Guardar datos de pago</button>
+          <button class="btn ghost" onclick="App.guardarPagoInfo()">Guardar nota</button>
         </div>
         <div class="panel">
           <h3>Correo de la aplicación</h3>
@@ -2986,6 +3000,28 @@ const App = (() => {
           <button class="btn primary" onclick="App.crearTramite()">Crear tramite</button>
           ${people.length ? '' : '<p class="pnote muted">Todavia no hay personas registradas.</p>'}
         </div>`;
+  }
+
+  /* Resumen de solo lectura de las cuentas de pago por pais, para que el
+     administrador vea de un golpe lo que tiene la persona en su pantalla. */
+  function adminDatosPagoPaisesHtml() {
+    const paises = ['Venezuela', 'Colombia', 'Chile', 'Ecuador'];
+    const bloques = paises.map((pais) => {
+      const metodos = metodosDePago(pais);
+      const filas = metodos.map((m) => {
+        const datos = datosDePago(m);
+        if (!datos.length) return '';
+        return '<div class="pay-pais-bloque"><b class="pay-pais-metodo">' + esc(m) + '</b>' +
+          datos.map((d) => '<div class="pay-dato"><span>' + esc(d.k) + '</span><b>' + esc(d.v) + '</b></div>').join('') +
+          '</div>';
+      }).join('');
+      return '<div class="pay-pais"><span class="pay-pais-nombre">' + esc(pais) + '</span>' + filas + '</div>';
+    }).join('');
+    const peru = metodosDePago('Peru');
+    const avisoPeru = '<div class="pay-pais"><span class="pay-pais-nombre">Peru</span>' +
+      '<p class="pnote muted">Sin cuenta configurada: la persona ve ' +
+      peru.map((m) => esc(m)).join(', ') + ' y el monto se acuerda por el chat.</p></div>';
+    return '<div class="pay-paises">' + bloques + avisoPeru + '</div>';
   }
 
   function adminTramitesShellHtml() {
@@ -3305,43 +3341,64 @@ const App = (() => {
         </div>`;
 
     /* La descarga solo existe con el pago confirmado. Mientras no lo este, el
-       boton queda inhabilitado con el texto que pidio la administradora. */
+       boton queda inhabilitado y se explica QUE falta: primero subir el
+       comprobante, despues esperar la validacion del gestor. Asi la persona
+       sabe en que punto esta y no piensa que la app "no funciona". */
+    const faltaQue = t.status === 'pago_en_revision'
+      ? 'Tu comprobante est&aacute; en revisi&oacute;n. En cuanto el gestor lo valide se habilita la descarga.'
+      : (t.status === 'rechazado'
+        ? 'Tu comprobante fue rechazado. Env&iacute;a uno nuevo para poder descargar.'
+        : 'Descarga inhabilitada hasta que hagas tu pago correspondiente y lo subas a la aplicaci&oacute;n para ser validado.');
     const descargaHtml = '<div class="panel-descarga-slot" id="descargaSlot">' + (esAdmin ? '' : (t.canDownload ? `
         <div class="panel ok-panel">
           <h3>Descarga</h3>
-          <p class="pnote">Tu pago está confirmado. Tu documento se entrega en <b>PDF</b> y ya puedes descargarlo.</p>
-          <p class="pnote nota-clara">Cada descarga queda registrada en el historial de tu trámite.</p>
+          <p class="pnote">Tu pago est&aacute; confirmado. Tu documento se entrega en <b>PDF</b> y ya puedes descargarlo.</p>
+          <p class="pnote nota-clara">Cada descarga queda registrada en el historial de tu tr&aacute;mite.</p>
           <a class="btn primary btn-descarga" href="${esc(archivoUrl(t.id, 'download'))}" download="${esc(nombreDescarga(t))}">${esc(textoDescarga(t))}</a>
         </div>` : `
         <div class="panel preview-panel locked">
           <h3>Descarga</h3>
-          <p class="pnote">Descarga inhabilitada hasta que hagas tu pago correspondiente.</p>
+          <p class="pnote">${faltaQue}</p>
           <button class="btn locked-btn" type="button" onclick="App.avisoDescarga()">
             <svg class="lock-ic" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="9.5" rx="2.2"/><path d="M8 10.5V8a4 4 0 018 0v2.5"/></svg>
-            Descarga inhabilitada
+            Descargar inhabilitada
           </button>
         </div>`)) + '</div>';
 
+
     let pagoHtml = '';
     if (t.canUploadProof) {
-      const info = state.pagoInfo
-        ? esc(state.pagoInfo).replace(/\n/g, '<br>')
-        : 'El gestor de trámites te indica por el chat los datos para el pago.';
-      const metodos = metodosDePago(state.me && state.me.country);
+      /* Los datos de la cuenta del pais van SIEMPRE a la vista, no solo si el
+         administrador escribio algo: Colombia (Nequi), Chile (Banco Estado),
+         Ecuador (Banco Pichincha) y Venezuela (Pago Movil) ya los tienen
+         configurados. Si el administrador dejo una nota extra, se muestra
+         debajo. */
+      const pais = (state.me && state.me.country) || '';
+      const metodos = metodosDePago(pais);
       const primero = metodos[0] || '';
+      const notaAdmin = state.pagoInfo
+        ? '<p class="pnote">' + esc(state.pagoInfo).replace(/\n/g, '<br>') + '</p>'
+        : '';
+      /* Monto exacto a transferir, para que la persona no tenga que adivinar
+         cuanto pagar. Viene del tramite (price.label, p. ej. "Bs 28.000"). */
+      const montoHtml = t.price && t.price.label
+        ? `<div class="pay-monto"><span>Monto a pagar</span><b>${esc(t.price.label)}</b></div>`
+        : '';
       pagoHtml = `
         <div class="panel pay-panel">
-          <h3>Cómo pagar</h3>
-          <p class="pnote">${info}</p>
-          <label class="field"><span>¿Con qué pagaste?</span>
+          <h3>C\u00f3mo pagar</h3>
+          <p class="pnote">Paga el tr\u00e1mite con el m\u00e9todo de tu pa\u00eds. Los datos de la cuenta est\u00e1n aqu\u00ed abajo.</p>
+          ${montoHtml}
+          <label class="field"><span>\u00bfCon qu\u00e9 vas a pagar?</span>
             <select id="pagoMetodo" onchange="App.cambioMetodoPago(this.value)">
               ${metodos.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join('')}
             </select>
           </label>
           <div id="pagoDatos">${datosPagoHtml(primero)}</div>
-          <label class="field"><span>Nota (opcional)</span><input id="pagoNota" type="text" placeholder="Ej: pagué por Pago Móvil" /></label>
+          ${notaAdmin}
+          <label class="field"><span>Nota (opcional)</span><input id="pagoNota" type="text" placeholder="${esc(ejemploNotaPago(primero))}" /></label>
           <button class="btn primary" onclick="App.subirComprobante()">Enviar mi comprobante de pago</button>
-          <p class="pnote muted">Adjunta una foto o un PDF del comprobante. El gestor de trámites lo revisa y te confirma la descarga.</p>
+          <p class="pnote muted">Adjunta una foto o un PDF del comprobante. El gestor de tr\u00e1mites lo valida y en ese momento se habilita tu descarga.</p>
         </div>`;
     } else if (t.payment) {
       const etiqueta = t.status === 'rechazado' ? 'Rechazado' : (t.status === 'aprobado' ? 'Aprobado' : 'En revisión');
@@ -4214,9 +4271,13 @@ const App = (() => {
 
   function avisoDescarga() {
     const t = (state.tramites || []).find((x) => x.id === state.currentTramiteId);
-    toast(t && t.status === 'pago_en_revision'
-      ? 'Tu comprobante está en revisión. Te habilitamos la descarga en cuanto se confirme tu pago.'
-      : 'La descarga se habilita cuando tu pago esté confirmado. Envía tu comprobante en esta misma pantalla.');
+    if (t && t.status === 'pago_en_revision') {
+      toast('Tu comprobante está en revisión. Te habilitamos la descarga en cuanto se valide tu pago.');
+    } else if (t && t.status === 'rechazado') {
+      toast('Tu comprobante fue rechazado. Envía uno nuevo aquí abajo para poder descargar.', 'bad');
+    } else {
+      toast('La descarga se habilita cuando se valide tu pago. Sube tu comprobante en esta misma pantalla.');
+    }
   }
 
   /* Al cambiar el metodo de pago se repintan los datos de la cuenta: el numero
@@ -4225,6 +4286,10 @@ const App = (() => {
   function cambioMetodoPago(metodo) {
     const box = document.getElementById('pagoDatos');
     if (box) box.innerHTML = datosPagoHtml(metodo);
+    /* El ejemplo de la nota sigue al metodo elegido: "Ej: pagué por Nequi",
+       "Ej: pagué por Banco Estado"... */
+    const nota = document.getElementById('pagoNota');
+    if (nota) nota.placeholder = ejemploNotaPago(metodo);
   }
 
   function subirComprobante() {

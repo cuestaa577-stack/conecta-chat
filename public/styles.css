@@ -1160,6 +1160,23 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .pay-dato span { font-size: 13px; color: #4e6076; }
 .pay-dato b { font-size: 15px; color: #12263f; letter-spacing: .2px; word-break: break-word; text-align: right; }
 
+/* Monto a pagar: el dato mas importante del panel, arriba y en grande. */
+.pay-monto {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  margin: 0 0 14px; padding: 11px 14px;
+  border: 1px solid #cfe0f5; border-radius: 12px;
+  background: linear-gradient(180deg, #eef6ff, #f7fbff);
+}
+.pay-monto span { font-size: 13px; color: #4e6076; }
+.pay-monto b { font-size: 19px; color: #12395f; letter-spacing: .2px; }
+
+/* Resumen de cuentas de pago por pais en el panel del administrador. */
+.pay-paises { display: flex; flex-direction: column; gap: 10px; margin: 0 0 14px; }
+.pay-pais { padding: 10px 13px; border: 1px solid #dbe6f3; border-radius: 12px; background: #f8fbff; }
+.pay-pais-nombre { display: block; font-size: 12px; font-weight: 800; letter-spacing: .7px; text-transform: uppercase; color: #4e7fb0; margin-bottom: 6px; }
+.pay-pais-bloque + .pay-pais-bloque { margin-top: 8px; }
+.pay-pais-metodo { display: block; font-size: 13.5px; color: #12395f; margin-bottom: 3px; }
+
 .admin-tramites { display: flex; flex-direction: column; gap: 12px; }
 .pills-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .admin-tramite { padding: 10px 0; border-bottom: 1px solid var(--border); }

@@ -3740,7 +3740,14 @@ app.get('/api/tramites/:id/download', auth, async (req, res) => {
   const t = tramiteDe(req);
   if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
   if (!tramitePuedeDescargar(t)) {
-    return res.status(403).json({ error: 'La descarga se habilita cuando el administrador confirma tu pago.' });
+    /* Se explica en que paso esta el tramite: la persona no debe quedarse con
+       la duda de si la app fallo o si falta algo de su parte. */
+    const motivo = t.status === 'pago_en_revision'
+      ? 'Tu comprobante esta en revision. La descarga se habilita cuando el gestor valide tu pago.'
+      : (t.status === 'rechazado'
+        ? 'Tu comprobante fue rechazado. Envia uno nuevo para poder descargar.'
+        : 'Descarga inhabilitada hasta que hagas tu pago y lo subas para ser validado.');
+    return res.status(403).json({ error: motivo, canUploadProof: t.status === 'listo' || t.status === 'rechazado' });
   }
   t.downloadCount = Number(t.downloadCount || 0) + 1;
   t.lastDownloadAt = now();
