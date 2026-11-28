@@ -265,6 +265,18 @@ body::before {
   align-items: center; justify-content: center; flex-shrink: 0; padding: 0;
 }
 .iconbtn:active { background: rgba(255, 255, 255, .22); }
+/* Boton de llamar en la cabecera del chat: mismo tamano que los demas iconos,
+   con un tono verde suave para que se distinga de eliminar. */
+#btnLlamar { color: #b7f7cf; }
+#btnLlamar:active { background: rgba(34, 197, 94, .28); }
+#btnLlamar[hidden] { display: none; }
+/* Cuando la cabecera lleva el boton de llamar hay un icono mas. Para que el
+   nombre de la persona no se corte mas de la cuenta, el boton de requisitos se
+   queda solo con su icono de camara (el titulo "Requisitos" se oculta). Se
+   gana mas espacio del que ocupa la llamada. */
+.topbar.con-llamar .req-admin-btn { padding: 7px 9px; }
+.topbar.con-llamar .req-admin-btn span { display: none; }
+.topbar.con-llamar .req-admin-btn svg { width: 18px; height: 18px; }
 .avatar-btn {
   background-color: var(--blue); font-weight: 700; font-size: 14.5px;
   background-size: cover; background-position: center; background-repeat: no-repeat;
@@ -430,9 +442,24 @@ body::before {
 .chat-del:active { background: #fef3f2; }
 .chat-del .ico { width: 20px; height: 20px; }
 .chat-row .grow { flex: 1; min-width: 0; }
-.chat-row .t { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.chat-row .t { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .chat-row .s { font-size: 13.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-row .time { font-size: 12.5px; color: var(--muted); }
+
+/* Icono del tramite de la conversacion (cedula / licencia / antecedentes).
+   Va en un chip blanco redondo: el logo institucional tiene colores claros y
+   sobre el fondo de la tarjeta se perderia. El chip le da contraste y lo hace
+   legible a 26px sin deformarlo (object-fit: contain). */
+.chat-ic-tramite {
+  width: 30px; height: 30px; flex: 0 0 auto; border-radius: 50%;
+  background: #fff; object-fit: contain; padding: 1.5px;
+  box-shadow: 0 0 0 1px rgba(16, 24, 40, .10), 0 1px 3px rgba(16, 24, 40, .10);
+  vertical-align: middle;
+}
+.chat-ic-tramite.sm { width: 24px; height: 24px; padding: 1px; }
+/* En la cabecera del chat el icono va dentro de la franja azul clara. */
+.chat-tramite { display: flex; align-items: center; gap: 8px; }
+.chat-tramite span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* En linea / hace cuanto se desconecto */
 .presencia {

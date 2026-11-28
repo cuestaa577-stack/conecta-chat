@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v9.18';
+  const APP_VERSION = 'v9.19';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -1689,6 +1689,28 @@ const App = (() => {
   }
   let presenciaTimer = null;
 
+  /* Icono del tramite de cada conversacion. Los tres logos ya estan en la app
+     (SAIME para cedula, INTT para licencia, Justicia y Paz para antecedentes);
+     aqui solo se recortaron al emblema para que se lean a tamano pequeno. */
+  const ICONO_TRAMITE = {
+    cedula: 'img/icon-cedula.png',
+    licencia: 'img/icon-licencia.png',
+    antecedentes: 'img/icon-antecedentes.png'
+  };
+  const NOMBRE_TRAMITE = {
+    cedula: 'Cedula de identidad',
+    licencia: 'Licencia de conducir',
+    antecedentes: 'Antecedentes penales'
+  };
+  /* Devuelve el <img> del icono del tramite, o '' si la conversacion no tiene
+     tramite (por ejemplo, un chat abierto a mano). */
+  function iconoTramite(service, clase) {
+    const src = ICONO_TRAMITE[String(service || '').toLowerCase()];
+    if (!src) return '';
+    const nombre = NOMBRE_TRAMITE[String(service || '').toLowerCase()] || 'Tramite';
+    return `<img class="${clase || 'chat-ic-tramite'}" src="${src}" alt="${esc(nombre)}" title="${esc(nombre)}" loading="lazy" />`;
+  }
+
   function renderChats() {
     const list = $('#chatsList');
     if (!list) return;
@@ -1708,11 +1730,14 @@ const App = (() => {
       const tramite = c.tramite ? `${c.tramite.serviceLabel || ''}${c.tramite.subtypeLabel ? ' \u00b7 ' + c.tramite.subtypeLabel : ''}` : '';
       const cita = c.cita;
       const citaTxt = cita ? ('Cita: ' + textoCita(cita) + (cita.estado === 'cancelada' ? ' (cancelada)' : '')) : '';
+      /* El icono del tramite va junto al nombre: de un vistazo se sabe de que
+         documento habla la conversacion. */
+      const icoTramite = iconoTramite(c.tramite && c.tramite.service);
       return `<div class="chat-row">
         <button class="chat-open" onclick="App.openChat('${c.id}')">
           <div class="avatar" data-avatar="${esc(other && other.avatar ? other.avatar : '')}" data-nombre="${esc(name)}" style="width:46px;height:46px;font-size:16px">${other && other.avatar ? '' : initials(name)}</div>
           <div class="grow">
-            <div class="t">${esc(name)}${chulo}${marcaPresencia(other)}</div>
+            <div class="t">${icoTramite}${esc(name)}${chulo}${marcaPresencia(other)}</div>
             <div class="s">${esc(tramite || last)}</div>
             ${citaTxt ? `<div class="s cita-linea">${esc(citaTxt)}</div>` : ''}
           </div>
@@ -1733,6 +1758,18 @@ const App = (() => {
   function openChats() {
     loadChats();
     showView('chats');
+  }
+
+  /* Llamar desde la app, como en WhatsApp: abre el marcador del telefono con
+     el numero de la otra persona. No se puede llamar dentro de la app sin un
+     servidor de voz, asi que se usa el marcador del propio telefono. */
+  function llamar() {
+    const btn = $('#btnLlamar');
+    const tel = btn ? String(btn.getAttribute('data-tel') || '') : '';
+    if (!tel) return toast('Esta persona no tiene un telefono guardado');
+    const limpio = tel.replace(/[^\d+]/g, '');
+    if (!limpio) return toast('El telefono guardado no es valido');
+    window.location.href = 'tel:' + limpio;
   }
 
   async function openChat(chatId, remember = true) {
@@ -1757,10 +1794,27 @@ const App = (() => {
     const tEl = $('#chatTramite');
     if (chat && chat.tramite) {
       const t = chat.tramite;
-      tEl.textContent = [t.serviceLabel, t.subtypeLabel, t.grade].filter(Boolean).join(' \u00b7 ');
+      const texto = [t.serviceLabel, t.subtypeLabel, t.grade].filter(Boolean).join(' \u00b7 ');
+      /* El icono del tramite tambien en la cabecera del chat abierto. */
+      tEl.innerHTML = iconoTramite(t.service, 'chat-ic-tramite sm') + '<span>' + esc(texto) + '</span>';
       tEl.classList.remove('hidden');
     } else {
       tEl.classList.add('hidden');
+    }
+
+    /* Boton de llamar: solo aparece si la otra parte tiene telefono. */
+    const btnLlamar = $('#btnLlamar');
+    if (btnLlamar) {
+      /* Se quita la clase `hidden`, no solo la propiedad: la clase lleva
+         !important en el CSS y dejaria el boton oculto para siempre. */
+      const tel = other && other.phone ? String(other.phone) : '';
+      btnLlamar.classList.toggle('hidden', !tel);
+      btnLlamar.hidden = !tel;
+      btnLlamar.setAttribute('data-tel', tel);
+      /* Con la llamada en pantalla la cabecera se queda sin espacio: el boton
+         de requisitos pasa a icono para que el nombre no se corte tanto. */
+      const barra = btnLlamar.closest('.topbar');
+      if (barra) barra.classList.toggle('con-llamar', !!tel);
     }
 
     /* Marca de cita en la cabecera: quien va por cita se ve al abrir el chat. */
@@ -6673,7 +6727,7 @@ const App = (() => {
     authTab, submitLogin, submitRegister, showAdminAuth, submitAdminLogin, submitRecover,
     back, pickService, pickConfirm, pickModo, citaMes, pickCita, pickHora, continuarAgenda,
     pickOption, pickGrade, continuarPrecio, pickBlood, guardarDatosFlow, startChat,
-    openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
+    openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile, llamar,
     openProfile, pickAvatar, saveProfileChanges, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat, borrarChatDeLista,
     abrirBorrarMensaje, cerrarBorrarMensaje, borrarMensaje,
     openAdmin, openChatFromAdmin, openFirstChat,
