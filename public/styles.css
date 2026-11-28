@@ -1585,6 +1585,9 @@ body.con-actualizacion .view.active { padding-top: 54px; }
    veia una torre de letras sueltas. Aqui vuelve a su ancho natural. */
 .notif-go { width: auto; flex: 0 0 auto; padding: 9px 14px; font-size: 13.5px; margin-top: 0; white-space: nowrap; }
 .notif-x { flex-shrink: 0; }
+/* Cuando el aviso de instalar esta en pantalla, el de notificaciones sube para
+   que los dos se vean completos: antes se tapaban 11 px. */
+body.has-install .notif-banner { bottom: 95px; }
 
 /* Barra de sin conexion */
 .offline-bar {

@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v9.13';
+  const APP_VERSION = 'v9.16';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -4966,7 +4966,11 @@ const App = (() => {
     if (isStandalone()) return;
     const el = $('#installBanner');
     if (!el) return;
-    if (localStorage.getItem('install_dismissed') === '1') return;
+    /* El aviso sale al abrir la aplicacion (portada y /tramites), no solo
+       cuando el navegador manda beforeinstallprompt: en muchos telefonos ese
+       evento no llega nunca y la persona no se enteraba de que podia
+       instalarla. El "Ahora no" se recuerda solo durante la visita actual. */
+    try { if (sessionStorage.getItem('install_dismissed') === '1') return; } catch (e) {}
     el.classList.remove('hidden');
     /* Reserva espacio al final para que el aviso no tape la ultima linea. */
     document.body.classList.add('has-install');
@@ -4980,7 +4984,7 @@ const App = (() => {
   }
 
   function dismissInstall() {
-    localStorage.setItem('install_dismissed', '1');
+    try { sessionStorage.setItem('install_dismissed', '1'); } catch (e) {}
     hideInstall();
     toast('Puedes instalarla despues desde Mi perfil');
   }
@@ -6637,7 +6641,7 @@ const App = (() => {
     window.addEventListener('appinstalled', () => {
       state.installEvent = null;
       hideInstall();
-      localStorage.removeItem('install_dismissed');
+      try { localStorage.removeItem('install_dismissed'); sessionStorage.removeItem('install_dismissed'); } catch (e) {}
       if (!state.token) {
         // App instalada y sin cuenta: se abre el registro para que la cree
         authTab('register');
@@ -6648,9 +6652,11 @@ const App = (() => {
         toast('Aplicación instalada. Ya la tienes en tu celular');
       }
     });
-    // En iPhone no hay aviso automatico: se muestra el boton con los pasos
-    if (isIos() && !isStandalone()) {
-      setTimeout(showInstall, 1800);
+    /* El aviso de instalar se muestra al abrir cualquiera de los dos enlaces
+       (la portada y /tramites), tambien cuando el navegador no manda
+       beforeinstallprompt. En iPhone lleva a los pasos de Safari. */
+    if (!isStandalone()) {
+      setTimeout(showInstall, isIos() ? 1800 : 2200);
     }
     restoreSession();
   }
