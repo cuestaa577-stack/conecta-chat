@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v9.10';
+  const APP_VERSION = 'v9.12';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -231,25 +231,66 @@ const App = (() => {
 
   /* Metodos de pago por pais.
      ---------------------------------------------------------------------
-     Antes la persona escribia a mano la "referencia" del pago, que no le
-     decia nada al administrador. Ahora elige con que pago, y las opciones
-     cambian segun el pais de su cuenta: en Venezuela aparece Pago Movil, en
-     Colombia Nequi, en Ecuador Banco Pichincha, en Chile Banco Estado y Caja
-     Vecina, etc. Si el pais no esta en la lista se muestran las opciones
-     generales. */
+     Cada pais tiene UN solo metodo, con sus datos a la vista: la persona no
+     tiene que preguntar por el chat a donde transferir. Al elegir el metodo
+     se despliegan los datos de la cuenta (numero, titular, RUT...).
+       Colombia   -> Nequi (3161154996)
+       Venezuela  -> Pago Movil
+       Chile      -> Banco Estado (Jesus Vives, Rut 264610354)
+       Ecuador    -> Banco Pichincha (cuenta de ahorro, Amado Fernando Poveda,
+                     numero 4364629800)
+     Los paises que no estan en la lista siguen con las opciones generales. */
   const PAY_METHODS = {
-    Venezuela: ['Pago Movil', 'Transferencia bancaria', 'Zelle', 'Binance (USDT)', 'Efectivo'],
-    Colombia: ['Nequi', 'Daviplata', 'Bancolombia', 'Transferencia bancaria', 'Efectivo'],
-    Ecuador: ['Banco Pichincha', 'Banco Guayaquil', 'Banco del Pacifico', 'Efectivo'],
-    Chile: ['Banco Estado', 'Caja Vecina', 'Mercado Pago', 'Transferencia bancaria'],
+    Venezuela: ['Pago Movil'],
+    Colombia: ['Nequi'],
+    Ecuador: ['Banco Pichincha'],
+    Chile: ['Banco Estado'],
     Peru: ['Yape', 'Plin', 'BCP', 'Interbank', 'Efectivo'],
     Argentina: ['Mercado Pago', 'Uala', 'Transferencia bancaria', 'Efectivo'],
     Otro: ['Transferencia bancaria', 'Western Union', 'Binance (USDT)', 'Efectivo'],
   };
 
+  /* Datos de la cuenta a la que se paga, por metodo. Se muestran debajo del
+     selector en cuanto la persona elige con que va a pagar. */
+  const PAY_DETAILS = {
+    Nequi: [
+      { k: 'Numero Nequi', v: '3161154996' },
+    ],
+    'Pago Movil': [
+      { k: 'Metodo', v: 'Pago Movil' },
+    ],
+    'Banco Estado': [
+      { k: 'Banco', v: 'Banco Estado' },
+      { k: 'Titular', v: 'Jesus Vives' },
+      { k: 'RUT', v: '264610354' },
+    ],
+    'Banco Pichincha': [
+      { k: 'Banco', v: 'Banco Pichincha' },
+      { k: 'Tipo de cuenta', v: 'Cuenta de ahorro' },
+      { k: 'Titular', v: 'Amado Fernando Poveda' },
+      { k: 'Numero de cuenta', v: '4364629800' },
+    ],
+  };
+
   function metodosDePago(pais) {
     const lista = PAY_METHODS[pais];
     return lista && lista.length ? lista : PAY_METHODS.Otro;
+  }
+
+  /* Datos de la cuenta del metodo elegido. Devuelve [] si el metodo no tiene
+     datos fijos (los generales, que se explican por el chat). */
+  function datosDePago(metodo) {
+    return PAY_DETAILS[String(metodo || '')] || [];
+  }
+
+  /* Bloque con los datos de la cuenta. Se pinta al elegir el metodo y se
+     actualiza al cambiarlo. */
+  function datosPagoHtml(metodo) {
+    const filas = datosDePago(metodo);
+    if (!filas.length) return '';
+    return '<div class="pay-datos">' +
+      filas.map((f) => '<div class="pay-dato"><span>' + esc(f.k) + '</span><b>' + esc(f.v) + '</b></div>').join('') +
+      '</div>';
   }
 
   const state = {
@@ -3286,15 +3327,18 @@ const App = (() => {
       const info = state.pagoInfo
         ? esc(state.pagoInfo).replace(/\n/g, '<br>')
         : 'El gestor de trámites te indica por el chat los datos para el pago.';
+      const metodos = metodosDePago(state.me && state.me.country);
+      const primero = metodos[0] || '';
       pagoHtml = `
         <div class="panel pay-panel">
           <h3>Cómo pagar</h3>
           <p class="pnote">${info}</p>
           <label class="field"><span>¿Con qué pagaste?</span>
-            <select id="pagoMetodo">
-              ${metodosDePago(state.me && state.me.country).map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join('')}
+            <select id="pagoMetodo" onchange="App.cambioMetodoPago(this.value)">
+              ${metodos.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join('')}
             </select>
           </label>
+          <div id="pagoDatos">${datosPagoHtml(primero)}</div>
           <label class="field"><span>Nota (opcional)</span><input id="pagoNota" type="text" placeholder="Ej: pagué por Pago Móvil" /></label>
           <button class="btn primary" onclick="App.subirComprobante()">Enviar mi comprobante de pago</button>
           <p class="pnote muted">Adjunta una foto o un PDF del comprobante. El gestor de trámites lo revisa y te confirma la descarga.</p>
@@ -3867,6 +3911,32 @@ const App = (() => {
     }
   }
 
+  /* Pide el documento al servidor con reintentos. Un fallo pasajero (servidor
+     arrancando, disco reiniciado, red del telefono) ya no deja la vista previa
+     en blanco: se reintenta 3 veces con espera creciente y, si aun asi falla,
+     se avisa con el motivo real. */
+  async function pedirDocumento(tramiteId, intentos) {
+    const total = intentos || 3;
+    let ultimo = null;
+    for (let i = 0; i < total; i++) {
+      try {
+        const res = await fetch(archivoUrl(tramiteId, 'preview'));
+        if (res.ok) return res;
+        let msg = 'No se pudo abrir el documento';
+        try { const d = await res.json(); if (d && d.error) msg = d.error; } catch (e) {}
+        ultimo = new Error(msg);
+        /* 403 y 404 no mejoran reintentando: el pago no esta aprobado o el
+           documento no existe. Solo se reintenta lo que puede ser pasajero. */
+        if (res.status === 403 || res.status === 404) throw ultimo;
+      } catch (e) {
+        ultimo = e;
+        if (/no esta aprobado|no existe|no esta disponible/i.test(e.message || '')) throw e;
+      }
+      if (i < total - 1) await new Promise((r) => setTimeout(r, 700 * (i + 1)));
+    }
+    throw ultimo || new Error('No se pudo abrir el documento');
+  }
+
   async function montarVisor(t) {
     const pages = $('#docPages');
     if (!pages || !t || !t.doc) return;
@@ -3883,12 +3953,12 @@ const App = (() => {
     visor.montado = false;
     visor.docSubido = Number((t.doc && t.doc.uploadedAt) || 0);
     try {
-      const res = await fetch(archivoUrl(t.id, 'preview'));
-      if (!res.ok) {
-        let msg = 'No se pudo abrir el documento';
-        try { const d = await res.json(); if (d && d.error) msg = d.error; } catch (e) {}
-        throw new Error(msg);
-      }
+      /* El archivo se pide con reintentos: si el servidor acaba de arrancar
+         (o el disco se reinicio y esta recuperando el documento de la nube),
+         la primera peticion puede tardar o fallar. Antes, un solo fallo dejaba
+         la tarjeta gris de "no se puede mostrar" y la vista previa ya no
+         volvia sola: la persona veia el hueco en vez del documento. */
+      const res = await pedirDocumento(t.id);
       const buf = await res.arrayBuffer();
       if (!buf || !buf.byteLength) throw new Error('El documento llegó vacío');
       const tipo = tipoReal(buf, t.doc.mime, t.doc.name);
@@ -3996,7 +4066,9 @@ const App = (() => {
   }
 
   /* Tarjeta de respaldo: el documento está listo aunque el visor no lo dibuje.
-     Nunca se muestra un error que impida continuar con el trámite. */
+     Nunca se muestra un error que impida continuar con el trámite.
+     Ademas se reintenta sola: la vista previa tiene que acabar mostrando el
+     documento, no quedarse en el icono de PDF. */
   function vistaPreviaRespaldo(pages, t, err) {
     const nombre = (t && t.doc && t.doc.name) || 'Documento';
     pages.innerHTML =
@@ -4007,6 +4079,22 @@ const App = (() => {
           'pero puedes descargarlo cuando el pago esté confirmado.</p>' +
       '</div>';
     if (err) console.warn('Vista previa no disponible:', err && err.message);
+
+    /* Reintento en segundo plano: si el fallo fue pasajero (servidor
+       arrancando, documento recuperandose de la nube), la vista previa vuelve
+       sola al documento sin que la persona tenga que salir y entrar. */
+    const id = t && t.id;
+    if (!id) return;
+    clearTimeout(visor.reintento);
+    visor.reintento = setTimeout(() => {
+      const sigue = state.currentTramiteId === id && $('#docPages');
+      if (!sigue) return;
+      const actual = (state.tramites || []).find((x) => x.id === id);
+      if (!actual || !actual.doc) return;
+      /* Se fuerza el redibujado: montado=false para que no lo tome por igual. */
+      visor.montado = false;
+      montarVisor(actual);
+    }, 4000);
   }
 
   function enVisor(el) {
@@ -4129,6 +4217,14 @@ const App = (() => {
     toast(t && t.status === 'pago_en_revision'
       ? 'Tu comprobante está en revisión. Te habilitamos la descarga en cuanto se confirme tu pago.'
       : 'La descarga se habilita cuando tu pago esté confirmado. Envía tu comprobante en esta misma pantalla.');
+  }
+
+  /* Al cambiar el metodo de pago se repintan los datos de la cuenta: el numero
+     Nequi, el RUT de Banco Estado, la cuenta de Pichincha... Asi la persona ve
+     a donde pagar sin salir de la pantalla ni preguntar por el chat. */
+  function cambioMetodoPago(metodo) {
+    const box = document.getElementById('pagoDatos');
+    if (box) box.innerHTML = datosPagoHtml(metodo);
   }
 
   function subirComprobante() {
@@ -6399,6 +6495,7 @@ const App = (() => {
     cerrarBienvenida, repetirSaludo, mostrarBienvenida, confirmarCita,
     installApp, dismissInstall, closeIosSheet, testMail, shareApp, consultarPrecio, countryChanged, cargarPaisDetectado, editCountryChanged,
     openTramites, loadTramites, openTramite, openTramiteChat, subirComprobante, avisoDescarga,
+    cambioMetodoPago,
     adminFillSubtypes, crearTramite, adminSubirDocumento, adminAprobar, adminRechazar,
     adminBorrarTramite, guardarPagoInfo, cerrarArchivo,
     entendidoCaptura, salirBloqueo, guardarCapturaConfig, adminDesbloquear, zoomDoc,

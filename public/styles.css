@@ -1146,6 +1146,20 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .pay-panel { border-color: #d9e4f5; }
 .pay-panel h3 { margin-bottom: 6px; }
 
+/* Datos de la cuenta a la que se paga (Nequi, Banco Estado, Pichincha...).
+   Se muestran al elegir el metodo, con el dato en grande para copiarlo. */
+.pay-datos {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #d9e4f5;
+  border-radius: 12px;
+  background: #f7fafd;
+}
+.pay-dato { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 5px 0; }
+.pay-dato + .pay-dato { border-top: 1px dashed #dbe6f3; }
+.pay-dato span { font-size: 13px; color: #4e6076; }
+.pay-dato b { font-size: 15px; color: #12263f; letter-spacing: .2px; word-break: break-word; text-align: right; }
+
 .admin-tramites { display: flex; flex-direction: column; gap: 12px; }
 .pills-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .admin-tramite { padding: 10px 0; border-bottom: 1px solid var(--border); }

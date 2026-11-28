@@ -3269,6 +3269,45 @@ async function pdfNormalizadoEnDisco(file) {
   return bueno;
 }
 
+/* Envia un buffer ya leido con las cabeceras correctas. */
+function enviarBuffer(res, buf, mime, disp) {
+  res.setHeader('Content-Type', mime || 'application/octet-stream');
+  res.setHeader('Content-Length', String(buf.length));
+  res.setHeader('Content-Disposition', disp);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'private, no-store');
+  return res.end(buf);
+}
+
+/* Ultimo recurso para un archivo de tramite cuya URL remota ya no responde:
+   se busca por el identificador interno, primero en la base y despues en
+   Supabase Storage. Devuelve { buf, mime } o null. */
+async function archivoRescatado(f) {
+  try {
+    const url = String((f && f.url) || '');
+    /* Se quita la query y el hash antes de sacar el identificador: una URL
+       firmada de Supabase termina en "?token=..." y si no se limpia, el
+       identificador que se extrae es el del token y el rescate no encuentra
+       nada. */
+    const limpia = url.split('#')[0].split('?')[0];
+    const m = /\/uploads\/([A-Za-z0-9_.-]+)$/.exec(limpia) || /([A-Za-z0-9_.-]+)$/.exec(limpia);
+    const id = m ? m[1] : '';
+    if (!id) return null;
+    const guardado = db.files && db.files[id];
+    if (guardado && guardado.data) {
+      const buf = Buffer.from(guardado.data, 'base64');
+      return { buf: buf, mime: tipoPorBytes(buf.slice(0, 12), guardado.mime, (f && f.name)) };
+    }
+    const deNube = await leerArchivoDeNube(id);
+    if (deNube && deNube.length) {
+      return { buf: deNube, mime: tipoPorBytes(deNube.slice(0, 12), (f && f.mime), (f && f.name)) };
+    }
+  } catch (e) {
+    console.error('[archivo] rescate fallido:', e.message);
+  }
+  return null;
+}
+
 /* Entrega un archivo del tramite. modo: 'inline' (vista previa) | 'attachment' (descarga)
    nombreForzado: nombre con el que se guarda el archivo. La descarga de un
    tramite lleva el nombre del documento que corresponde (cedula, licencia o
@@ -3282,7 +3321,15 @@ async function servirArchivoTramite(f, res, modo, nombreForzado) {
   if (/^https?:\/\//i.test(url)) {
     try {
       const r = await fetch(url);
-      if (!r.ok) return res.status(404).json({ error: 'El archivo no esta disponible' });
+      if (!r.ok) {
+        /* La URL remota ya no sirve (una URL firmada de Supabase caduca, o el
+           bucket cambio de permisos). Antes se devolvia 404/502 y el panel
+           mostraba "No se pudo abrir el archivo". Ahora se intenta recuperar
+           el archivo por el identificador interno antes de rendirse. */
+        const rescatado = await archivoRescatado(f);
+        if (rescatado) return enviarBuffer(res, rescatado.buf, rescatado.mime, disp);
+        return res.status(404).json({ error: 'El archivo no esta disponible' });
+      }
       /* Se reenvia el archivo por partes (streaming) en vez de cargarlo entero
          en memoria. Antes se hacia arrayBuffer() y se cortaba en 30 MB: un
          documento grande devolvia 413 y la vista previa se quedaba en blanco.
@@ -3313,6 +3360,12 @@ async function servirArchivoTramite(f, res, modo, nombreForzado) {
       res.setHeader('Cache-Control', 'private, no-store');
       return res.end(buf);
     } catch (e) {
+      /* Fallo de red al traer la URL remota: se intenta el rescate antes de
+         devolver el 502 que el panel mostraba como "No se pudo abrir el
+         archivo". */
+      const rescatado = await archivoRescatado(f);
+      if (rescatado) return enviarBuffer(res, rescatado.buf, rescatado.mime, disp);
+      console.error('[archivo] no se pudo abrir:', e.message);
       return res.status(502).json({ error: 'No se pudo abrir el archivo' });
     }
   }
@@ -3324,11 +3377,29 @@ async function servirArchivoTramite(f, res, modo, nombreForzado) {
     return res.status(404).json({ error: 'El archivo no esta disponible' });
   }
   if (!fs.existsSync(file)) {
-    // El disco se reinicio: se sirve la copia guardada en la base.
+    /* El disco se reinicio (Render borra /data/uploads en cada despliegue).
+       Se busca el archivo, en este orden:
+         1) la copia en base64 dentro de la base,
+         2) Supabase Storage, que es donde queda el original cuando la subida
+            fue a la nube.
+       Antes solo se miraba la base: si el archivo se habia subido a la nube
+       (enNube=true) no habia copia en la base y la vista previa, la descarga
+       y "Abrir documento" del panel devolvian 404 "El archivo no esta
+       disponible". Ese era el fallo que dejaba el documento sin abrir. */
+    let buf = null;
     const guardado = db.files && db.files[m[1]];
     if (guardado && guardado.data) {
-      let buf = Buffer.from(guardado.data, 'base64');
-      const tipoGuardado = tipoPorBytes(buf, guardado.mime, nombre);
+      buf = Buffer.from(guardado.data, 'base64');
+    } else {
+      buf = await leerArchivoDeNube(m[1]);
+      /* Se deja en disco para que las siguientes peticiones no vuelvan a
+         bajar el archivo de la nube. */
+      if (buf && buf.length) {
+        try { fs.writeFileSync(file, buf); } catch (e) { /* solo cache */ }
+      }
+    }
+    if (buf && buf.length) {
+      const tipoGuardado = tipoPorBytes(buf, (guardado && guardado.mime) || (f && f.mime), nombre);
       if (tipoGuardado === 'application/pdf') buf = await pdfNormalizado(buf);
       res.setHeader('Content-Type', tipoGuardado);
       res.setHeader('Content-Length', String(buf.length));
@@ -3401,6 +3472,13 @@ async function leerArchivoTramite(f) {
   if (guardado && guardado.data) {
     const buf = Buffer.from(guardado.data, 'base64');
     return { buf: buf, mime: tipoPorBytes(buf.slice(0, 12), guardado.mime, (f && f.name)) };
+  }
+  /* Ultimo recurso: el original vive en Supabase Storage. Sin esto, un
+     documento subido a la nube no se podia leer tras un reinicio del disco y
+     la descarga fallaba aunque el pago estuviera aprobado. */
+  const deNube = await leerArchivoDeNube(m[1]);
+  if (deNube && deNube.length) {
+    return { buf: deNube, mime: tipoPorBytes(deNube.slice(0, 12), (f && f.mime), (f && f.name)) };
   }
   return null;
 }
