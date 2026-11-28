@@ -1,5 +1,5 @@
-/* Captura la cabecera del chat abierto: icono del tramite en la franja y boton
-   de llamar a la derecha. Uso: node tests/captura-cabecera.js [baseUrl] */
+/* Captura la cabecera del chat abierto: icono del tramite en la franja.
+   Uso: node tests/captura-cabecera.js [baseUrl] */
 const { chromium } = require('playwright');
 const BASE = process.argv[2] || 'http://127.0.0.1:4571';
 

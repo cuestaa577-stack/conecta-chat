@@ -60,7 +60,8 @@ async function jpost(p, b) {
     [fCed, fLic, fAnt].every((f) => f && f.caja >= 24 && f.caja <= 36),
     [fCed, fLic, fAnt].map((f) => f ? f.caja : '-').join(' '));
 
-  /* Abrir la conversacion de licencia: icono en la cabecera + boton de llamar. */
+  /* Abrir la conversacion de licencia: icono en la cabecera. La app ya no
+     tiene llamadas entre usuarios, asi que el boton de llamar NO debe existir. */
   await page.evaluate(() => {
     const row = Array.from(document.querySelectorAll('#chatsList .chat-row')).find((r) => r.textContent.indexOf('Julio') >= 0);
     row.querySelector('.chat-open').click();
@@ -75,25 +76,15 @@ async function jpost(p, b) {
       texto: t ? t.textContent.trim() : '',
       src: img ? img.getAttribute('src') : '',
       ancho: img ? img.naturalWidth : 0,
-      botonVisible: !!(btn && !btn.hidden && btn.offsetParent !== null),
-      tel: btn ? (btn.getAttribute('data-tel') || '') : '',
+      botonLlamar: !!btn,
     };
   });
   console.log('--- Cabecera del chat de licencia ---');
-  console.log('   ' + cab.texto + ' | icono ' + cab.src + ' (' + cab.ancho + 'px) | llamar: ' + cab.botonVisible + ' ' + cab.tel);
+  console.log('   ' + cab.texto + ' | icono ' + cab.src + ' (' + cab.ancho + 'px) | boton de llamar: ' + cab.botonLlamar);
 
   ok('La cabecera del chat muestra el icono del tramite', /icon-licencia\.png/.test(cab.src), cab.src);
   ok('La franja de tramite sigue diciendo el tramite', /Licencia de conducir/.test(cab.texto), cab.texto);
-  ok('El boton de llamar aparece en el chat', cab.botonVisible === true);
-  ok('El boton de llamar lleva el telefono de la otra persona', cab.tel.replace(/\D/g, '') === '584121110002', cab.tel);
-
-  /* El enlace tel: se arma con el numero limpio. */
-  const destino = await page.evaluate(() => {
-    const btn = document.querySelector('#btnLlamar');
-    const tel = btn.getAttribute('data-tel') || '';
-    return 'tel:' + tel.replace(/[^\d+]/g, '');
-  });
-  ok('El enlace de llamada es un tel: valido', /^tel:\+?\d{7,15}$/.test(destino), destino);
+  ok('La app no tiene boton de llamar (llamadas eliminadas)', cab.botonLlamar === false);
   ok('Sin errores de JavaScript en la app', errores.length === 0, errores.join(' | '));
 
   await page.screenshot({ path: '/workspace/verify/chats-iconos.png' });

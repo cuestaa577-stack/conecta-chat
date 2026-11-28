@@ -265,18 +265,6 @@ body::before {
   align-items: center; justify-content: center; flex-shrink: 0; padding: 0;
 }
 .iconbtn:active { background: rgba(255, 255, 255, .22); }
-/* Boton de llamar en la cabecera del chat: mismo tamano que los demas iconos,
-   con un tono verde suave para que se distinga de eliminar. */
-#btnLlamar { color: #b7f7cf; }
-#btnLlamar:active { background: rgba(34, 197, 94, .28); }
-#btnLlamar[hidden] { display: none; }
-/* Cuando la cabecera lleva el boton de llamar hay un icono mas. Para que el
-   nombre de la persona no se corte mas de la cuenta, el boton de requisitos se
-   queda solo con su icono de camara (el titulo "Requisitos" se oculta). Se
-   gana mas espacio del que ocupa la llamada. */
-.topbar.con-llamar .req-admin-btn { padding: 7px 9px; }
-.topbar.con-llamar .req-admin-btn span { display: none; }
-.topbar.con-llamar .req-admin-btn svg { width: 18px; height: 18px; }
 .avatar-btn {
   background-color: var(--blue); font-weight: 700; font-size: 14.5px;
   background-size: cover; background-position: center; background-repeat: no-repeat;

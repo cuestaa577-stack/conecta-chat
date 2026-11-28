@@ -1760,18 +1760,6 @@ const App = (() => {
     showView('chats');
   }
 
-  /* Llamar desde la app, como en WhatsApp: abre el marcador del telefono con
-     el numero de la otra persona. No se puede llamar dentro de la app sin un
-     servidor de voz, asi que se usa el marcador del propio telefono. */
-  function llamar() {
-    const btn = $('#btnLlamar');
-    const tel = btn ? String(btn.getAttribute('data-tel') || '') : '';
-    if (!tel) return toast('Esta persona no tiene un telefono guardado');
-    const limpio = tel.replace(/[^\d+]/g, '');
-    if (!limpio) return toast('El telefono guardado no es valido');
-    window.location.href = 'tel:' + limpio;
-  }
-
   async function openChat(chatId, remember = true) {
     try { localStorage.setItem('tve_chat', chatId); localStorage.setItem('tve_vista', 'chat'); } catch (e) {}
     state.currentChatId = chatId;
@@ -1800,21 +1788,6 @@ const App = (() => {
       tEl.classList.remove('hidden');
     } else {
       tEl.classList.add('hidden');
-    }
-
-    /* Boton de llamar: solo aparece si la otra parte tiene telefono. */
-    const btnLlamar = $('#btnLlamar');
-    if (btnLlamar) {
-      /* Se quita la clase `hidden`, no solo la propiedad: la clase lleva
-         !important en el CSS y dejaria el boton oculto para siempre. */
-      const tel = other && other.phone ? String(other.phone) : '';
-      btnLlamar.classList.toggle('hidden', !tel);
-      btnLlamar.hidden = !tel;
-      btnLlamar.setAttribute('data-tel', tel);
-      /* Con la llamada en pantalla la cabecera se queda sin espacio: el boton
-         de requisitos pasa a icono para que el nombre no se corte tanto. */
-      const barra = btnLlamar.closest('.topbar');
-      if (barra) barra.classList.toggle('con-llamar', !!tel);
     }
 
     /* Marca de cita en la cabecera: quien va por cita se ve al abrir el chat. */
@@ -6727,7 +6700,7 @@ const App = (() => {
     authTab, submitLogin, submitRegister, showAdminAuth, submitAdminLogin, submitRecover,
     back, pickService, pickConfirm, pickModo, citaMes, pickCita, pickHora, continuarAgenda,
     pickOption, pickGrade, continuarPrecio, pickBlood, guardarDatosFlow, startChat,
-    openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile, llamar,
+    openChats, openChat, sendText, onType, openAttach, closeAttach, pickFile,
     openProfile, pickAvatar, saveProfileChanges, renderMyData, toggleMyData, autoVerifyCedula, openEditData, closeEditData, savePersonalData, deleteChat, borrarChatDeLista,
     abrirBorrarMensaje, cerrarBorrarMensaje, borrarMensaje,
     openAdmin, openChatFromAdmin, openFirstChat,

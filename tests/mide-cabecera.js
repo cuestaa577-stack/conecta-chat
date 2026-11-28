@@ -37,12 +37,7 @@ async function jpost(p, b) {
   });
 
   const conBoton = await medir();
-  await page.$eval('#btnLlamar', (el) => { el.style.display = 'none'; });
-  await page.waitForTimeout(300);
-  const sinBoton = await medir();
-  await page.$eval('#btnLlamar', (el) => { el.style.display = ''; });
 
-  console.log('CON boton de llamar : titulo "' + conBoton.titulo + '" cortado=' + conBoton.tituloCortado + ' (ancho ' + conBoton.ancho + 'px) | sub cortado=' + conBoton.subCortado);
-  console.log('SIN boton de llamar : titulo "' + sinBoton.titulo + '" cortado=' + sinBoton.tituloCortado + ' (ancho ' + sinBoton.ancho + 'px) | sub cortado=' + sinBoton.subCortado);
+  console.log('Cabecera del chat (sin boton de llamar): titulo "' + conBoton.titulo + '" cortado=' + conBoton.tituloCortado + ' (ancho ' + conBoton.ancho + 'px) | sub cortado=' + conBoton.subCortado);
   await browser.close();
 })();

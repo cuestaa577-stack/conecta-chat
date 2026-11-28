@@ -1,6 +1,5 @@
 /* Siembra una base con una conversacion de cada tramite (cedula, licencia y
-   antecedentes) para comprobar que cada fila del chat muestra SU icono y que
-   el boton de llamar aparece con el telefono de la otra persona.
+   antecedentes) para comprobar que cada fila del chat muestra SU icono.
    Uso: node tests/siembra-iconos.js [dirDatos] */
 const fs = require('fs');
 const path = require('path');
