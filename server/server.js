@@ -1592,6 +1592,11 @@ app.post('/api/register', async (req, res) => {
   db.users[user.id] = user;
   save();
 
+  /* Cuenta nueva de verdad: se avisa al administrador al telefono. Va aqui y
+     no mas abajo para que llegue tambien en modo estricto (cuando falta el
+     codigo del correo), porque la persona ya quedo registrada. */
+  avisarRegistroNuevo(user);
+
   /* La clave que la persona acaba de crear ES su verificacion: no se pide
      ningun codigo. Solo en modo estricto (REQUIRE_EMAIL_VERIFY=on) se envia el
      codigo de 6 digitos y se exige antes de entrar. */
@@ -4340,6 +4345,32 @@ async function enviarPush(userId, datos) {
   } catch (e) { /* una notificacion nunca rompe el chat */ }
 }
 
+/* Aviso al administrador cuando una persona REAL se registra.
+   ---------------------------------------------------------------------
+   Llega a la barra de notificaciones del telefono aunque la app este cerrada,
+   porque va por push (service worker), no por la pantalla abierta.
+   El texto lleva el pais, el nombre y el telefono de quien se registro.
+   Se manda a TODAS las cuentas de administrador que tengan el telefono
+   suscrito. Si el administrador no ha activado las notificaciones no se
+   inventa nada: simplemente no hay a quien avisar (el panel lo muestra). */
+function avisarRegistroNuevo(user) {
+  try {
+    if (!user || user.role === 'admin') return;
+    const pais = user.country || user.phonePais || 'Sin pais';
+    const nombre = String(user.name || '').trim() || 'Sin nombre';
+    const tel = PaisesTel.formatear(user.phone || '', pais) || user.phone || 'Sin telefono';
+    const admins = Object.values(db.users || {}).filter((u) => u && u.role === 'admin');
+    admins.forEach((a) => {
+      enviarPush(a.id, {
+        title: 'Nuevo registro - ' + pais,
+        body: nombre + ' - ' + tel,
+        url: './?panel=1',
+        tag: 'registro:' + user.id,
+      });
+    });
+  } catch (e) { /* un aviso nunca rompe el registro */ }
+}
+
 /* =====================================================================
    REFERENCIAS DE TRAMITES Y MODERADOR INTERNO
    ---------------------------------------------------------------------
@@ -4695,6 +4726,42 @@ app.post('/api/push/unsubscribe', auth, (req, res) => {
     save();
   }
   res.json({ ok: true });
+});
+
+/* Estado de los avisos del administrador. El panel lo usa para decir si este
+   telefono va a recibir el aviso de cada registro nuevo. */
+app.get('/api/push/status', auth, adminOnly, (req, res) => {
+  const p = pushAjustes();
+  const subs = Array.isArray(p.subs[req.user.id]) ? p.subs[req.user.id] : [];
+  res.json({
+    ok: true,
+    disponible: !!webpush,
+    listo: pushListo(),
+    suscripciones: subs.length,
+    activo: subs.length > 0,
+  });
+});
+
+/* Manda un aviso de prueba al telefono del administrador que lo pide, con el
+   mismo formato que el aviso real de registro. Sirve para comprobar que el
+   telefono lo recibe con la app cerrada. */
+app.post('/api/push/test', auth, adminOnly, async (req, res) => {
+  const p = pushAjustes();
+  const subs = Array.isArray(p.subs[req.user.id]) ? p.subs[req.user.id] : [];
+  if (!subs.length) {
+    return res.status(400).json({
+      error: 'Este telefono no tiene los avisos activados. Pulsa "Activar avisos" primero.',
+      code: 'no_subscription',
+    });
+  }
+  if (!pushListo()) return res.status(503).json({ error: 'El servidor no tiene las notificaciones listas' });
+  await enviarPush(req.user.id, {
+    title: 'Nuevo registro - Chile',
+    body: 'Ejemplo de aviso: Maria Gonzalez - +56 9 1234 5678',
+    url: './?panel=1',
+    tag: 'prueba-registro',
+  });
+  res.json({ ok: true, enviado: subs.length });
 });
 
 /* Marca como recibidos todos los mensajes que le escribieron a esta persona y

@@ -62,11 +62,13 @@ function pdfMinimo(texto) {
 
   /* ---------- 1-3. Flujo real contra el servidor ---------- */
   const ced = 'V-' + String(Math.floor(10000000 + Math.random() * 89999999));
+  const tel = '+57 3' + String(Math.floor(100000000 + Math.random() * 899999999));
   const mail = 'v913' + Date.now() + '@prueba.test';
-  await jpost('/api/register', {
+  const reg = await jpost('/api/register', {
     nombres: 'Ana', apellidos: 'Rojas', cedula: ced, birthDate: '1990-05-05',
-    email: mail, password: 'clave12345', country: 'Colombia',
+    email: mail, password: 'clave12345', phone: tel,
   });
+  ok('la persona se registra', !!reg.token, reg.error || '');
   const user = await jpost('/api/login', { cedula: ced, password: 'clave12345' });
   const admin = await jpost('/api/login', { email: 'admin@prueba.test', password: 'claveadmin123' });
   ok('la persona entra', !!user.token, user.error || '');

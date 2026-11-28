@@ -34,7 +34,7 @@ function pdfMinimo(texto) {
 (async () => {
   const ced = 'V-' + String(Math.floor(10000000 + Math.random() * 89999999));
   const mail = 'v912' + Date.now() + '@prueba.test';
-  await jpost('/api/register', { nombres: 'Ana', apellidos: 'Rojas', cedula: ced, birthDate: '1990-05-05', email: mail, password: 'clave12345', country: 'Venezuela' });
+  await jpost('/api/register', { nombres: 'Ana', apellidos: 'Rojas', cedula: ced, birthDate: '1990-05-05', email: mail, password: 'clave12345', phone: '04125550134' });
   const log = fs.readFileSync('/tmp/srv9.log', 'utf8');
   const codes = [...log.matchAll(/Codigo para [^:]+: (\d{6})/g)].map((m) => m[1]);
   await jpost('/api/verify-email', { cedula: ced, code: codes[codes.length - 1] });

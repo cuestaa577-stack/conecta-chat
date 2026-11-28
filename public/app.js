@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v9.19';
+  const APP_VERSION = 'v9.21';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -2970,6 +2970,7 @@ const App = (() => {
           <button class="btn ghost" onclick="App.guardarPagoInfo()">Guardar nota</button>
         </div>
         ${adminPagoMovilEditorHtml()}
+        ${adminAvisosRegistroHtml()}
         <div class="panel">
           <h3>Correo de la aplicación</h3>
           <p class="pnote muted">Envia un codigo de prueba para confirmar que los registros llegan.</p>
@@ -2992,6 +2993,54 @@ const App = (() => {
           <button class="btn primary" onclick="App.crearTramite()">Crear tramite</button>
           ${people.length ? '' : '<p class="pnote muted">Todavia no hay personas registradas.</p>'}
         </div>`;
+  }
+
+  /* Avisos de registro nuevo en el telefono del administrador.
+     El aviso llega por push (service worker), asi que suena aunque la app este
+     cerrada. Aqui solo se activa en ESTE telefono y se prueba. */
+  function adminAvisosRegistroHtml() {
+    return `
+        <div class="panel">
+          <h3>Avisos de registro nuevo</h3>
+          <p class="pnote muted">Cada vez que una persona se registre, te llega una notificaci&oacute;n al tel&eacute;fono con su pa&iacute;s, su nombre y su tel&eacute;fono. Funciona aunque tengas la app cerrada.</p>
+          <p id="pushEstado" class="pnote muted">Comprobando este tel&eacute;fono...</p>
+          <button class="btn primary" onclick="App.activarAvisosAdmin()">Activar avisos en este tel&eacute;fono</button>
+          <button class="btn ghost" onclick="App.probarAvisoRegistro()">Enviar aviso de prueba</button>
+        </div>`;
+  }
+
+  async function pushEstadoPintar() {
+    const el = document.getElementById('pushEstado');
+    if (!el) return;
+    try {
+      const d = await api('/api/push/status');
+      if (!d || !d.disponible) {
+        el.textContent = 'El servidor no tiene las notificaciones disponibles.';
+        return;
+      }
+      if (d.activo) {
+        el.textContent = 'Avisos activos en este tel\u00e9fono (' + d.suscripciones + '). Recibir\u00e1s un aviso por cada registro.';
+      } else {
+        el.textContent = 'Este tel\u00e9fono NO tiene los avisos activados. Pulsa el bot\u00f3n de abajo.';
+      }
+    } catch (e) {
+      el.textContent = 'No se pudo comprobar el estado de los avisos.';
+    }
+  }
+
+  async function activarAvisosAdmin() {
+    const ok = await notifActivar(false);
+    if (ok) toast('Avisos activados en este tel\u00e9fono');
+    pushEstadoPintar();
+  }
+
+  async function probarAvisoRegistro() {
+    try {
+      const d = await api('/api/push/test', { method: 'POST', body: '{}' });
+      toast(d && d.enviado ? 'Aviso de prueba enviado' : 'No se pudo enviar el aviso', d && d.enviado ? 'info' : 'bad');
+    } catch (e) {
+      toast((e && e.message) || 'No se pudo enviar el aviso de prueba', 'bad');
+    }
   }
 
   /* Editor de los datos de Pago Movil. Solo el administrador lo ve: puede
@@ -3127,6 +3176,7 @@ const App = (() => {
     if (tab === 'tramites') renderAdminTramites();
     if (tab === 'referencias') cargarModeracion();
     if (tab === 'ajustes') adminFillSubtypes();
+    if (tab === 'ajustes') pushEstadoPintar();
   }
 
   /* Sale del panel y vuelve a la app como cliente. Desde el perfil se cierra la sesion. */
@@ -6713,6 +6763,7 @@ const App = (() => {
     adminFillSubtypes, crearTramite, adminSubirDocumento, adminAprobar, adminRechazar,
     adminBorrarTramite, guardarPagoInfo, cerrarArchivo,
     agregarFilaPagoMovil, quitarFilaPagoMovil, guardarPagoMovil,
+    activarAvisosAdmin, probarAvisoRegistro,
     entendidoCaptura, salirBloqueo, guardarCapturaConfig, adminDesbloquear, zoomDoc,
     actualizarApp, comprobarVersionPublicada,
     enviarReferencia, modAprobar, modBorrar, modDesmarcar, cargarModeracion,
