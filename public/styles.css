@@ -1177,6 +1177,27 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 .pay-pais-bloque + .pay-pais-bloque { margin-top: 8px; }
 .pay-pais-metodo { display: block; font-size: 13.5px; color: #12395f; margin-bottom: 3px; }
 
+/* Editor de los datos de Pago Movil (solo administrador). */
+.pm-fila { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.pm-fila .pm-k { flex: 0 0 38%; }
+.pm-fila .pm-v { flex: 1 1 auto; }
+.pm-fila input {
+  min-width: 0; padding: 9px 11px; font-size: 14px; color: #12263f;
+  border: 1px solid #d3e0f0; border-radius: 10px; background: #fff;
+}
+.pm-fila input:focus { outline: none; border-color: #4e7fb0; box-shadow: 0 0 0 3px rgba(78,127,176,.14); }
+.pm-quitar {
+  flex: 0 0 auto; width: 32px; height: 32px; line-height: 1;
+  border: 1px solid #e3c9c9; border-radius: 9px; background: #fdf4f4;
+  color: #b23b3b; font-size: 18px; cursor: pointer;
+}
+.pm-quitar:hover { background: #fbe9e9; }
+.pm-tag {
+  display: inline-block; margin-left: 6px; padding: 1px 7px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase;
+  color: #2f6b3f; background: #e8f6ec; border-radius: 999px; vertical-align: middle;
+}
+
 .admin-tramites { display: flex; flex-direction: column; gap: 12px; }
 .pills-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .admin-tramite { padding: 10px 0; border-bottom: 1px solid var(--border); }

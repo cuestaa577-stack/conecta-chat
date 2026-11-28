@@ -1,6 +1,6 @@
 /* Conecta Chat - service worker (instalable + lo mas reciente primero) */
-const CACHE = 'tramites-ve-v65';
-const ASSETS = ['./', './index.html', './styles.css', './styles-agenda.css', './app.js', './huella.js', './fileviewer.js', './manifest.json', './bg.jpg', './logos/saime.png', './logos/saime-email.png', './galeria/01-identidad-un-clic.jpg', './galeria/02-servicios-saime.jpg', './galeria/03-pasos-tramite.jpg', './logos/intt.png', './logos/justicia.png', './icon-192.png', './marca-agua-saime-color.png', './badge-96.png', './referencias/ref_chile.jpg', './referencias/ref_ecuador.jpg', './referencias/ref_colombia.jpg', './referencias/ref_venezuela.jpg', './referencias/ref_peru.jpg', './referencias/ref_venezuela_1.jpg', './referencias/ref_venezuela_2.jpg', './referencias/ref_venezuela_3.jpg'];
+const CACHE = 'tramites-ve-v67';
+const ASSETS = ['./', './index.html', './styles.css', './styles-agenda.css', './app.js', './paises.js', './huella.js', './fileviewer.js', './manifest.json', './bg.jpg', './logos/saime.png', './logos/saime-email.png', './galeria/01-identidad-un-clic.jpg', './galeria/02-servicios-saime.jpg', './galeria/03-pasos-tramite.jpg', './logos/intt.png', './logos/justicia.png', './icon-192.png', './marca-agua-saime-color.png', './badge-96.png', './referencias/ref_chile.jpg', './referencias/ref_ecuador.jpg', './referencias/ref_colombia.jpg', './referencias/ref_venezuela.jpg', './referencias/ref_peru.jpg', './referencias/ref_venezuela_1.jpg', './referencias/ref_venezuela_2.jpg', './referencias/ref_venezuela_3.jpg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));

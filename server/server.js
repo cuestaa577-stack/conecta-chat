@@ -807,6 +807,9 @@ function normalizarPais(valor) {
   return PAISES_ALIAS[clave] || v;
 }
 
+/* Paises y prefijos telefonicos: la misma tabla que usa el navegador. */
+const PaisesTel = require('../public/paises.js');
+
 async function paisPorIp(ip) {
   if (ipPrivada(ip)) return null;
   const cacheado = geoCache.get(ip);
@@ -1455,17 +1458,28 @@ app.post('/api/register', async (req, res) => {
   const email = String(body.email || '').trim().toLowerCase();
   const password = String(body.password || '');
   const country = String(body.country || '').trim();
+  const phoneCrudo = String(body.phone || '').trim();
 
   if (name.length < 2) return res.status(400).json({ error: 'Escribe tu nombre y apellido' });
+
+  /* El pais NO lo elige la persona: sale del prefijo de su telefono. El numero
+     se valida contra el formato real de ese pais, asi no entra un numero
+     inventado. Si el telefono no es valido, no se crea la cuenta. */
+  const tel = PaisesTel.detectar(phoneCrudo, country);
+  if (!tel.ok) {
+    return res.status(400).json({ error: tel.error, code: 'phone_invalid' });
+  }
+  const paisTelefono = tel.pais;
 
   /* El pais declarado debe coincidir con el pais real de la conexion (IP).
      Si la deteccion no es concluyente se deja pasar para no bloquear a nadie. */
   const geo = await paisPorIp(clientIp(req));
-  const paisDeclarado = normalizarPais(country);
+  const paisDeclarado = normalizarPais(paisTelefono);
   const paisReal = geo ? normalizarPais(geo.country) : '';
   if (process.env.COUNTRY_IP_CHECK !== 'off' && paisReal && paisDeclarado && paisReal !== paisDeclarado) {
     return res.status(403).json({
-      error: 'Debes registrarte con el pais donde vives actualmente para poder crear tu cuenta.',
+      error: 'Tu numero es de ' + paisTelefono + ' pero te conectas desde ' + paisReal +
+        '. Debes registrarte con el pais donde vives actualmente.',
       code: 'country_mismatch',
       detected: paisReal,
       declared: paisDeclarado
@@ -1512,9 +1526,13 @@ app.post('/api/register', async (req, res) => {
     return res.status(409).json({ error: 'Ese correo ya tiene una cuenta' });
   }
 
-  const user = makeUser(name, '', password, { country, email });
+  const user = makeUser(name, tel.internacional, password, { country: paisTelefono, email });
   user.cedula = cedula;
   user.birthDate = birthDate;
+  /* El pais queda fijado por el telefono: no se puede cambiar despues. */
+  user.country = paisTelefono;
+  user.phonePais = paisTelefono;
+  user.phonePrefijo = tel.prefijo;
   /* Nombres y apellidos se guardan por separado: el perfil los muestra tal
      como los escribio la persona, aunque el nombre completo siga en `name`. */
   if (nombres) user.nombres = nombres.slice(0, 80);
@@ -1773,12 +1791,19 @@ app.post('/api/profile', auth, (req, res) => {
   }
 
   if (typeof phone === 'string' && phone.trim()) {
-    const soloDigitos = phone.replace(/\D/g, '');
-    if (soloDigitos.length < 7 || soloDigitos.length > 15) return res.status(400).json({ error: 'Escribe un numero de celular valido' });
-    req.user.phone = soloDigitos;
+    /* El telefono manda: se valida contra el formato real de su pais y el pais
+       de la cuenta queda fijado por ese prefijo. La persona no puede cambiarlo
+       a mano ni poner un numero inventado. */
+    const tel = PaisesTel.detectar(phone, req.user.country);
+    if (!tel.ok) return res.status(400).json({ error: tel.error, code: 'phone_invalid' });
+    req.user.phone = tel.internacional;
+    req.user.country = tel.pais;
+    req.user.phonePais = tel.pais;
+    req.user.phonePrefijo = tel.prefijo;
   }
 
-  if (typeof country === 'string' && country.trim()) req.user.country = country.trim().slice(0, 40);
+  /* El pais NO se acepta del cliente: sale del telefono. Si llega uno distinto
+     al que corresponde, se ignora en vez de dejar que la persona lo cambie. */
 
   if (typeof about === 'string') req.user.about = about.slice(0, 160);
   /* La foto SOLO cambia cuando llega una direccion nueva y valida. Un valor
@@ -2966,6 +2991,54 @@ function tramitesDb() {
   return db.tramites;
 }
 
+/* Datos de la cuenta de cada metodo de pago. Los de Pago Movil los edita el
+   administrador desde su panel; el resto quedan como estan configurados.
+   El formato es el mismo que ve la persona: una lista de {k, v}. */
+const PAY_DETAILS_DEFAULT = {
+  'Pago Movil': [
+    { k: 'Banco', v: 'Banesco' },
+    { k: 'Telefono', v: '0412 555 0134' },
+    { k: 'Cedula / RIF', v: 'V-12.345.678' },
+    { k: 'Titular', v: 'Enel Extranjero Venezolanos' },
+  ],
+  Nequi: [
+    { k: 'Numero Nequi', v: '3161154996' },
+  ],
+  'Banco Estado': [
+    { k: 'Banco', v: 'Banco Estado' },
+    { k: 'Titular', v: 'Jesus Vives' },
+    { k: 'RUT', v: '264610354' },
+    { k: 'Tipo de cuenta', v: 'Cuenta RUT' },
+  ],
+  'Banco Pichincha': [
+    { k: 'Banco', v: 'Banco Pichincha' },
+    { k: 'Tipo de cuenta', v: 'Cuenta de ahorro' },
+    { k: 'Titular', v: 'Amado Fernando Poveda' },
+    { k: 'Numero de cuenta', v: '4364629800' },
+  ],
+};
+
+/* Metodos cuyos datos puede editar el administrador. */
+const PAY_DETAILS_EDITABLES = ['Pago Movil'];
+
+function payDetails() {
+  if (!db.settings || typeof db.settings !== 'object') db.settings = {};
+  const guardado = (db.settings.payDetails && typeof db.settings.payDetails === 'object')
+    ? db.settings.payDetails : {};
+  const salida = {};
+  Object.keys(PAY_DETAILS_DEFAULT).forEach((metodo) => {
+    const filas = guardado[metodo];
+    if (Array.isArray(filas) && filas.length) {
+      salida[metodo] = filas
+        .filter((f) => f && typeof f === 'object')
+        .map((f) => ({ k: String(f.k == null ? '' : f.k).slice(0, 60), v: String(f.v == null ? '' : f.v).slice(0, 200) }));
+    } else {
+      salida[metodo] = PAY_DETAILS_DEFAULT[metodo].map((f) => ({ k: f.k, v: f.v }));
+    }
+  });
+  return salida;
+}
+
 /* Datos para pagar que ve la persona (los escribe el administrador). */
 function pagoInfo() {
   if (!db.settings || typeof db.settings !== 'object') db.settings = {};
@@ -3666,14 +3739,14 @@ app.get('/api/tramites', auth, (req, res) => {
   const lista = Object.values(tramitesDb())
     .filter((t) => esAdmin || t.userId === req.user.id)
     .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
-  res.json({ tramites: lista.map((t) => tramiteView(t, req.user)), pagoInfo: pagoInfo(), captura: capturaConfig() });
+  res.json({ tramites: lista.map((t) => tramiteView(t, req.user)), pagoInfo: pagoInfo(), payDetails: payDetails(), captura: capturaConfig() });
 });
 
 app.get('/api/tramites/:id', auth, (req, res) => {
   const t = tramiteDe(req);
   if (!t) return res.status(404).json({ error: 'Tramite no encontrado' });
   revisarCitas(t.userId);
-  res.json({ tramite: tramiteView(t, req.user), pagoInfo: pagoInfo(), captura: capturaConfig() });
+  res.json({ tramite: tramiteView(t, req.user), pagoInfo: pagoInfo(), payDetails: payDetails(), captura: capturaConfig() });
 });
 
 /* La persona confirma su cita virtual. Sin esta confirmacion la cita se
@@ -3836,6 +3909,8 @@ app.get('/api/admin/tramites', auth, adminOnly, (req, res) => {
     people: people,
     porEstado: porEstado,
     pagoInfo: pagoInfo(),
+    payDetails: payDetails(),
+    payDetailsEditables: PAY_DETAILS_EDITABLES,
     captura: capturaConfig(),
   });
 });
@@ -4108,6 +4183,32 @@ app.post('/api/admin/pago-info', auth, adminOnly, (req, res) => {
   db.settings.pagoInfo = texto;
   save();
   res.json({ ok: true, pagoInfo: texto });
+});
+
+/* Datos de la cuenta de Pago Movil: solo el administrador los edita. Se guardan
+   con el mismo formato que ve la persona: [{k, v}, ...]. */
+app.post('/api/admin/pay-details', auth, adminOnly, (req, res) => {
+  const b = req.body || {};
+  const metodo = String(b.metodo || '').trim();
+  if (PAY_DETAILS_EDITABLES.indexOf(metodo) < 0) {
+    return res.status(400).json({ error: 'Ese metodo de pago no es editable' });
+  }
+  const filas = Array.isArray(b.filas) ? b.filas : [];
+  const limpias = filas
+    .filter((f) => f && typeof f === 'object')
+    .map((f) => ({
+      k: String(f.k == null ? '' : f.k).trim().slice(0, 60),
+      v: String(f.v == null ? '' : f.v).trim().slice(0, 200),
+    }))
+    .filter((f) => f.k && f.v);
+  if (!limpias.length) {
+    return res.status(400).json({ error: 'Escribe al menos un dato (nombre y valor)' });
+  }
+  if (!db.settings || typeof db.settings !== 'object') db.settings = {};
+  if (!db.settings.payDetails || typeof db.settings.payDetails !== 'object') db.settings.payDetails = {};
+  db.settings.payDetails[metodo] = limpias;
+  save();
+  res.json({ ok: true, payDetails: payDetails() });
 });
 
 /* --- servidor + websocket --- */

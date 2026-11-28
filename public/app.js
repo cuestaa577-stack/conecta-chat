@@ -255,7 +255,9 @@ const App = (() => {
   };
 
   /* Datos de la cuenta a la que se paga, por metodo. Se muestran debajo del
-     selector en cuanto la persona elige con que va a pagar. */
+     selector en cuanto la persona elige con que va a pagar.
+     Estos son los valores por defecto; el servidor manda los que el
+     administrador haya guardado (Pago Movil es editable desde su panel). */
   const PAY_DETAILS = {
     Nequi: [
       { k: 'Numero Nequi', v: '3161154996' },
@@ -286,9 +288,14 @@ const App = (() => {
   }
 
   /* Datos de la cuenta del metodo elegido. Devuelve [] si el metodo no tiene
-     datos fijos (los generales, que se explican por el chat). */
+     datos fijos (los generales, que se explican por el chat).
+     Se prefieren los que mando el servidor (state.payDetails), para que los
+     cambios que haga el administrador se vean al instante. */
   function datosDePago(metodo) {
-    return PAY_DETAILS[String(metodo || '')] || [];
+    const m = String(metodo || '');
+    const delServidor = state.payDetails && state.payDetails[m];
+    if (Array.isArray(delServidor) && delServidor.length) return delServidor;
+    return PAY_DETAILS[m] || [];
   }
 
   /* Ejemplo que aparece en la nota opcional, con el nombre del metodo que la
@@ -317,6 +324,7 @@ const App = (() => {
     tramites: [],
     currentTramiteId: null,
     pagoInfo: '',
+    payDetails: null,
     messages: {},
     currentChatId: null,
     users: {},
@@ -851,6 +859,29 @@ const App = (() => {
     return false;
   }
 
+  /* Al escribir el telefono se detecta el pais y se muestra fijo. La persona
+     no puede cambiarlo: el prefijo del numero manda. */
+  function regPhoneChanged() {
+    const el = $('#regPhone');
+    const fijo = $('#authCountryFixed');
+    const hint = $('#regPhoneHint');
+    if (!el) return;
+    const valor = (el.value || '').trim();
+    if (!valor) {
+      if (fijo) fijo.value = '';
+      if (hint) { hint.textContent = 'Escribe tu numero con el prefijo de tu pais. El pais se toma de ahi.'; hint.classList.remove('bad'); }
+      return;
+    }
+    const tel = PaisesTel.detectar(valor, paisDetectado);
+    if (tel.ok) {
+      if (fijo) fijo.value = tel.pais;
+      if (hint) { hint.textContent = 'Pais: ' + tel.pais + ' \u00b7 formato ' + tel.ayuda; hint.classList.remove('bad'); }
+    } else {
+      if (fijo) fijo.value = '';
+      if (hint) { hint.textContent = tel.error; hint.classList.add('bad'); }
+    }
+  }
+
   async function submitRegister() {
     if (enviandoRegistro) return;
     const nombres = ($('#regNombres').value || '').trim();
@@ -860,21 +891,24 @@ const App = (() => {
     const birthDate = $('#regBirth').value || '';
     /* Sin correo: la cuenta se crea con los datos personales y la clave. */
     const password = ($('#regPassword').value || '');
-    const country = paisElegido();
+    const phone = ($('#regPhone').value || '').trim();
 
     if (nombres.length < 2) return toast('Escribe tus nombres');
     if (apellidos.length < 2) return toast('Escribe tus apellidos');
     if (!cedulaOk(cedula)) return toast('La cedula debe tener al menos 8 digitos');
     if (!birthDate) return toast('Escribe tu fecha de nacimiento');
     if (password.length < 8) return toast('La contrasena debe tener al menos 8 caracteres');
-    if (!country) return toast('Escribe el pais donde vives');
-    if (!comprobarPais()) return toast('Debes registrarte con el pais donde vives actualmente');
+    /* El pais NO se elige: sale del prefijo del telefono. Si el numero no tiene
+       el formato real de ningun pais, no se deja crear la cuenta. */
+    const tel = PaisesTel.detectar(phone, paisDetectado);
+    if (!tel.ok) return toast(tel.error, 'bad');
+    const country = tel.pais;
 
     enviandoRegistro = true;
     try {
       const data = await api('/api/register', {
         method: 'POST',
-        body: JSON.stringify({ name, nombres, apellidos, cedula, birthDate, email: '', password, country }),
+        body: JSON.stringify({ name, nombres, apellidos, cedula, birthDate, email: '', password, country, phone }),
       });
       // Si el servidor ya entrego sesion (correo opcional), se entra de una.
       if (data && data.token) {
@@ -2461,40 +2495,48 @@ const App = (() => {
   function autoVerifyCedula() { /* sin verificacion de cedula */ }
   function openEditData() {
     if (!state.me) return;
-    $('#editPhone').value = state.me.phone || '';
-    const pais = state.me.country || 'Venezuela';
-    const enLista = ['Venezuela', 'Chile', 'Ecuador', 'Colombia'];
-    $('#editCountry').value = enLista.indexOf(pais) >= 0 ? pais : 'Otro';
-    const otro = $('#editCountryOther');
-    if (otro) otro.value = enLista.indexOf(pais) >= 0 ? '' : pais;
-    editCountryChanged();
+    const tel = state.me.phone ? PaisesTel.formatear(state.me.phone, state.me.country) : '';
+    $('#editPhone').value = tel;
+    const fijo = $('#editCountryFixed');
+    if (fijo) fijo.value = state.me.country || '';
+    editPhoneChanged();
     $('#editDataSheet').classList.remove('hidden');
   }
 
-  function editCountryChanged() {
-    const sel = $('#editCountry');
-    const wrap = $('#editCountryOtherWrap');
-    if (!sel || !wrap) return;
-    const esOtro = sel.value === 'Otro';
-    wrap.classList.toggle('hidden', !esOtro);
-    if (esOtro) {
-      const otro = $('#editCountryOther');
-      if (otro) setTimeout(() => { try { otro.focus(); } catch (e) {} }, 60);
+  /* El pais del perfil sale del telefono: no hay selector que cambiar. */
+  function editPhoneChanged() {
+    const el = $('#editPhone');
+    const fijo = $('#editCountryFixed');
+    const hint = $('#editPhoneHint');
+    if (!el) return;
+    const valor = (el.value || '').trim();
+    if (!valor) {
+      if (fijo) fijo.value = (state.me && state.me.country) || '';
+      if (hint) { hint.textContent = 'El pais se toma del prefijo de tu numero y no se puede cambiar.'; hint.classList.remove('bad'); }
+      return;
+    }
+    const tel = PaisesTel.detectar(valor, (state.me && state.me.country) || '');
+    if (tel.ok) {
+      if (fijo) fijo.value = tel.pais;
+      if (hint) { hint.textContent = 'Pais: ' + tel.pais + ' \u00b7 formato ' + tel.ayuda; hint.classList.remove('bad'); }
+    } else {
+      if (fijo) fijo.value = '';
+      if (hint) { hint.textContent = tel.error; hint.classList.add('bad'); }
     }
   }
+
+  function editCountryChanged() { /* el pais ya no se elige a mano */ }
 
   function closeEditData() { $('#editDataSheet').classList.add('hidden'); }
 
   async function savePersonalData() {
     const phone = ($('#editPhone').value || '').trim();
-    const selPais = $('#editCountry').value;
-    const country = selPais === 'Otro' ? ($('#editCountryOther').value || '').trim() : selPais;
-    if (!country) return toast('Escribe tu pais');
-    if (phone.replace(/\D/g, '').length < 7) return toast('Escribe un numero de celular valido');
+    const tel = PaisesTel.detectar(phone, (state.me && state.me.country) || '');
+    if (!tel.ok) return toast(tel.error, 'bad');
     try {
       const data = await api('/api/profile', {
         method: 'POST',
-        body: JSON.stringify({ phone, country }),
+        body: JSON.stringify({ phone }),
       });
       state.me = data.user;
       $('#profilePhone').value = state.me.phone || '';
@@ -2982,6 +3024,7 @@ const App = (() => {
           </label>
           <button class="btn ghost" onclick="App.guardarPagoInfo()">Guardar nota</button>
         </div>
+        ${adminPagoMovilEditorHtml()}
         <div class="panel">
           <h3>Correo de la aplicación</h3>
           <p class="pnote muted">Envia un codigo de prueba para confirmar que los registros llegan.</p>
@@ -3006,6 +3049,63 @@ const App = (() => {
         </div>`;
   }
 
+  /* Editor de los datos de Pago Movil. Solo el administrador lo ve: puede
+     cambiar el banco, el telefono, la cedula/RIF y el titular, y anadir o
+     quitar filas. Se guarda en el servidor y la persona lo ve al instante. */
+  function adminPagoMovilEditorHtml() {
+    const filas = datosDePago('Pago Movil');
+    const lista = filas.length ? filas : [{ k: '', v: '' }];
+    return `
+        <div class="panel">
+          <h3>Datos de Pago M\u00f3vil (Venezuela)</h3>
+          <p class="pnote muted">Estos son los datos que ve la persona al pagar. Puedes editarlos cuando quieras; el cambio se aplica al instante.</p>
+          <div id="pmFilas">
+            ${lista.map((f) => adminPagoMovilFilaHtml(f.k, f.v)).join('')}
+          </div>
+          <button class="btn ghost" onclick="App.agregarFilaPagoMovil()">+ A\u00f1adir dato</button>
+          <button class="btn primary" onclick="App.guardarPagoMovil()">Guardar datos de Pago M\u00f3vil</button>
+        </div>`;
+  }
+
+  function adminPagoMovilFilaHtml(k, v) {
+    return `<div class="pm-fila">
+              <input class="pm-k" type="text" placeholder="Dato (Ej: Banco)" value="${esc(k || '')}" />
+              <input class="pm-v" type="text" placeholder="Valor (Ej: Banesco)" value="${esc(v || '')}" />
+              <button class="pm-quitar" type="button" onclick="App.quitarFilaPagoMovil(this)" aria-label="Quitar dato">\u00d7</button>
+            </div>`;
+  }
+
+  function agregarFilaPagoMovil() {
+    const cont = document.getElementById('pmFilas');
+    if (!cont) return;
+    const div = document.createElement('div');
+    div.innerHTML = adminPagoMovilFilaHtml('', '');
+    cont.appendChild(div.firstElementChild);
+  }
+
+  function quitarFilaPagoMovil(btn) {
+    const fila = btn && btn.closest ? btn.closest('.pm-fila') : null;
+    if (fila) fila.remove();
+  }
+
+  async function guardarPagoMovil() {
+    const cont = document.getElementById('pmFilas');
+    if (!cont) return;
+    const filas = $$('.pm-fila', cont).map((f) => ({
+      k: (($('.pm-k', f) || {}).value || '').trim(),
+      v: (($('.pm-v', f) || {}).value || '').trim(),
+    })).filter((f) => f.k && f.v);
+    if (!filas.length) return toast('Escribe al menos un dato con su valor', 'bad');
+    try {
+      const r = await api('/api/admin/pay-details', {
+        method: 'POST',
+        body: JSON.stringify({ metodo: 'Pago Movil', filas }),
+      });
+      if (r && r.payDetails) state.payDetails = r.payDetails;
+      toast('Datos de Pago M\u00f3vil guardados');
+    } catch (e) { toast(e.message, 'bad'); }
+  }
+
   /* Resumen de solo lectura de las cuentas de pago por pais, para que el
      administrador vea de un golpe lo que tiene la persona en su pantalla. */
   function adminDatosPagoPaisesHtml() {
@@ -3015,7 +3115,10 @@ const App = (() => {
       const filas = metodos.map((m) => {
         const datos = datosDePago(m);
         if (!datos.length) return '';
-        return '<div class="pay-pais-bloque"><b class="pay-pais-metodo">' + esc(m) + '</b>' +
+        /* Pago Movil tiene su propio editor arriba: aqui solo se resume. */
+        const editable = m === 'Pago Movil';
+        return '<div class="pay-pais-bloque"><b class="pay-pais-metodo">' + esc(m) +
+          (editable ? ' <span class="pm-tag">editable</span>' : '') + '</b>' +
           datos.map((d) => '<div class="pay-dato"><span>' + esc(d.k) + '</span><b>' + esc(d.v) + '</b></div>').join('') +
           '</div>';
       }).join('');
@@ -3193,6 +3296,7 @@ const App = (() => {
       const data = await api('/api/tramites');
       state.tramites = data.tramites || [];
       state.pagoInfo = data.pagoInfo || '';
+      if (data.payDetails) state.payDetails = data.payDetails;
       if (data.captura) state.captura = data.captura;
       renderTramites();
       updateTramitesCard();
@@ -3294,6 +3398,7 @@ const App = (() => {
     try {
       const data = await api('/api/tramites/' + encodeURIComponent(id));
       state.pagoInfo = data.pagoInfo || state.pagoInfo || '';
+      if (data.payDetails) state.payDetails = data.payDetails;
       renderTramiteDetail(data.tramite);
     } catch (e) {
       if (box) box.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
@@ -4348,6 +4453,7 @@ const App = (() => {
   async function loadAdminTramites() {
     try {
       adminTramitesData = await api('/api/admin/tramites');
+      if (adminTramitesData && adminTramitesData.payDetails) state.payDetails = adminTramitesData.payDetails;
       renderAdminTramites();
       actualizarTabs();
       const tab = adminTabActual();
@@ -6562,11 +6668,12 @@ const App = (() => {
     adminTab, adminIr, adminFiltrar, adminBuscarPersona, adminBuscarTramite, salirPanel,
     viewImage, closeViewer, logout, notifActivar, ocultarNotifBanner,
     cerrarBienvenida, repetirSaludo, mostrarBienvenida, confirmarCita,
-    installApp, dismissInstall, closeIosSheet, testMail, shareApp, consultarPrecio, countryChanged, cargarPaisDetectado, editCountryChanged,
+    installApp, dismissInstall, closeIosSheet, testMail, shareApp, consultarPrecio, countryChanged, cargarPaisDetectado, editCountryChanged, regPhoneChanged, editPhoneChanged,
     openTramites, loadTramites, openTramite, openTramiteChat, subirComprobante, avisoDescarga,
     cambioMetodoPago,
     adminFillSubtypes, crearTramite, adminSubirDocumento, adminAprobar, adminRechazar,
     adminBorrarTramite, guardarPagoInfo, cerrarArchivo,
+    agregarFilaPagoMovil, quitarFilaPagoMovil, guardarPagoMovil,
     entendidoCaptura, salirBloqueo, guardarCapturaConfig, adminDesbloquear, zoomDoc,
     actualizarApp, comprobarVersionPublicada,
     enviarReferencia, modAprobar, modBorrar, modDesmarcar, cargarModeracion,
