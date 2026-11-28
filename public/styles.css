@@ -1434,6 +1434,11 @@ body.con-actualizacion .view.active { padding-top: 54px; }
   margin: 0 0 8px; font-size: 13.5px; font-weight: 700; color: #4a6b8f;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* Aviso corto y discreto en lugar de los botones de zoom */
+.doc-hint {
+  margin: 10px 0 0; font-size: 12.5px; line-height: 1.45;
+  color: #6b7f96; font-weight: 600;
+}
 .doc-tools {
   display: flex; align-items: center; gap: 8px; margin-top: 10px;
 }

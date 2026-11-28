@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v9.9';
+  const APP_VERSION = 'v9.10';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -3409,12 +3409,7 @@ const App = (() => {
       '<div class="doc-viewer" id="docViewer">' +
         '<div class="doc-pages" id="docPages"><div class="doc-loading">Abriendo el documento...</div></div>' +
       '</div>' +
-      '<div class="doc-tools">' +
-        '<button class="doc-tool" type="button" onclick="App.zoomDoc(-1)" title="Alejar">\u2212</button>' +
-        '<button class="doc-tool wide" type="button" onclick="App.zoomDoc(0)" title="Ajustar a la pantalla">Ajustar</button>' +
-        '<button class="doc-tool" type="button" onclick="App.zoomDoc(1)" title="Acercar">+</button>' +
-        '<span class="doc-zoom-lbl" id="docZoomLbl">100%</span>' +
-      '</div>' +
+      '<p class="doc-hint">Haz zoom para verificar que todos los datos en el documento est\u00e9n correctos</p>' +
       '<p class="pnote nota-clara" id="docNota"></p>';
     panelDoc = el;
     return el;
@@ -3439,7 +3434,7 @@ const App = (() => {
     if (nota) {
       nota.textContent = esAdmin
         ? 'As\u00ed lo ve la persona en su aplicaci\u00f3n: lo puede leer con zoom, pero no descargarlo hasta que confirmes el pago.'
-        : 'Ac\u00e9rcalo con dos dedos o con los botones para leerlo bien. Cuando est\u00e9 todo correcto, env\u00eda tu comprobante de pago aqu\u00ed abajo.';
+        : 'Ac\u00e9rcalo con dos dedos para leerlo bien. Cuando est\u00e9 todo correcto, env\u00eda tu comprobante de pago aqu\u00ed abajo.';
     }
   }
 
