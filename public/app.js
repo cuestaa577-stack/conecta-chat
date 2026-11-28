@@ -23,27 +23,31 @@ const App = (() => {
 
      Para cambiar un precio basta con editar el numero en esta tabla: la app y
      el servidor usan la misma estructura. */
+  /* Cedula: los cuatro tramites valen 28, 26, 24 y 22 en la moneda de cada
+     pais (el monto es el mismo, solo cambia la moneda). Venezuela conserva su
+     valor propio en bolivares. Ecuador es el unico que lleva centavos
+     ("USD $28.00"); los demas van sin decimales. */
   const TARIFAS_POR_PAIS = {
     Venezuela: {
       cedula: { renovacion: 19000, extravio: 17000, deterioro: 15000, hurto: 13000 },
       licencia: { '2': 50000, '3': 55000, '4': 60000, '5': 65000 },
     },
     Colombia: {
-      cedula: { renovacion: 35000, extravio: 32000, deterioro: 29000, hurto: 26000 },
+      cedula: { renovacion: 28000, extravio: 26000, deterioro: 24000, hurto: 22000 },
       licencia: { '2': 35000, '3': 45000, '4': 50000, '5': 55000 },
     },
     Chile: {
-      cedula: { renovacion: 28000, extravio: 25000, deterioro: 24000, hurto: 23000 },
+      cedula: { renovacion: 28000, extravio: 26000, deterioro: 24000, hurto: 22000 },
       licencia: { '2': 35000, '3': 45000, '4': 50000, '5': 55000 },
     },
     Ecuador: {
       /* Ecuador usa el dolar: los montos van en USD, no en miles. */
-      cedula: { renovacion: 25, extravio: 22, deterioro: 20, hurto: 18 },
+      cedula: { renovacion: 28, extravio: 26, deterioro: 24, hurto: 22 },
       licencia: { '2': 30, '3': 40, '4': 45, '5': 50 },
     },
     Peru: {
       /* Peru usa soles (PEN). */
-      cedula: { renovacion: 60, extravio: 55, deterioro: 50, hurto: 45 },
+      cedula: { renovacion: 28, extravio: 26, deterioro: 24, hurto: 22 },
       licencia: { '2': 80, '3': 100, '4': 120, '5': 140 },
     },
   };
