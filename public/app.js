@@ -1,7 +1,7 @@
 const App = (() => {
   // Version visible de la app (subirla junto con el cache del service worker).
   // v2.1: iconos profesionales, navegacion con historial real, logos institucionales, perfil con foto y eliminar cuenta, acceso por correo, sin video ni microfono.
-  const APP_VERSION = 'v9.16';
+  const APP_VERSION = 'v9.17';
 
   /* Tamano maximo de un documento (PDF o foto) que la app acepta.
      ---------------------------------------------------------------------
@@ -743,7 +743,6 @@ const App = (() => {
     await enterApp();
     // La persona entra a la portada; la conversaci\u00f3n la inicia ella al elegir un tr\u00e1mite.
     if (isNew) { state.viewStack = []; }
-    saludoVozAlEntrar();
   }
 
   /* Entrar: cedula + contrasena */
@@ -988,11 +987,14 @@ const App = (() => {
     if (!el) return;
     const nombre = String((state.me && state.me.name) || '').trim();
     if (!nombre) { el.style.display = 'none'; return; }
-    /* "Bienvenida, Maria" si es mujer y "Bienvenido, Carlos" si es hombre, con
-       el logo del SAIME al lado. Antes se pintaba con textContent y eso borraba
-       el boton de la voz; ahora se arma completo con innerHTML. */
-    const mujer = esMujer(nombre);
-    const texto = '¡' + (mujer ? 'Bienvenida' : 'Bienvenido') + ', ' + primerNombre(nombre) + '!';
+    /* Franjas del dia (hora local del telefono):
+       00:00 a 11:59 buenos dias | 12:00 a 18:59 buenas tardes | 19:00 a 23:59 buenas noches.
+       La madrugada cuenta como dia nuevo: a la 1:00 AM ya dice "Buenos dias". */
+    const hora = new Date().getHours();
+    let saludo = 'Buenas noches';
+    if (hora < 12) saludo = 'Buenos días';
+    else if (hora < 19) saludo = 'Buenas tardes';
+    const texto = saludo + ', ' + primerNombre(nombre);
     /* Se repinta cada minuto por si cambia el nombre o la foto: si el texto es
        el mismo no se toca nada, para no recargar el logo ni el boton. */
     if (el.dataset.firma === texto && el.style.display === 'flex') return;
@@ -1074,9 +1076,6 @@ const App = (() => {
     $('#appScreen').classList.remove('hidden');
     pintarSaludo();
     pintarMetaPortada();
-    /* El saludo con voz suena apenas la persona abre la app, antes de elegir
-       ningun tramite. */
-    saludoVozAlEntrar();
     if (!saludoTimer) saludoTimer = setInterval(pintarSaludo, 60000);
     if (!presenciaTimer) presenciaTimer = setInterval(refrescarPresencia, 30000);
     pintarAvatar($('#myAvatarBtn'), state.me.avatar, state.me.name);
@@ -2231,90 +2230,9 @@ const App = (() => {
     if (c) c.remove();
   }
 
-  /* ------------------- saludo con voz al entrar -------------------
-     Dice "Buenos dias, Maria" con una voz en espanol del telefono. Suena una
-     vez por sesion; si el navegador lo bloquea porque hace falta un toque,
-     queda pendiente y suena al primer toque en la app. */
-  let vozPendiente = false;
-
-  function textoSaludo() {
-    const nombre = String((state.me && state.me.name) || '').trim();
-    if (!nombre) return '';
-    /* La voz dice lo mismo que se lee en pantalla. */
-    return (esMujer(nombre) ? 'Bienvenida, ' : 'Bienvenido, ') + primerNombre(nombre);
-  }
-
-  /* El telefono trae varias voces en espanol. Se elige una de mujer cuando la
-     persona es mujer y una de hombre cuando es hombre; si el telefono solo
-     tiene una, se cambia el tono para que suene acorde. */
-  /* La bienvenida la dice una voz de hombre. No se toma la primera que
-     aparezca: se puntuan todas las voces en espanol y gana la que suena mas
-     nitida (las "Google" del telefono son mas claras que las del sistema) y
-     mas latina (es-419, es-US, es-MX...). Si el telefono no trae ninguna voz
-     de hombre, se usa la mejor en espanol con el tono bajado. */
-  const VOCES_MUJER = /mujer|female|monica|mónica|paulina|sabina|helena|lucia|lucía|marisol|esperanza|sofia|sofía|elena|dalia|isabela|camila|salome|salomé|^google español$/i;
-  const VOCES_HOMBRE = /hombre|male|diego|jorge|carlos|juan|pablo|miguel|enrique|raul|raúl|javier|andres|andrés|alvaro|álvaro|gonzalo|ricardo|esteban|estados unidos|us spanish/i;
-
-  function puntajeVoz(v) {
-    const nombre = v.name || '';
-    const idioma = v.lang || '';
-    let p = 0;
-    if (VOCES_HOMBRE.test(nombre)) p += 6;
-    if (VOCES_MUJER.test(nombre)) p -= 6;
-    if (/google/i.test(nombre)) p += 4;
-    if (v.localService === false || /network|online|en línea|en linea/i.test(nombre)) p += 2;
-    if (/^es-(419|us|mx|co|ve|ar|cl|pe)/i.test(idioma)) p += 3;
-    else if (/^es-es$/i.test(idioma)) p += 1;
-    return p;
-  }
-
-  function vozEspanol() {
-    const voces = (window.speechSynthesis && window.speechSynthesis.getVoices()) || [];
-    const es = voces.filter((v) => /^es/i.test(v.lang || ''));
-    if (!es.length) return null;
-    return es.slice().sort((a, b) => puntajeVoz(b) - puntajeVoz(a))[0] || null;
-  }
-
-  function saludarConVoz() {
-    const txt = textoSaludo();
-    if (!txt || !window.speechSynthesis) return;
-    try {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(txt);
-      const v = vozEspanol();
-      if (v) u.voice = v;
-      u.lang = (v && v.lang) || 'es-419';
-      /* Un poco mas lento y con tono de hombre: se entiende mejor y no suena
-         a la voz robotica que trae el telefono por defecto. */
-      u.rate = 0.92;
-      u.pitch = 0.9;
-      u.volume = 1;
-      window.speechSynthesis.speak(u);
-      vozPendiente = false;
-    } catch (e) { vozPendiente = true; }
-  }
-
-  function saludoVozAlEntrar() {
-    if (!state.me) return;
-    try { if (sessionStorage.getItem('saludo_dicho') === '1') return; sessionStorage.setItem('saludo_dicho', '1'); } catch (e) {}
-    vozPendiente = true;
-    /* Las voces del telefono tardan un instante en cargar: se intenta ya, y si
-       todavia no estan, se reintenta a los 600 ms y otra vez cuando el sistema
-       avisa que ya cargaron. */
-    saludarConVoz();
-    setTimeout(() => { if (vozPendiente) saludarConVoz(); }, 600);
-    setTimeout(() => { if (vozPendiente) saludarConVoz(); }, 1600);
-  }
-
-  function repetirSaludo() { saludarConVoz(); }
-
-  function engancharSaludoVoz() {
-    const desbloquear = () => { if (vozPendiente) saludarConVoz(); };
-    document.addEventListener('touchstart', desbloquear, { once: true, passive: true });
-    document.addEventListener('click', desbloquear, { once: true });
-    if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = () => { if (vozPendiente) saludarConVoz(); };
-    /* La ayuda de la contrasena solo aparece cuando la persona toca el campo,
-       y solo en el registro. */
+  /* La ayuda de la contrasena solo aparece cuando la persona toca el campo,
+     y solo en el registro. */
+  function engancharAyudaPassword() {
     document.addEventListener('focusin', (e) => {
       if (e.target && e.target.id === 'regPassword') {
         document.querySelectorAll('#registerPanel .field-hint, #registerPanel .pass-warning').forEach((el) => { el.hidden = false; });
@@ -4735,6 +4653,10 @@ const App = (() => {
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') return;
     try { if (localStorage.getItem('tve_notif_no') === '1') return; } catch (e) {}
     el.classList.remove('hidden');
+    /* El aviso vive en la pila fija de abajo: se marca el body para reservar
+       su alto al final del contenido y que no tape la ultima linea. */
+    document.body.classList.add('has-notif');
+    ajustarPila();
     /* El aviso es fijo y ocupa la parte baja: el boton de requisitos sube para
        que se pueda pulsar. Antes quedaba debajo y no habia forma de abrirlo. */
     const fab = document.getElementById('reqFab');
@@ -4744,6 +4666,8 @@ const App = (() => {
   function ocultarNotifBanner(recordar) {
     const el = $('#notifBanner');
     if (el) el.classList.add('hidden');
+    document.body.classList.remove('has-notif');
+    ajustarPila();
     const fab = document.getElementById('reqFab');
     if (fab) fab.classList.remove('subir');
     if (recordar) { try { localStorage.setItem('tve_notif_no', '1'); } catch (e) {} }
@@ -4962,6 +4886,16 @@ const App = (() => {
     return /iPhone|iPad|iPod/i.test(ua) && !window.MSStream;
   }
 
+  /* La pila de avisos (instalar + notificaciones) tiene un alto que cambia
+     segun cuantos avisos esten visibles. Se mide y se publica en --stack-h
+     para que el boton de requisitos y el final del contenido se aparten lo
+     justo: asi nunca queda uno tapado por el otro. */
+  function ajustarPila() {
+    const pila = document.getElementById('bannerStack');
+    const alto = pila ? Math.round(pila.getBoundingClientRect().height) : 0;
+    document.body.style.setProperty('--stack-h', alto + 'px');
+  }
+
   function showInstall() {
     if (isStandalone()) return;
     const el = $('#installBanner');
@@ -4975,12 +4909,14 @@ const App = (() => {
     /* Reserva espacio al final para que el aviso no tape la ultima linea. */
     document.body.classList.add('has-install');
     state.installShown = true;
+    ajustarPila();
   }
 
   function hideInstall() {
     const el = $('#installBanner');
     if (el) el.classList.add('hidden');
     document.body.classList.remove('has-install');
+    ajustarPila();
   }
 
   function dismissInstall() {
@@ -6630,7 +6566,7 @@ const App = (() => {
     comprobarVersionPublicada();
     setTimeout(comprobarVersionPublicada, 6000);
 
-    engancharSaludoVoz();
+    engancharAyudaPassword();
 
     // Instalacion en un toque
     window.addEventListener('beforeinstallprompt', (e) => {
@@ -6673,7 +6609,7 @@ const App = (() => {
     openAdmin, openChatFromAdmin, openFirstChat,
     adminTab, adminIr, adminFiltrar, adminBuscarPersona, adminBuscarTramite, salirPanel,
     viewImage, closeViewer, logout, notifActivar, ocultarNotifBanner,
-    cerrarBienvenida, repetirSaludo, mostrarBienvenida, confirmarCita,
+    cerrarBienvenida, mostrarBienvenida, confirmarCita,
     installApp, dismissInstall, closeIosSheet, testMail, shareApp, consultarPrecio, countryChanged, cargarPaisDetectado, editCountryChanged, regPhoneChanged, editPhoneChanged,
     openTramites, loadTramites, openTramite, openTramiteChat, subirComprobante, avisoDescarga,
     cambioMetodoPago,

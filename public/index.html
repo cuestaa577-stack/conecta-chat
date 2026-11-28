@@ -605,7 +605,11 @@
   </div>
 </div>
 
-<!-- Instalar la app -->
+<!-- Pila de avisos: el aviso de instalar la app y el de notificaciones viven
+     en una sola columna fija, uno encima del otro y con separacion. Antes cada
+     uno tenia su propio "bottom" y se montaban cuando los dos estaban en
+     pantalla. -->
+<div class="banner-stack" id="bannerStack">
 <!-- Aviso para activar las notificaciones -->
 <div class="notif-banner hidden" id="notifBanner">
   <div class="notif-txt">
@@ -618,9 +622,7 @@
   </button>
 </div>
 
-<!-- Sin conexion -->
-<div class="offline-bar hidden" id="offlineBar">Sin conexión. La aplicación sigue abierta y lo que escribas se envía al volver internet.</div>
-
+<!-- Instalar la app -->
 <div class="install hidden" id="installBanner">
   <img class="install-logo" src="icon-192.png?v=70" srcset="icon-192.png?v=70 1x, icon-512.png?v=70 2x" alt="" />
   <div class="install-txt">
@@ -632,6 +634,10 @@
     <svg viewBox="0 0 24 24" class="ico"><path d="M7 7l10 10M17 7L7 17"/></svg>
   </button>
 </div>
+</div>
+
+<!-- Sin conexion -->
+<div class="offline-bar hidden" id="offlineBar">Sin conexión. La aplicación sigue abierta y lo que escribas se envía al volver internet.</div>
 
 <!-- Como instalar en iPhone -->
 <!-- Hoja de requisitos: las tres piezas en un solo lugar.

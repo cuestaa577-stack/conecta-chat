@@ -638,9 +638,22 @@ body::before {
 
 /* Hojas */
 /* ---------------- Instalar la app ---------------- */
+/* Pila de avisos: una sola columna fija abajo. El aviso de instalar y el de
+   notificaciones son tarjetas dentro de esta columna, separadas por un hueco
+   real (gap). Antes cada uno tenia su propio "bottom" y se montaban uno encima
+   del otro cuando los dos estaban en pantalla. */
+.banner-stack {
+  position: fixed; left: 10px; right: 10px;
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  z-index: 58; display: flex; flex-direction: column; gap: 10px;
+  pointer-events: none;
+}
+.banner-stack > * { pointer-events: auto; }
+/* La pila no ocupa espacio si no hay ningun aviso visible. */
+.banner-stack:not(:has(> :not(.hidden))) { display: none; }
+
 .install {
-  position: fixed; left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom));
-  z-index: 55; display: flex; align-items: center; gap: 10px;
+  position: static; display: flex; align-items: center; gap: 10px;
   padding: 10px 10px 10px 12px; background: var(--card);
   border: 1px solid var(--border); border-radius: 16px;
   box-shadow: 0 14px 34px rgba(8, 34, 67, .22);
@@ -650,9 +663,15 @@ body::before {
 /* El aviso flota encima del contenido: mientras esta visible se reserva su
    alto al final de la pantalla, para que no tape la ultima linea (el texto
    "Adjunta una foto o un PDF..." quedaba a medias). */
+/* El alto reservado sale del alto real de la pila (--stack-h, lo mide
+   ajustarPila() en app.js): con un aviso o con los dos, el contenido nunca
+   queda debajo de ellos. */
 body.has-install .scroll,
 body.has-install #tramiteDetail,
-body.has-install #chatMessages { padding-bottom: 96px; }
+body.has-install #chatMessages,
+body.has-notif .scroll,
+body.has-notif #tramiteDetail,
+body.has-notif #chatMessages { padding-bottom: calc(var(--stack-h, 0px) + 24px); }
 .install-logo { width: 42px; height: 42px; border-radius: 11px; object-fit: cover; flex-shrink: 0; }
 .install-txt { flex: 1; min-width: 0; }
 .install-title { font-size: 15px; font-weight: 800; line-height: 1.2; }
@@ -869,7 +888,7 @@ body.has-install #chatMessages { padding-bottom: 96px; }
 /* Cuando el aviso de notificaciones esta en pantalla, el boton sube para no
    quedar debajo: el aviso es fijo y ocupa el mismo alto. Antes el boton se
    veia pero no se podia pulsar porque el aviso lo tapaba. */
-.req-fab.subir { bottom: 148px; }
+.req-fab.subir { bottom: calc(var(--stack-h, 0px) + 30px); }
 .req-fab span { flex: 1; }
 
 .req-card { max-height: 92vh; overflow-y: auto; position: relative; }
@@ -1571,7 +1590,7 @@ body.con-actualizacion .view.active { padding-top: 54px; }
 
 /* Aviso de notificaciones */
 .notif-banner {
-  position: fixed; left: 10px; right: 10px; bottom: 74px; z-index: 58;
+  position: static;
   display: flex; align-items: center; gap: 10px; padding: 11px 12px;
   background: var(--card, #fff); border: 1px solid var(--border, #e2e6ee);
   border-radius: 14px; box-shadow: 0 10px 26px rgba(11, 27, 58, .18);
@@ -1585,9 +1604,6 @@ body.con-actualizacion .view.active { padding-top: 54px; }
    veia una torre de letras sueltas. Aqui vuelve a su ancho natural. */
 .notif-go { width: auto; flex: 0 0 auto; padding: 9px 14px; font-size: 13.5px; margin-top: 0; white-space: nowrap; }
 .notif-x { flex-shrink: 0; }
-/* Cuando el aviso de instalar esta en pantalla, el de notificaciones sube para
-   que los dos se vean completos: antes se tapaban 11 px. */
-body.has-install .notif-banner { bottom: 95px; }
 
 /* Barra de sin conexion */
 .offline-bar {
